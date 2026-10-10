@@ -646,6 +646,27 @@ html[data-theme="light"] .drop-indicator {
   overflow-y: hidden;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
+  /* A thin horizontal scrollbar so many tabs can be scrolled without the
+     thick native bar swallowing the strip. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.tabstrip::-webkit-scrollbar {
+  height: 6px;
+}
+
+.tabstrip::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tabstrip::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.tabstrip::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
 
 .tab {
