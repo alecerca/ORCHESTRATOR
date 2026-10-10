@@ -101,6 +101,10 @@ pub fn run() {
             commands::file_status,
             commands::find_files,
             commands::find_symbols,
+            commands::list_skills,
+            commands::read_skill,
+            commands::save_skill,
+            commands::delete_skill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Orquestador shell");

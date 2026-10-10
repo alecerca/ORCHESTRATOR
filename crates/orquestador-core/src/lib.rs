@@ -11,16 +11,19 @@
 //! * [`client`] — typed async HTTP client for the OpenCode server (reqwest + rustls).
 //! * [`events`] — SSE subscription, typed event models, reconnect/backoff.
 //! * [`state`]  — session tree, per-agent status derivation, permission registry.
+//! * [`skills`] — app-owned markdown skills: name slugging + prompt preamble.
 
 pub mod client;
 pub mod error;
 pub mod events;
+pub mod skills;
 pub mod state;
 pub mod types;
 
 pub use client::OpenCodeClient;
 pub use error::CoreError;
 pub use events::EventHub;
+pub use skills::{build_preamble, slugify, SkillInfo};
 pub use state::AppState;
 
 /// Default base URL of a local `opencode serve`.

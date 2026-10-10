@@ -146,6 +146,169 @@ button {
   background: var(--error);
 }
 
+/* -- topbar actions (skills) ------------------------------------------------ */
+
+.topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.topbar__actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar__btn {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.topbar__btn:hover {
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+.topbar__btn.is-active {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+
+.skills,
+.skills-menu-wrap {
+  position: relative;
+}
+
+.skills-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 1000;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.skills-popover__empty {
+  margin: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.skills-popover__error {
+  margin: 6px;
+  color: var(--error);
+  font-size: 12px;
+}
+
+.skills-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.skills-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.skills-item:hover {
+  background: var(--surface-alt);
+}
+
+.skills-item.is-selected {
+  color: var(--brand);
+}
+
+.skills-item__check {
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--brand);
+}
+
+.skills-item__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skills-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1000;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.skills-menu button {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 13px;
+  border-radius: 4px;
+}
+
+.skills-menu button:hover {
+  background: var(--surface-alt);
+}
+
+.skills-file-input {
+  display: none;
+}
+
+.skills-error {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1001;
+  max-width: 280px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  color: var(--error);
+  font-size: 12px;
+}
+
 /* -- activity bar ----------------------------------------------------------- */
 
 .activitybar {
@@ -1288,6 +1451,35 @@ html[data-theme="light"] .drop-indicator {
   padding: 10px 16px;
   color: var(--error);
   font-size: 13px;
+}
+
+/* -- skill editor + save prompt ---------------------------------------------- */
+
+.skill-editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.skill-editor__muted {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.skill-prompt__body {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.skill-prompt__name {
+  color: var(--text);
+  font-family: var(--mono);
 }
 
 /* -- file tree -------------------------------------------------------------- */
