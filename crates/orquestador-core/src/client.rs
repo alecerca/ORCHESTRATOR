@@ -47,6 +47,16 @@ impl Default for ClientConfig {
 #[derive(Debug, Clone)]
 pub struct OpenCodeClient {
     http: reqwest::Client,
+    /// Dedicated client for the long-lived SSE stream in [`crate::events`].
+    ///
+    /// `reqwest`'s [`reqwest::ClientBuilder::timeout`] is a TOTAL deadline
+    /// ("applied from when the request starts connecting until the response
+    /// body has finished"), so a client that sets one aborts `/event` after
+    /// that long — the app logged an endless
+    /// `event stream error: Transport error: error decoding response body`.
+    /// This client therefore sets only `connect_timeout`; liveness is the
+    /// event hub's job (the server heartbeats every 10s, see [`crate::events`]).
+    stream_http: reqwest::Client,
     base_url: String,
     username: String,
     password: Option<String>,
@@ -66,12 +76,15 @@ impl OpenCodeClient {
         }
         let http = reqwest::Client::builder()
             .timeout(config.request_timeout)
-            // The SSE stream must not be killed by the request timeout; the
-            // hub sets its own read/idle policy on top of this.
+            .connect_timeout(Duration::from_secs(5))
+            .build()?;
+        // No total timeout: the SSE stream must outlive any request deadline.
+        let stream_http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .build()?;
         Ok(Self {
             http,
+            stream_http,
             base_url,
             username: config.username,
             password: config.password,
@@ -442,9 +455,12 @@ impl OpenCodeClient {
 
     /// `GET /event` — returns the raw response so the event hub can consume
     /// the byte stream (framing lives in [`crate::events`]).
+    ///
+    /// Uses the stream client (no total timeout): the response body stays open
+    /// for as long as the server keeps it, which is the whole point of SSE.
     pub async fn event_stream(&self) -> Result<reqwest::Response, CoreError> {
         let mut req = self
-            .http
+            .stream_http
             .get(self.url("/event"))
             .header(reqwest::header::ACCEPT, "text/event-stream");
         if let Some(password) = &self.password {
@@ -710,5 +726,76 @@ mod tests {
             req.starts_with("GET /file?path=src/a%20b.rs HTTP/1.1"),
             "got: {req}"
         );
+    }
+
+    /// Serves one long-lived chunked SSE response, mirroring `opencode serve`:
+    /// handshake immediately, then a frame after `gap`, then the connection
+    /// stays open (frames every `gap`) until the client goes away.
+    async fn spawn_slow_sse_server(gap: Duration) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut buf = [0u8; 4096];
+            let _ = socket.read(&mut buf).await;
+            let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                        cache-control: no-cache\r\ntransfer-encoding: chunked\r\n\r\n";
+            if socket.write_all(head.as_bytes()).await.is_err() {
+                return;
+            }
+            // Chunked framing: <hex-len>\r\n<payload>\r\n
+            let chunk = |body: &str| format!("{:x}\r\n{}\r\n", body.len(), body);
+            let frames = [
+                "data: {\"type\":\"server.connected\",\"properties\":{}}\n\n",
+                "data: {\"type\":\"server.heartbeat\",\"properties\":{}}\n\n",
+            ];
+            for body in frames {
+                if socket.write_all(chunk(body).as_bytes()).await.is_err() {
+                    return;
+                }
+                tokio::time::sleep(gap).await;
+            }
+            tokio::time::sleep(gap).await;
+            let _ = socket.write_all(b"0\r\n\r\n").await;
+        });
+        format!("http://{addr}")
+    }
+
+    /// Regression: `reqwest`'s client-level `timeout` is a TOTAL deadline. It
+    /// "is applied from when the request starts connecting until the response
+    /// body has finished", so on the infinite `/event` stream it aborted the
+    /// body after `request_timeout`, and the hub logged the endless
+    /// `event stream error: Transport error: error decoding response body`.
+    #[tokio::test]
+    async fn event_stream_is_not_killed_by_the_request_timeout() {
+        use eventsource_stream::Eventsource;
+        use futures_util::StreamExt;
+
+        let gap = Duration::from_millis(800);
+        let base = spawn_slow_sse_server(gap).await;
+        let client = OpenCodeClient::new(ClientConfig {
+            base_url: base,
+            request_timeout: Duration::from_millis(250),
+            ..ClientConfig::default()
+        })
+        .unwrap();
+
+        let response = client.event_stream().await.unwrap();
+        let mut stream = response.bytes_stream().eventsource();
+
+        let first = stream.next().await.expect("first frame").expect("no error");
+        assert!(first.data.contains("server.connected"));
+
+        // Arrives after `request_timeout` has elapsed since the request began.
+        // With a total timeout on the stream client this read fails the same
+        // way the app did on screen.
+        let second = stream
+            .next()
+            .await
+            .expect("second frame")
+            .expect("no error");
+        assert!(second.data.contains("server.heartbeat"));
     }
 }

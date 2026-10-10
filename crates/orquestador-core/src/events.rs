@@ -35,6 +35,16 @@ pub enum CoreMessage {
 /// always re-read state via the `get_state` command.
 pub const EVENT_BUFFER: usize = 512;
 
+/// How long the stream may stay silent before the hub treats the connection as
+/// half-open and reconnects.
+///
+/// `opencode serve` emits `server.heartbeat` every 10s on `/event`, so three
+/// missed heartbeats mean the socket is dead (server gone without a FIN, a
+/// network black hole, a suspended machine). Without this the hub would await
+/// frames forever and the UI would stay silently stale — the exact "it looks
+/// hung" symptom, but with a healthy-looking connection flag.
+pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
 // ---------------------------------------------------------------------------
 // Pure helpers (unit tested)
 // ---------------------------------------------------------------------------
@@ -212,6 +222,7 @@ pub struct EventHub {
     state: Arc<RwLock<AppState>>,
     tx: broadcast::Sender<CoreMessage>,
     shutdown: watch::Receiver<bool>,
+    idle_timeout: Duration,
 }
 
 impl EventHub {
@@ -226,7 +237,14 @@ impl EventHub {
             state,
             tx,
             shutdown,
+            idle_timeout: STREAM_IDLE_TIMEOUT,
         }
+    }
+
+    /// Override the idle watchdog window (tests use a short one).
+    pub fn with_idle_timeout(mut self, idle_timeout: Duration) -> Self {
+        self.idle_timeout = idle_timeout;
+        self
     }
 
     /// Run until the shutdown flag flips. Never returns an error: failures are
@@ -282,6 +300,16 @@ impl EventHub {
         loop {
             let next = tokio::select! {
                 item = stream.next() => item,
+                // Half-open connection: no frame (not even a heartbeat) for the
+                // whole window. Give up this stream and let the loop reconnect
+                // instead of awaiting a dead socket forever.
+                _ = tokio::time::sleep(self.idle_timeout) => {
+                    eprintln!(
+                        "[orquestador] event stream idle for {:?}, reconnecting",
+                        self.idle_timeout
+                    );
+                    break;
+                }
                 _ = self.shutdown.changed() => break,
             };
             let Some(frame) = next else { break }; // stream ended (server gone)
@@ -720,5 +748,96 @@ mod tests {
             .await
             .expect("hub task did not stop after shutdown")
             .expect("hub task panicked");
+    }
+
+    /// Serves `/event` as a half-open stream: `server.connected`, then silence
+    /// while the socket stays open. Every other path 404s (resync tolerates it).
+    async fn spawn_silent_event_server() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    return;
+                };
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let mut read = 0usize;
+                    loop {
+                        let n = socket.read(&mut buf[read..]).await.unwrap_or(0);
+                        if n == 0 {
+                            break;
+                        }
+                        read += n;
+                        if buf[..read].windows(4).any(|w| w == b"\r\n\r\n") || read == buf.len() {
+                            break;
+                        }
+                    }
+                    let head = String::from_utf8_lossy(&buf[..read]).to_string();
+                    let path = head
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("/")
+                        .split('?')
+                        .next()
+                        .unwrap_or("/")
+                        .to_string();
+                    if path == "/event" {
+                        let sse_head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                                        transfer-encoding: chunked\r\n\r\n";
+                        if socket.write_all(sse_head.as_bytes()).await.is_err() {
+                            return;
+                        }
+                        let frame = "data: {\"type\":\"server.connected\",\"properties\":{}}\n\n";
+                        let chunk = format!("{:x}\r\n{}\r\n", frame.len(), frame);
+                        let _ = socket.write_all(chunk.as_bytes()).await;
+                        // Silence, but keep the connection open.
+                        tokio::time::sleep(Duration::from_secs(30)).await;
+                        let _ = socket.shutdown().await;
+                    } else {
+                        let body = r#"{"message":"not found"}"#;
+                        let raw = format!(
+                            "HTTP/1.1 404 Not Found\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                            body.len()
+                        );
+                        let _ = socket.write_all(raw.as_bytes()).await;
+                        let _ = socket.shutdown().await;
+                    }
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// A socket that goes quiet must be reconnected, not awaited forever: the
+    /// hub's own idle watchdog covers the half-open case the client-level
+    /// timeout used to (wrongly) cover by killing the whole stream.
+    #[tokio::test]
+    async fn a_silent_stream_is_abandoned_by_the_idle_watchdog() {
+        let base = spawn_silent_event_server().await;
+        let client = Arc::new(
+            OpenCodeClient::new(crate::client::ClientConfig {
+                base_url: base,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let state = test_state();
+        let (tx, _rx) = broadcast::channel::<CoreMessage>(super::EVENT_BUFFER);
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let idle = Duration::from_millis(300);
+        let mut hub = EventHub::new(client, state, tx, shutdown_rx).with_idle_timeout(idle);
+
+        let started = std::time::Instant::now();
+        let handshake = tokio::time::timeout(Duration::from_secs(5), hub.connect_once())
+            .await
+            .expect("idle watchdog never fired: the hub hung on a silent stream")
+            .expect("a silent stream is not an error");
+        assert!(handshake, "the handshake frame did arrive");
+        assert!(
+            started.elapsed() >= idle,
+            "must wait the whole idle window before giving up"
+        );
     }
 }
