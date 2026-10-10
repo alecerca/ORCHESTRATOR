@@ -74,8 +74,10 @@ button {
   position: relative;
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* -- top bar ---------------------------------------------------------------- */
@@ -346,16 +348,30 @@ button {
 
 /* -- panes ------------------------------------------------------------------ */
 
+/* Tiles every open pane. A CSS grid (not a wrapping flex) is what makes N
+   panes deterministic: rows share the height, `auto-fit` decides how many
+   columns fit, and the grid scrolls when the panes cannot all fit — instead of
+   clipping the extra ones the way `flex-wrap` + `overflow:hidden` did. */
 .pane-grid {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-wrap: wrap;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  grid-auto-rows: minmax(240px, 1fr);
   gap: 1px;
-  overflow: hidden;
+  overflow: auto;
+}
+
+/* The 1px gaps between panes show this background as the separator. */
+.pane-grid:not(.pane-grid--empty) {
+  background: var(--border);
 }
 
 .pane-grid--empty {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
   align-items: center;
   justify-content: center;
   color: var(--muted);
@@ -368,17 +384,12 @@ button {
 }
 
 .pane {
-  flex: 1 1 340px;
-  min-width: 300px;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  overflow: hidden;
   background: var(--surface);
-  border-right: 1px solid var(--border);
-}
-
-.pane:last-child {
-  border-right: none;
 }
 
 .pane__head {
