@@ -1,0 +1,35 @@
+[package]
+name = "orquestador"
+version = "0.1.0"
+edition = "2021"
+description = "Desktop control tower for OpenCode sub-agents"
+license = "MIT"
+publish = false
+
+# IMPORTANT — do not remove the empty `[workspace]` table below.
+#
+# It makes this crate its own workspace root so it is NOT a member of the
+# repository workspace (`../../Cargo.toml`). That is deliberate: the native
+# dependency `webkit2gtk-4.1` is missing on the dev machine, so a root
+# `cargo check` / `cargo test` must never try to compile Tauri. Only this
+# standalone crate pulls Tauri, and it is compiled when the user runs
+# `cargo build`/`tauri dev` here — after installing the system deps via
+# `scripts/setup-system-deps.sh`.
+[workspace]
+
+[lib]
+name = "orquestador_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+orquestador-core = { path = "../crates/orquestador-core" }
+tauri = { version = "2", features = [] }
+# Rust-native desktop notifications (no Tauri plugin). On Linux this uses the
+# freedesktop D-Bus notification service via zbus (pure Rust, no libdbus link).
+notify-rust = "4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }

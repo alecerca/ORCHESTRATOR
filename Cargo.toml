@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+# NOTE: `src-tauri` is intentionally NOT a workspace member. It carries its own
+# empty `[workspace]` table so that root `cargo check` / `cargo test` never
+# compiles tauri/wry/webkit code (webkit2gtk-4.1 is not installed here).
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/anomalyco/opencode"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
+# HTTP client. default-features = false drops the default TLS stack so that we
+# can pin rustls (no openssl system dependency at link time).
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "stream",
+  "rustls-tls",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures-util = "0.3"
+# SSE framing (byte stream -> parsed events)
+eventsource-stream = "0.2"
+thiserror = "2"

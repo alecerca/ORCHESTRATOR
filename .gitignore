@@ -1,0 +1,31 @@
+# Rust
+# Root workspace target dir. Cargo.lock IS committed (this is an app, not a lib).
+/target/
+src-tauri/target/
+src-tauri/gen/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs & OS
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local tooling
+.expo/
+tmp/
