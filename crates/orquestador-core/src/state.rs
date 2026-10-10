@@ -90,6 +90,18 @@ pub struct SessionSnapshot {
     pub last_run_ms: Option<i64>,
 }
 
+/// Where a pending permission came from, so a successful `GET /permission`
+/// refresh can tell a genuinely withdrawn entry from one that raced in over SSE
+/// after the fetch was already in flight (see
+/// [`AppState::apply_pending_permissions_at`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingSource {
+    /// Added by a `GET /permission` list fetch.
+    List,
+    /// Added by a `permission.updated` SSE event seen at this epoch ms.
+    Event { seen_at_ms: i64 },
+}
+
 /// The single source of truth for everything the UI renders as *data*
 /// (as opposed to the message stream, which is display-only).
 #[derive(Debug, Default)]
@@ -107,6 +119,8 @@ pub struct AppState {
     errored: HashMap<String, String>,
     /// Permissions that have not been answered yet, keyed by permission id.
     pending: HashMap<String, Permission>,
+    /// Origin / last-seen of every `pending` entry (see [`PendingSource`]).
+    pending_source: HashMap<String, PendingSource>,
     todos: HashMap<String, Vec<Todo>>,
     agents: Vec<Agent>,
     /// Last derived status seen per session (to detect transitions).
@@ -130,7 +144,7 @@ fn is_run_status(status: AgentUiStatus) -> bool {
 
 /// Wall clock in epoch ms. `AppState` is pure apart from this single read; the
 /// `*_at` mutators take the timestamp explicitly so tests stay deterministic.
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -198,32 +212,61 @@ impl AppState {
         self.agents = agents;
     }
 
-    /// Merge server-truth pending permissions (from `GET /permission`) into the
-    /// registry, keyed by the same `per_…` id the reply call needs.
+    /// Merge a completed `GET /permission` fetch into the registry, keyed by the
+    /// same `per_…` id the reply call needs.
     ///
-    /// Add-only by design so reconcile cannot fight the SSE stream:
+    /// A **successful list fetch is authoritative**: a tracked entry the response
+    /// omits is dropped (answered elsewhere, withdrawn, or lost to a dead
+    /// stream). An entry that arrived over `permission.updated` *after* the fetch
+    /// started is the one exception — the response may simply not know about it
+    /// yet — so the caller must pass the fetch start to
+    /// [`Self::apply_pending_permissions_at`]; this convenience wrapper uses the
+    /// current time and is meant for tests / best-effort callers.
     ///
-    /// * an id already in the registry is left untouched (its richer
-    ///   `permission.updated` payload is preserved and its `Effect::Approval`
-    ///   is not re-emitted);
-    /// * an id the server no longer lists is **not** removed here — removal is
-    ///   owned by `permission.replied`, so an answered approval can never be
-    ///   resurrected by a later reconcile.
-    ///
-    /// Returns one [`Effect::Approval`] per newly discovered permission.
+    /// Removing an entry never emits an effect, and an id already tracked is left
+    /// untouched (its richer payload preserved, its `Effect::Approval` not
+    /// re-emitted), so an answered approval can never be resurrected. Returns one
+    /// [`Effect::Approval`] per newly discovered permission.
     pub fn apply_pending_permissions(&mut self, requests: Vec<PermissionRequest>) -> Vec<Effect> {
         self.apply_pending_permissions_at(requests, now_ms())
     }
 
-    /// [`Self::apply_pending_permissions`] with an explicit clock (tests).
+    /// [`Self::apply_pending_permissions`] with the explicit instant the fetch
+    /// was sent (tests use fixed clocks, the event hub passes the real start).
     pub fn apply_pending_permissions_at(
         &mut self,
         requests: Vec<PermissionRequest>,
-        now_ms: i64,
+        fetched_at_ms: i64,
     ) -> Vec<Effect> {
+        let listed: HashSet<&str> = requests.iter().map(|r| r.id.as_str()).collect();
+
+        // Removals first: the list is authoritative for everything it could have
+        // seen. An event-sourced entry newer than the fetch start may be missing
+        // from the response purely because of the request/response race, so keep
+        // it. No effect is emitted for a removal.
+        let stale: Vec<String> = self
+            .pending
+            .keys()
+            .filter(|id| !listed.contains(id.as_str()))
+            .filter(|id| match self.pending_source.get(id.as_str()) {
+                Some(PendingSource::Event { seen_at_ms }) => *seen_at_ms <= fetched_at_ms,
+                Some(PendingSource::List) | None => true,
+            })
+            .cloned()
+            .collect();
+        for id in stale {
+            if let Some(permission) = self.pending.remove(&id) {
+                self.pending_source.remove(&id);
+                self.observe(&permission.session_id, fetched_at_ms);
+            }
+        }
+
         let mut effects = Vec::new();
         for request in requests {
-            if self.pending.contains_key(&request.id) {
+            let id = request.id.clone();
+            if self.pending.contains_key(&id) {
+                // Server-confirmed: it is safe to remove on a future fetch.
+                self.pending_source.insert(id, PendingSource::List);
                 continue;
             }
             let permission = request.into_permission();
@@ -234,9 +277,27 @@ impl AppState {
                 title: permission.title.clone(),
             });
             self.pending.insert(permission.id.clone(), permission);
-            self.observe(&session_id, now_ms);
+            self.pending_source.insert(id, PendingSource::List);
+            self.observe(&session_id, fetched_at_ms);
         }
         effects
+    }
+
+    /// Drop a permission from the registry because it is no longer answerable
+    /// (the server answered `404` for it, or the reply succeeded). Emits no
+    /// effects and returns `true` when the entry was present.
+    pub fn remove_permission(&mut self, id: &str) -> bool {
+        self.remove_permission_at(id, now_ms())
+    }
+
+    /// [`Self::remove_permission`] with an explicit clock (tests).
+    pub fn remove_permission_at(&mut self, id: &str, now_ms: i64) -> bool {
+        let Some(permission) = self.pending.remove(id) else {
+            return false;
+        };
+        self.pending_source.remove(id);
+        self.observe(&permission.session_id, now_ms);
+        true
     }
 
     // -- reads --------------------------------------------------------------
@@ -322,6 +383,8 @@ impl AppState {
                 self.errored.remove(&id);
                 self.todos.remove(&id);
                 self.pending.retain(|_, p| p.session_id != id);
+                let live: HashSet<String> = self.pending.keys().cloned().collect();
+                self.pending_source.retain(|pid, _| live.contains(pid));
                 self.forget(&id);
                 if self.root_session_id.as_deref() == Some(id.as_str()) {
                     self.root_session_id = None;
@@ -363,6 +426,12 @@ impl AppState {
                 let is_new = !self.pending.contains_key(&properties.id);
                 self.pending
                     .insert(properties.id.clone(), properties.clone());
+                // Record when the stream saw it: a later list fetch started
+                // before this instant must not drop it as "withdrawn".
+                self.pending_source.insert(
+                    properties.id.clone(),
+                    PendingSource::Event { seen_at_ms: now_ms },
+                );
                 if is_new {
                     effects.push(Effect::Approval {
                         session_id: properties.session_id.clone(),
@@ -374,6 +443,7 @@ impl AppState {
             }
             Event::PermissionReplied { properties } => {
                 self.pending.remove(&properties.permission_id);
+                self.pending_source.remove(&properties.permission_id);
                 self.observe(&properties.session_id, now_ms);
             }
             Event::TodoUpdated { properties } => {
@@ -526,7 +596,7 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::SessionTime;
+    use crate::types::{PermissionRequest, SessionTime};
 
     fn session(id: &str, parent: Option<&str>, created: i64) -> Session {
         Session {
@@ -547,6 +617,26 @@ mod tests {
 
     fn event(json: &str) -> Event {
         serde_json::from_str(json).expect("event fixture parses")
+    }
+
+    /// A `permission.updated` SSE event for `id` in session `a`.
+    fn permission_event(id: &str) -> Event {
+        event(&format!(
+            r#"{{"type":"permission.updated","properties":{{"id":"{id}","type":"bash","sessionID":"a","messageID":"m1","title":"Run","metadata":{{}},"time":{{"created":10}}}}}}"#
+        ))
+    }
+
+    /// A `GET /permission` list entry for `id` in session `a`.
+    fn permission_request(id: &str) -> PermissionRequest {
+        PermissionRequest {
+            id: id.into(),
+            session_id: "a".into(),
+            permission: "bash".into(),
+            patterns: vec!["git commit -m x".into()],
+            metadata: serde_json::json!({ "command": "git commit -m x" }),
+            always: vec!["git commit *".into()],
+            tool: None,
+        }
     }
 
     #[test]
@@ -817,6 +907,113 @@ mod tests {
         // Re-applying the same server truth must NOT re-notify.
         assert!(st.apply_pending_permissions(vec![request()]).is_empty());
         assert_eq!(st.pending_permissions().len(), 1);
+    }
+
+    #[test]
+    fn a_successful_list_fetch_removes_a_list_sourced_permission_that_is_gone() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_pending_permissions_at(vec![permission_request("per_1")], 1_000);
+        assert_eq!(st.pending_permissions().len(), 1);
+
+        // A later fetch (started at t=2000) no longer lists it.
+        let fx = st.apply_pending_permissions_at(Vec::new(), 2_000);
+        assert!(fx.is_empty(), "removals must not emit effects: {fx:?}");
+        assert!(
+            st.pending_permissions().is_empty(),
+            "a permission the server no longer lists must be dropped"
+        );
+    }
+
+    #[test]
+    fn an_event_sourced_permission_older_than_the_fetch_is_removed_when_absent() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_event_at(&permission_event("per_old"), 1_000);
+        assert_eq!(st.pending_permissions().len(), 1);
+
+        // The fetch started at t=2000, AFTER the event was seen (t=1000), so a
+        // response that omits it is authoritative: it is gone.
+        let fx = st.apply_pending_permissions_at(Vec::new(), 2_000);
+        assert!(fx.is_empty());
+        assert!(st.pending_permissions().is_empty());
+    }
+
+    #[test]
+    fn an_event_that_arrives_after_the_fetch_started_is_not_dropped() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        // The event raced in at t=3000, while the fetch was already in flight
+        // (it started at t=2000), so the response cannot know about it.
+        st.apply_event_at(&permission_event("per_race"), 3_000);
+
+        let fx = st.apply_pending_permissions_at(Vec::new(), 2_000);
+        assert!(fx.is_empty());
+        assert_eq!(
+            st.pending_permissions().len(),
+            1,
+            "an approval that raced in after the fetch began must survive"
+        );
+        assert_eq!(st.pending_permissions()[0].id, "per_race");
+    }
+
+    #[test]
+    fn a_permission_still_listed_survives_the_fetch() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_pending_permissions_at(vec![permission_request("per_1")], 1_000);
+        st.apply_pending_permissions_at(vec![permission_request("per_1")], 2_000);
+        assert_eq!(st.pending_permissions().len(), 1);
+    }
+
+    #[test]
+    fn a_fetch_removed_permission_is_not_resurrected_by_later_empty_fetches() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_pending_permissions_at(vec![permission_request("per_1")], 1_000);
+        st.apply_pending_permissions_at(Vec::new(), 2_000);
+        assert!(st.pending_permissions().is_empty());
+
+        for t in [3_000, 4_000, 5_000] {
+            assert!(st.apply_pending_permissions_at(Vec::new(), t).is_empty());
+            assert!(st.pending_permissions().is_empty());
+        }
+    }
+
+    #[test]
+    fn a_replied_permission_is_not_resurrected_by_a_later_list_fetch_that_omits_it() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_event_at(&permission_event("perm_1"), 1_000);
+        st.apply_event_at(
+            &event(
+                r#"{"type":"permission.replied","properties":{"sessionID":"a","permissionID":"perm_1","response":"once"}}"#,
+            ),
+            1_500,
+        );
+        assert!(st.pending_permissions().is_empty());
+
+        // Reconcile started at 2000 sees nothing → still empty, no effects.
+        assert!(st
+            .apply_pending_permissions_at(Vec::new(), 2_000)
+            .is_empty());
+        assert!(st.pending_permissions().is_empty());
+    }
+
+    #[test]
+    fn remove_permission_drops_it_locally_and_emits_no_effects() {
+        let mut st = AppState::default();
+        st.apply_sessions_at(vec![session("a", None, 1)], 500);
+        st.apply_event_at(&permission_event("perm_1"), 1_000);
+        assert_eq!(st.agent_status("a"), AgentUiStatus::WaitingApproval);
+
+        // This is what the shell does on a successful reply or a 404.
+        assert!(st.remove_permission_at("perm_1", 2_000));
+        assert!(st.pending_permissions().is_empty());
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Idle);
+
+        // Removing an unknown id is a harmless no-op.
+        assert!(!st.remove_permission_at("ghost", 2_000));
     }
 
     #[test]

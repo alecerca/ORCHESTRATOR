@@ -65,6 +65,16 @@ impl AppBridge {
         self.state.read().await.snapshot()
     }
 
+    /// Push a fresh derived snapshot to every subscriber.
+    ///
+    /// The hub normally publishes on state-changing events; a command that
+    /// mutates the registry itself (e.g. dropping a permission the server just
+    /// answered) uses this so the webview updates without waiting for SSE.
+    pub async fn push_snapshot(&self) {
+        let snapshot = self.state.read().await.snapshot();
+        let _ = self.tx.send(CoreMessage::StateSnapshot { snapshot });
+    }
+
     /// One synchronous load (health + sessions + statuses + agents). Never
     /// panics; a dead server yields [`BootstrapOutcome::Disconnected`].
     pub async fn bootstrap(&self) -> BootstrapOutcome {

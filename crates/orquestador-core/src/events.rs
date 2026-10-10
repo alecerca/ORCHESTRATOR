@@ -176,6 +176,9 @@ pub async fn bootstrap(client: &OpenCodeClient, state: &Arc<RwLock<AppState>>) -
     let agents = client.agents().await.ok();
     // A permission requested while the stream was down (or before the app
     // started) is invisible to SSE; the list endpoint is the only way to see it.
+    // Remember when the fetch was sent so a permission that a `permission.updated`
+    // event adds while it is in flight is not dropped as "withdrawn".
+    let permission_fetch_started = crate::state::now_ms();
     let permissions = client.pending_permissions().await.ok();
 
     // Reuse the newest root session; create one only when there is nothing.
@@ -214,7 +217,7 @@ pub async fn bootstrap(client: &OpenCodeClient, state: &Arc<RwLock<AppState>>) -
     }
     if let Some(permissions) = permissions {
         // Bootstrap has no broadcast channel yet; the snapshot carries them.
-        st.apply_pending_permissions(permissions);
+        st.apply_pending_permissions_at(permissions, permission_fetch_started);
     }
     if let Some(root) = &root {
         st.set_root_session(root.clone());
@@ -400,12 +403,15 @@ impl EventHub {
             agents.sort_by(|a, b| a.name.cmp(&b.name));
             self.state.write().await.apply_agents(agents);
         }
+        let permission_fetch_started = crate::state::now_ms();
         if let Ok(permissions) = self.client.pending_permissions().await {
+            // The list is authoritative for everything it could have seen; the
+            // start time protects a permission an event adds mid-fetch.
             let effects = self
                 .state
                 .write()
                 .await
-                .apply_pending_permissions(permissions);
+                .apply_pending_permissions_at(permissions, permission_fetch_started);
             for effect in effects {
                 let _ = self.tx.send(CoreMessage::Effect { effect });
             }
@@ -436,8 +442,13 @@ async fn reconcile_once(
     if let Ok(statuses) = client.session_statuses().await {
         state.write().await.apply_statuses(statuses);
     }
-    if let Ok(permissions) = client.pending_permissions().await {
-        let effects = state.write().await.apply_pending_permissions(permissions);
+    let permission_fetch_started = crate::state::now_ms();
+    let permissions = client.pending_permissions().await;
+    if let Ok(permissions) = permissions {
+        let effects = state
+            .write()
+            .await
+            .apply_pending_permissions_at(permissions, permission_fetch_started);
         for effect in effects {
             let _ = tx.send(CoreMessage::Effect { effect });
         }

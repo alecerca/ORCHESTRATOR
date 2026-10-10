@@ -341,7 +341,41 @@ impl OpenCodeClient {
         self.get_json("/permission").await
     }
 
+    /// `POST /permission/:requestID/reply` — the **request-scoped** reply route.
+    ///
+    /// This is the canonical route for the `per_…` ids returned by
+    /// [`Self::pending_permissions`]. Its body uses the field name `reply` (not
+    /// `response`) and is `additionalProperties: false`, so `message` is added
+    /// only when present — a JSON `null` would be rejected.
+    pub async fn reply_permission(
+        &self,
+        request_id: &str,
+        response: PermissionResponse,
+        message: Option<&str>,
+    ) -> Result<bool, CoreError> {
+        let path = format!("/permission/{}/reply", Self::seg(request_id));
+        let mut body = serde_json::json!({ "reply": response.as_str() });
+        if let Some(message) = message {
+            body["message"] = serde_json::Value::String(message.to_string());
+        }
+        let res = self
+            .request(reqwest::Method::POST, &path)
+            .json(&body)
+            .send()
+            .await?;
+        if !res.status().is_success() {
+            return Err(CoreError::from_response(res).await);
+        }
+        Ok(res.json::<bool>().await.unwrap_or(true))
+    }
+
     /// `POST /session/:id/permissions/:permissionID`
+    ///
+    /// Routes by id form: a `per_…` id comes from [`Self::pending_permissions`]
+    /// and belongs to the request-scoped `/permission/:id/reply` route (the
+    /// session-scoped route answers it with `404`). The two routes also disagree
+    /// on the body field name, so request ids are delegated to
+    /// [`Self::reply_permission`]; the global request body carries no `remember`.
     pub async fn respond_permission(
         &self,
         id: &str,
@@ -349,6 +383,9 @@ impl OpenCodeClient {
         response: PermissionResponse,
         remember: Option<bool>,
     ) -> Result<bool, CoreError> {
+        if permission_id.starts_with("per_") {
+            return self.reply_permission(permission_id, response, None).await;
+        }
         let path = format!(
             "/session/{}/permissions/{}",
             Self::seg(id),
@@ -480,6 +517,18 @@ impl OpenCodeClient {
             return Err(CoreError::from_response(res).await);
         }
         Ok(res)
+    }
+}
+
+/// HTTP-status classification for [`CoreError`].
+///
+/// `CoreError` is the crate-wide error type; this helper sits next to the HTTP
+/// layer that produces [`CoreError::Api`] so the shell (or any caller) can
+/// recognize a `404` without string-matching the server message.
+impl CoreError {
+    /// True when the server answered `404` — the resource no longer exists.
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, CoreError::Api { status: 404, .. })
     }
 }
 
@@ -695,6 +744,95 @@ mod tests {
             .unwrap();
         let req = server.request_text().await;
         assert!(req.contains("\"remember\":true"), "got: {req}");
+    }
+
+    #[tokio::test]
+    async fn reply_permission_posts_to_the_request_scoped_route_without_message() {
+        // `GET /permission` returns `per_…` ids that belong to this route, whose
+        // body uses `reply` (not `response`) and rejects extra properties, so
+        // `message` must be omitted rather than sent as `null`.
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        let ok = client
+            .reply_permission("per_126b00d0f001cyU", PermissionResponse::Once, None)
+            .await
+            .unwrap();
+        assert!(ok);
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("POST /permission/per_126b00d0f001cyU/reply HTTP/1.1"),
+            "got: {req}"
+        );
+        assert!(req.contains("\"reply\":\"once\""), "got: {req}");
+        assert!(
+            !req.contains("message") && !req.contains("response"),
+            "got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reply_permission_includes_message_when_some() {
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        client
+            .reply_permission("per_2", PermissionResponse::Reject, Some("not this time"))
+            .await
+            .unwrap();
+        let req = server.request_text().await;
+        assert!(req.contains("\"reply\":\"reject\""), "got: {req}");
+        assert!(req.contains("\"message\":\"not this time\""), "got: {req}");
+    }
+
+    #[tokio::test]
+    async fn respond_permission_routes_per_request_ids_to_the_reply_endpoint() {
+        // A `per_…` id came from `GET /permission`; the session-scoped route
+        // answers it with `404 Permission request not found`.
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        client
+            .respond_permission("ses_1", "per_abc", PermissionResponse::Once, None)
+            .await
+            .unwrap();
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("POST /permission/per_abc/reply HTTP/1.1"),
+            "got: {req}"
+        );
+        assert!(req.contains("\"reply\":\"once\""), "got: {req}");
+        assert!(!req.contains("\"response\""), "got: {req}");
+        assert!(!req.contains("/session/"), "got: {req}");
+    }
+
+    #[test]
+    fn is_not_found_classifies_http_404_without_string_matching() {
+        assert!(CoreError::Api {
+            status: 404,
+            message: "Permission request not found: per_x".into(),
+        }
+        .is_not_found());
+        assert!(!CoreError::Api {
+            status: 500,
+            message: "boom".into(),
+        }
+        .is_not_found());
+        assert!(!CoreError::Config("nope".into()).is_not_found());
+    }
+
+    #[tokio::test]
+    async fn reply_permission_surfaces_a_typed_404() {
+        let server = MockServer::start(
+            "404 Not Found",
+            r#"{"message":"Permission request not found: per_x"}"#,
+        )
+        .await;
+        let client = server.client(None).await;
+        let err = client
+            .reply_permission("per_x", PermissionResponse::Once, None)
+            .await
+            .unwrap_err();
+        assert!(err.is_not_found(), "got: {err:?}");
+        assert_eq!(err.kind(), "api");
     }
 
     #[tokio::test]

@@ -23,6 +23,22 @@ Evidence gathered from the live server (`http://127.0.0.1:4096`):
 
 So any permission that arrives while the stream is down (the pre-`bb96ff0` 30 s total-timeout bug killed `/event` every 30 s) or before the app starts is **invisible forever**. The blocked session stays `busy` → the UI correctly shows `running`, but the user has no way to see or answer the approval. That is the "stuck running" and a large part of the perceived "slowness": the agent was not slow, it was **blocked waiting for an approval the UI never showed**.
 
+## Verification failure found after P1–P4 (live, 2026-10-10)
+
+With the reconcile fix live the pending permission **was** surfaced (P1 works: the user finally saw the dialog), but answering it failed:
+
+- Approving/ rejecting returned `server returned HTTP 404: Permission request not found: per_126b00d0f001cyU1H4us7xUdRg`.
+- `GET /permission` at that moment listed a **different** request (`per_126cf2232001Xv9I4RR9c0XBUn`, `external_directory`, `/tmp/*`) — the one being answered was already gone from the server.
+- `GET /doc` (OpenAPI) shows two reply endpoints with **different bodies**:
+  - `POST /permission/{requestID}/reply` → `{"reply":"once"|"always"|"reject","message"?:string}` (required `reply`) — keyed by the request id returned by `GET /permission`.
+  - `POST /session/{sessionID}/permissions/{permissionID}` → `{"response":"once"|"always"|"reject"}` — the one `respond_permission` calls today (`client.rs:344-372`).
+
+**Defect A — wrong reply endpoint for request ids.** The app always answers on the session-scoped route, but the ids it now surfaces come from `GET /permission` (request ids, `per_…`); the canonical route for those is `POST /permission/{requestID}/reply` with a `reply` body.
+
+**Defect B — phantom permissions never removed.** `apply_pending_permissions_at` (`state.rs:214-240`) is deliberately add-only ("never removes on reconcile") to avoid resurrecting answered permissions — but the inverse case was never covered: a permission that **vanishes from the server list without a `permission.replied` event** (answered elsewhere, withdrawn, or lost with a dead stream) stays in the registry forever as a phantom the UI shows and the server rejects. That is exactly what the user hit.
+
+**Defect C — raw 404 surfaced to the user.** A stale/absent permission produces an unhandled error string in the dialog instead of being reconciled away and closing.
+
 ## Objective
 
 1. **Never lose a pending permission**: bootstrap and periodically reconcile pending permissions from `GET /permission`, so a blocked session is always visible and answerable.
@@ -43,6 +59,18 @@ So any permission that arrives while the stream is down (the pre-`bb96ff0` 30 s 
 - [x] **P3 — Timer UI + picker CSS (frontend)**: new leaf `AgentTimer.tsx` (1 s interval isolated from `App`), `M:SS` / `H:MM:SS` with `tabular-nums`, warn-colored `waiting_approval`; `.agent-panel__select` replaces the `composer__input` reuse + inline style. Route: delegated frontend writer (ran after P1/P2).
 - [x] **P4 — Verify + commit**: `cargo test -p orquestador-core` 54 passed; `npx tsc --noEmit` clean; `npm run build` OK; `scripts/verify-headless.sh` → "OK — headless verification passed". Route: parent.
 
+### Reopened after live verification failure (2026-10-10)
+
+- [x] **P5 — Reply on the correct route (core)**: `Client::reply_permission(request_id, response, message)` → `POST /permission/{requestID}/reply` body `{"reply": …}` (omit `message` when `None`). Route `respond_permission` by id form: `per_…` request ids → request-scoped route; anything else keeps the session-scoped route. TDD with the mock server asserting the exact path + body field. Route: delegated core writer (strict TDD).
+- [x] **P6 — Authoritative reconcile removal (core)**: a successful `GET /permission` fetch is authoritative for *removal*: drop locally-pending entries the server no longer lists, without killing an event-sourced entry that arrived after the fetch began (race). Track source + first-seen so a vanished phantom is dropped. Keep the anti-resurrect property (never re-add an answered id). TDD. Route: same writer.
+- [x] **P7 — 404 safety net + deterministic close (core + shell)**: a reply that comes back `404 Permission request not found` must drop the permission locally and push a fresh snapshot (no raw error in the dialog); likewise a successful reply drops it locally instead of waiting for the `permission.replied` event. `AppBridge` already exposes `state()`; add a small snapshot push. Route: same writer.
+
+## Progress log
+
+- [x] P5–P7 implemented (delegated core writer, strict TDD): `client.rs::reply_permission` + id routing (`per_…` → `/permission/{id}/reply`), `CoreError::is_not_found()` (typed 404), `state.rs` `PendingSource` tracking with fetch-start race protection, `remove_permission`, `bridge.rs::push_snapshot`, `commands.rs` drops + pushes on success and on 404 (`Ok(false)`, no raw error). 54 → **66 tests**.
+- [x] Verification: `cargo test -p orquestador-core` 66 passed · `cargo clippy -p orquestador-core -- -D warnings` clean · `cargo fmt --check` clean · `scripts/verify-headless.sh` OK · `npx tsc --noEmit` clean · `cargo check` in `src-tauri` compiles. Parent spot check re-ran the core suite (green).
+- Known gap (documented, not blocking): the dialog's "Remember this decision" checkbox is inert for `per_…` request ids — the request-scoped route has no `remember` field, and `Always` is the "remember" answer for that route.
+
 ## Progress log
 
 - [x] Feature document created (parent, 2026-10-10) with live-server evidence.
@@ -51,6 +79,8 @@ So any permission that arrives while the stream is down (the pre-`bb96ff0` 30 s 
 - [x] Parent spot checks: `cargo test -p orquestador-core` → 54 passed; `npx tsc --noEmit` → clean; `scripts/verify-headless.sh` → passed.
 - Known approximation: `status_since` on first observation of a session is the observation time, not the true transition time (documented in the core writer's report).
 - Follow-up still open: frontend event coalescing (per-token full-tree re-render + snapshot serialize) — separate feature.
+- [x] Reopened 2026-10-10 after live failure: dialog shown by P1, but reply → `HTTP 404 Permission request not found` (defects A/B/C above). Evidence: `GET /permission` + `GET /doc` (both endpoints and body shapes captured).
+- Manual acceptance was **partially** met: the dialog appears without reconnect (criteria 1 ✅) but answering it failed (criteria 2 ❌ → P5–P7).
 
 ## Documented follow-up (NOT in this feature)
 

@@ -209,11 +209,38 @@ pub async fn respond_permission(
         "reject" => PermissionResponse::Reject,
         other => return Err(format!("unknown permission response: {other}")),
     };
-    bridge
+    let result = bridge
         .client()
         .respond_permission(&session_id, &permission_id, response, remember)
-        .await
-        .map_err(stringify)
+        .await;
+
+    match result {
+        Ok(answered) => {
+            // Drop the approval locally and push the snapshot instead of waiting
+            // for `permission.replied` (which can be missed) so the dialog closes
+            // deterministically.
+            bridge
+                .state()
+                .write()
+                .await
+                .remove_permission(&permission_id);
+            bridge.push_snapshot().await;
+            Ok(answered)
+        }
+        Err(err) if err.is_not_found() => {
+            // The permission is gone server-side (answered elsewhere, withdrawn
+            // or lost to a dead stream). Drop the phantom locally and treat the
+            // reply as handled rather than surfacing the raw `404`.
+            bridge
+                .state()
+                .write()
+                .await
+                .remove_permission(&permission_id);
+            bridge.push_snapshot().await;
+            Ok(false)
+        }
+        Err(err) => Err(stringify(err)),
+    }
 }
 
 // -- diffs / files -----------------------------------------------------------
