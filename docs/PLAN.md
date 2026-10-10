@@ -464,3 +464,10 @@ TypeScript strict-clean; do not add a state framework; do not touch `SPEC.md`.
   only clearly-bounded defects, write `docs/AUDIT.md`, finalize `README.md` +
   the "First run on this machine" RUNBOOK.
 - Neither agent commits; the orchestrator commits conventional messages on `main`.
+
+## 13. Skills (header panel)
+
+- **Core**: `crates/orquestador-core/src/skills.rs` (slugify, `SkillInfo`, `build_preamble`) — pure, unit-tested (4 tests). Module declared in `lib.rs`.
+- **Shell (Tauri)**: new commands `list_skills`, `read_skill`, `save_skill`, `delete_skill`; both `send_message` and `send_message_async` accept `skills: Option<Vec<String>>` and fold selected skills into `PromptBody.system` (appended, never replaces). Skills live at `<app_config_dir>/skills/<slug>.md` (created on demand).
+- **Frontend**: `frontend/src/skills.ts` (selected-skills store, persisted to `localStorage["orquestador.skills"]`, `useSyncExternalStore`-compatible), `frontend/src/skillDrafts.ts` (per-tab editor drafts with baseline-based dirtiness), `frontend/src/components/SkillEditor.tsx`, `frontend/src/components/SkillSavePrompt.tsx`, and `SkillInfo` type in `types.ts`. TopBar adds Skills dropdown + `+` (New skill / Import `.md`). Skill tabs are dropped on layout restore; closing a dirty skill tab prompts Save/Discard/Cancel (non-skill tabs unaffected). Composer/FollowUpInput pass selected skills on every send.
+
