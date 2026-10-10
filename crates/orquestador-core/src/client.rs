@@ -367,13 +367,16 @@ impl OpenCodeClient {
     }
 
     /// `GET /file?path=` → directory listing (`path` empty = project root).
+    ///
+    /// The `path` query key is mandatory: the server answers `400 BadRequest`
+    /// ("Missing key at [path]") when it is absent, so we always send it, even
+    /// for the project root (empty value).
     pub async fn file_tree(&self, path: Option<&str>) -> Result<Vec<FileNode>, CoreError> {
-        let mut url = format!("{}/file", self.base_url);
-        if let Some(p) = path {
-            if !p.is_empty() {
-                url.push_str(&format!("?path={}", urlencoding_lite(p)));
-            }
-        }
+        let url = format!(
+            "{}/file?path={}",
+            self.base_url,
+            urlencoding_lite(path.unwrap_or(""))
+        );
         let mut req = self.http.get(&url);
         if let Some(password) = &self.password {
             req = req.basic_auth(self.username.as_str(), Some(password));
@@ -666,5 +669,46 @@ mod tests {
     fn urlencoding_lite_keeps_slashes_and_encodes_spaces() {
         assert_eq!(urlencoding_lite("src/main.rs"), "src/main.rs");
         assert_eq!(urlencoding_lite("a b+c"), "a%20b%2Bc");
+    }
+
+    #[tokio::test]
+    async fn file_tree_always_sends_the_path_query_key() {
+        // The server rejects a missing `path` key with 400 "Missing key at [path]".
+        let server = MockServer::start("200 OK", r#"[]"#).await;
+        let client = server.client(None).await;
+        let nodes = client.file_tree(None).await.unwrap();
+        assert!(nodes.is_empty());
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("GET /file?path= HTTP/1.1"),
+            "root listing must include the path key, got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn file_tree_treats_an_empty_path_as_the_project_root() {
+        let server = MockServer::start("200 OK", r#"[]"#).await;
+        let client = server.client(None).await;
+        let _ = client.file_tree(Some("")).await.unwrap();
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("GET /file?path= HTTP/1.1"),
+            "empty path must still send the key, got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn file_tree_percent_encodes_the_path_value() {
+        let server = MockServer::start("200 OK", r#"[]"#).await;
+        let client = server.client(None).await;
+        let _ = client.file_tree(Some("src/a b.rs")).await.unwrap();
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("GET /file?path=src/a%20b.rs HTTP/1.1"),
+            "got: {req}"
+        );
     }
 }

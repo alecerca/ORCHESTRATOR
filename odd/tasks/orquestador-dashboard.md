@@ -61,7 +61,7 @@ Inter-agent channel: handoff docs in `docs/` (each agent reads the previous agen
 1. `orquestador-core`: unit tests green (API client, SSE event parsing, subagent state derivation).
 2. Frontend: `tsc --noEmit` + `vite build` green.
 3. Docs complete: `README.md` (setup/run), `ARCHITECTURE.md`, `IMPLEMENTATION_PLAN.md`, `IMPLEMENTATION_NOTES.md`, `AUDIT.md`.
-4. `scripts/install-deps.sh` with the exact system packages for Tauri 2.
+4. `scripts/setup-system-deps.sh` with the exact system packages for Tauri 2 (distro-aware: dnf + apt-get).
 5. Conventional work-unit commits on `main` (parent-authored, no AI attribution).
 
 ## Progress log
@@ -72,3 +72,9 @@ Inter-agent channel: handoff docs in `docs/` (each agent reads the previous agen
 - Commits: `046b0c0` chore: scaffold (T1) · `b662e94` feat: implement (T2) · `2b412ff` docs: audit+runbook (T3)
 - Review nativo RDD: assessment `medium`/`slice_budget_reached` → preflight `fresh_target_ready` → START devolvió consent/v3 → **usuario declinó (10/10)**: revisión manual propia. Cierre validado: `action: declined` · `consent: declined_this_candidate` · target idéntico.
 - Next step: usuario instala deps del sistema (`sudo scripts/setup-system-deps.sh`) y corre `npx @tauri-apps/cli dev`; el pipeline de 3 agentes quedó COMPLETO.
+
+## Post-audit fixes
+
+- [x] `70fd699` fix: distro detection in `scripts/setup-system-deps.sh` (dnf for Fedora 44 + apt-get for Debian/Ubuntu) and RUNBOOK §3 Fedora variant. Reason: the host is Fedora 44, `apt-get` does not exist. Package names verified against the Fedora 44 repos (`dnf list --available`).
+- [x] fix: `file_tree` dropped the mandatory `path` query key when the path was `None`/empty → the Files panel showed `HTTP 400 BadRequest "Missing key at [path]"` (root listing is `GET /file` without the key). Fix: always send `?path=` (empty = project root). TDD: 3 new core tests (RED observed: `GET /file HTTP/1.1`) → GREEN, 42 tests total, clippy `-D warnings` + fmt clean. Verified against the live server: `/file` → 400, `/file?path=` → 200; every other endpoint (diff/message/children/status/agent/config/find) returns 200 without optional params, so no other instance of the bug class.
+- Diagnosed (not a code bug): the app showed only the "personal pay" session because it connected to a leftover `opencode serve` on `:4096` started outside any repo (project `global`, worktree `/`); `pick_root` (docs/ARCHITECTURE/events.rs:115) picks the **most recently updated** parentless session and the v1 UI has no session/project picker. Fix: run `opencode serve` from the target project dir. Product gap: session picker (pending user decision).
