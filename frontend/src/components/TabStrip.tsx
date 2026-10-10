@@ -1,13 +1,24 @@
-import { useRef, type KeyboardEvent } from "react";
-import { tabSessionId, type Tab, type TabGroup } from "../tabs";
+import {
+  useEffect,
+  useRef,
+  type DragEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  useState,
+} from "react";
+import { tabSessionId, type GroupNode, type Tab } from "../tabs";
 import type { SessionSnapshot } from "../types";
 import { shortId } from "../utils";
 
+/** Custom MIME type carrying the dragged tab payload (see PaneGrid's drop targets). */
+export const TAB_DRAG_MIME = "application/x-orquestador-tab";
+
 interface Props {
-  group: TabGroup;
+  group: GroupNode;
   sessions: SessionSnapshot[];
   onActivateTab: (groupId: string, tabId: string) => void;
   onCloseTab: (groupId: string, tabId: string) => void;
+  onSplit?: (groupId: string, direction: "right" | "down", tabId?: string) => void;
 }
 
 /** Tab title: the session title, falling back to its short id. */
@@ -21,10 +32,38 @@ function tabTitle(tab: Tab, sessions: SessionSnapshot[]): string {
 /**
  * One group's tab strip (VS Code style): a real `role="tablist"` with one
  * `role="tab"` per document. The active tab is illuminated; arrow keys move
- * between tabs with a roving tabindex.
+ * between tabs with a roving tabindex. Tabs are draggable between groups.
  */
-export function TabStrip({ group, sessions, onActivateTab, onCloseTab }: Props) {
+export function TabStrip({ group, sessions, onActivateTab, onCloseTab, onSplit }: Props) {
   const refs = useRef<(HTMLDivElement | null)[]>([]);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const firstItemRef = useRef<HTMLButtonElement | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    tabId: string;
+  } | null>(null);
+
+  // While the menu is open: focus its first item, close on Escape, and close on
+  // any pointerdown outside it. `onMouseLeave` (below) is kept too.
+  useEffect(() => {
+    if (!contextMenu) return;
+    firstItemRef.current?.focus();
+    function onKeyDown(event: globalThis.KeyboardEvent): void {
+      if (event.key === "Escape") setContextMenu(null);
+    }
+    function onPointerDown(event: globalThis.PointerEvent): void {
+      const target = event.target as globalThis.Node | null;
+      if (menuRef.current && target && menuRef.current.contains(target)) return;
+      setContextMenu(null);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [contextMenu]);
 
   function handleKey(event: KeyboardEvent<HTMLDivElement>, index: number): void {
     const last = group.tabs.length - 1;
@@ -40,41 +79,102 @@ export function TabStrip({ group, sessions, onActivateTab, onCloseTab }: Props) 
     refs.current[next]?.focus();
   }
 
+  function handleContextMenu(event: MouseEvent, tabId: string): void {
+    event.preventDefault();
+    setContextMenu({ x: event.clientX, y: event.clientY, tabId });
+  }
+
+  function handleDragStart(event: DragEvent<HTMLDivElement>, tabId: string): void {
+    const payload = JSON.stringify({ groupId: group.id, tabId });
+    event.dataTransfer.setData(TAB_DRAG_MIME, payload);
+    event.dataTransfer.effectAllowed = "move";
+  }
+
+  function closeMenu(): void {
+    setContextMenu(null);
+  }
+
   return (
-    <div className="tabstrip" role="tablist" aria-label="Open tabs" title="Open tabs">
-      {group.tabs.map((tab, index) => {
-        const active = tab.id === group.activeTabId;
-        const title = tabTitle(tab, sessions);
-        return (
-          <div
-            key={tab.id}
-            ref={(element) => {
-              refs.current[index] = element;
-            }}
-            role="tab"
-            aria-selected={active}
-            tabIndex={active ? 0 : -1}
-            className={`tab${active ? " is-active" : ""}`}
-            title={title}
-            onClick={() => onActivateTab(group.id, tab.id)}
-            onKeyDown={(event) => handleKey(event, index)}
-          >
-            <span className="tab__label">{title}</span>
-            <button
-              type="button"
-              className="tab__close"
-              aria-label={`Close ${title}`}
-              title={`Close ${title}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onCloseTab(group.id, tab.id);
+    <>
+      <div className="tabstrip" role="tablist" aria-label="Open tabs" title="Open tabs">
+        {group.tabs.map((tab, index) => {
+          const active = tab.id === group.activeTabId;
+          const title = tabTitle(tab, sessions);
+          return (
+            <div
+              key={tab.id}
+              ref={(element) => {
+                refs.current[index] = element;
               }}
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              className={`tab${active ? " is-active" : ""}`}
+              title={title}
+              draggable
+              onClick={() => onActivateTab(group.id, tab.id)}
+              onKeyDown={(event) => handleKey(event, index)}
+              onDragStart={(event) => handleDragStart(event, tab.id)}
+              onContextMenu={(event) => handleContextMenu(event, tab.id)}
             >
-              ✕
-            </button>
-          </div>
-        );
-      })}
-    </div>
+              <span className="tab__label">{title}</span>
+              <button
+                type="button"
+                className="tab__close"
+                aria-label={`Close ${title}`}
+                title={`Close ${title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCloseTab(group.id, tab.id);
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          className="tab-context-menu"
+          role="menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onMouseLeave={closeMenu}
+        >
+          <button
+            ref={firstItemRef}
+            role="menuitem"
+            type="button"
+            onClick={() => {
+              onSplit?.(group.id, "right", contextMenu.tabId);
+              closeMenu();
+            }}
+          >
+            Split right
+          </button>
+          <button
+            role="menuitem"
+            type="button"
+            onClick={() => {
+              onSplit?.(group.id, "down", contextMenu.tabId);
+              closeMenu();
+            }}
+          >
+            Split down
+          </button>
+          <button
+            role="menuitem"
+            type="button"
+            onClick={() => {
+              onCloseTab(group.id, contextMenu.tabId);
+              closeMenu();
+            }}
+          >
+            Close tab
+          </button>
+        </div>
+      )}
+    </>
   );
 }

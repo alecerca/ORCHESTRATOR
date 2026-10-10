@@ -31,6 +31,9 @@ import {
   parseLayout,
   pruneSessionTabs,
   sessionTabIds,
+  splitGroup,
+  updateSplitSizes,
+  moveTab,
   type Layout,
 } from "./tabs";
 
@@ -370,6 +373,17 @@ export default function App() {
               setLayout((current) => closeTab(current, groupId, tabId))
             }
             onAbort={handleAbort}
+            onSplit={(groupId, direction, tabId) =>
+              setLayout((current) => splitGroup(current, groupId, direction, tabId))
+            }
+            onMoveTab={(sourceGroupId, tabId, targetGroupId, targetSide) =>
+              setLayout((current) =>
+                moveTab(current, sourceGroupId, tabId, targetGroupId, targetSide),
+              )
+            }
+            onUpdateSplitSizes={(splitId, sizes) =>
+              setLayout((current) => updateSplitSizes(current, splitId, sizes))
+            }
           />
         </main>
         {editorOpen && <EditorPanel theme={theme} rootSessionId={effectiveRootId} />}
