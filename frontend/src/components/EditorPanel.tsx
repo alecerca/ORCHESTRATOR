@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { readFile } from "../commands";
-import { useAppState } from "../store";
 import type { FileContent } from "../types";
 import { describeError } from "../utils";
 import { DiffViewer } from "./DiffViewer";
@@ -9,11 +8,12 @@ import { MonacoEditor } from "./MonacoEditor";
 
 interface Props {
   theme: "dark" | "light";
+  /** Effective orchestrator root (persisted pick, else `root_session_id`). */
+  rootSessionId: string | null;
 }
 
 /** Right column: file browser + in-memory editor, or the session diff. */
-export function EditorPanel({ theme }: Props) {
-  const state = useAppState();
+export function EditorPanel({ theme, rootSessionId }: Props) {
   const [tab, setTab] = useState<"files" | "diff">("files");
   const [path, setPath] = useState<string | null>(null);
   const [content, setContent] = useState<FileContent | null>(null);
@@ -81,7 +81,7 @@ export function EditorPanel({ theme }: Props) {
         </div>
       ) : (
         <div className="editor-panel__diff">
-          <DiffViewer sessionId={state.root_session_id ?? null} theme={theme} />
+          <DiffViewer sessionId={rootSessionId} theme={theme} />
         </div>
       )}
     </aside>

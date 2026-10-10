@@ -1,10 +1,15 @@
 import { useAppState } from "../store";
 import { shortId } from "../utils";
 
+interface Props {
+  /** Effective orchestrator root (persisted pick, else `root_session_id`). */
+  rootSessionId: string | null;
+}
+
 /** Top strip: brand, root session, server version and the connection dot. */
-export function TopBar() {
+export function TopBar({ rootSessionId }: Props) {
   const state = useAppState();
-  const rootId = state.root_session_id ?? null;
+  const rootId = rootSessionId;
   const rootSnapshot = rootId
     ? state.sessions.find((s) => s.session.id === rootId)
     : undefined;

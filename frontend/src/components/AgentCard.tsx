@@ -1,6 +1,8 @@
-import type { SessionSnapshot } from "../types";
+import type { AgentUiStatus, SessionSnapshot } from "../types";
 import { shortId } from "../utils";
 import { StatusChip } from "./StatusChip";
+
+const FINISHED: ReadonlySet<AgentUiStatus> = new Set(["done", "idle", "error"]);
 
 interface Props {
   snapshot: SessionSnapshot;
@@ -8,6 +10,8 @@ interface Props {
   isRoot?: boolean;
   onToggle: (sessionId: string) => void;
   onAbort: (sessionId: string) => void;
+  /** Omitted for the root row — the structural guarantee that it can't hide. */
+  onDismiss?: (sessionId: string) => void;
 }
 
 /** One sub-agent (or the orchestrator) in the agent panel. */
@@ -17,9 +21,11 @@ export function AgentCard({
   isRoot = false,
   onToggle,
   onAbort,
+  onDismiss,
 }: Props) {
   const { session, status, error } = snapshot;
   const canAbort = status === "running" || status === "waiting_approval";
+  const canDismiss = !isRoot && onDismiss !== undefined && FINISHED.has(status);
 
   return (
     <article
@@ -58,6 +64,16 @@ export function AgentCard({
           >
             {isOpen ? "Close" : "Open"}
           </button>
+          {canDismiss && (
+            <button
+              type="button"
+              className="btn btn--ghost btn--xs"
+              onClick={() => onDismiss?.(session.id)}
+              title="Hide from panel"
+            >
+              Hide
+            </button>
+          )}
         </div>
       </div>
       {error && <p className="agent-card__error">{error}</p>}

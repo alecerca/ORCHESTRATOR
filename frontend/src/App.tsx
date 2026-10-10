@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import * as api from "./commands";
 import { store, useAppState } from "./store";
-import { CORE_EVENT, type CoreMessage, type Effect } from "./types";
+import {
+  CORE_EVENT,
+  type AppStateSnapshot,
+  type CoreMessage,
+  type Effect,
+  type SessionSnapshot,
+} from "./types";
 import { describeError } from "./utils";
 import { TopBar } from "./components/TopBar";
 import { ActivityBar } from "./components/ActivityBar";
@@ -16,6 +22,8 @@ import { EditorPanel } from "./components/EditorPanel";
 type Theme = "dark" | "light";
 
 const THEME_KEY = "orquestador.theme";
+const DISMISSED_KEY = "orquestador.dismissed";
+const ROOT_PICK_KEY = "orquestador.rootPick";
 const EFFECT_LIMIT = 20;
 
 function initialTheme(): Theme {
@@ -30,6 +38,50 @@ function initialTheme(): Theme {
     : "dark";
 }
 
+/** Sessions without a parent are candidate orchestrator roots (see types.ts). */
+function parentlessSessions(snapshot: AppStateSnapshot): SessionSnapshot[] {
+  return snapshot.sessions.filter((entry) => !entry.session.parentID);
+}
+
+/**
+ * Effective orchestrator root: the persisted pick when it still exists as a
+ * parentless session, otherwise the snapshot's own `root_session_id`. Core
+ * `pick_root` is untouched — this only overrides what the UI treats as root.
+ */
+function resolveEffectiveRoot(
+  snapshot: AppStateSnapshot,
+  pick: string | null,
+): string | null {
+  if (pick) {
+    const picked = snapshot.sessions.find((entry) => entry.session.id === pick);
+    if (picked && !picked.session.parentID) return pick;
+  }
+  return snapshot.root_session_id ?? null;
+}
+
+/** Dismissed rows are UI-local: the sessions stay alive on the server. */
+function loadDismissed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((id): id is string => typeof id === "string"));
+    }
+  } catch {
+    // localStorage unavailable or corrupt — start with an empty set.
+  }
+  return new Set();
+}
+
+function loadRootPick(): string | null {
+  try {
+    return localStorage.getItem(ROOT_PICK_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const state = useAppState();
   const [theme, setTheme] = useState<Theme>(initialTheme);
@@ -39,6 +91,8 @@ export default function App() {
   const [editorOpen, setEditorOpen] = useState(true);
   const [composerOpen, setComposerOpen] = useState(true);
   const [banner, setBanner] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(loadDismissed);
+  const [rootPick, setRootPick] = useState<string | null>(loadRootPick);
 
   const prevPanesRef = useRef<string[]>([]);
 
@@ -52,6 +106,43 @@ export default function App() {
     }
   }, [theme]);
 
+  // Persist the UI-local hidden rows.
+  useEffect(() => {
+    try {
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissed]));
+    } catch {
+      // ignore
+    }
+  }, [dismissed]);
+
+  // Persist the orchestrator pick.
+  useEffect(() => {
+    try {
+      if (rootPick) localStorage.setItem(ROOT_PICK_KEY, rootPick);
+      else localStorage.removeItem(ROOT_PICK_KEY);
+    } catch {
+      // ignore
+    }
+  }, [rootPick]);
+
+  // A hidden row that becomes active again must reappear.
+  useEffect(() => {
+    setDismissed((current) => {
+      if (current.size === 0) return current;
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of current) {
+        const entry = state.sessions.find((s) => s.session.id === id);
+        if (entry && (entry.status === "running" || entry.status === "waiting_approval")) {
+          changed = true;
+          continue;
+        }
+        next.add(id);
+      }
+      return changed ? next : current;
+    });
+  }, [state.sessions]);
+
   // Bootstrap: seed the snapshot and open the orchestrator pane.
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +151,7 @@ export default function App() {
         const snapshot = await api.getState();
         if (cancelled) return;
         store.setState(snapshot);
-        const rootId = snapshot.root_session_id;
+        const rootId = resolveEffectiveRoot(snapshot, rootPick);
         if (rootId) {
           setPanes((current) => (current.length === 0 ? [rootId] : current));
         }
@@ -71,6 +162,8 @@ export default function App() {
     return () => {
       cancelled = true;
     };
+    // The pick is read once at mount: the persisted value seeds the first pane.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Live traffic from the Rust shell.
@@ -120,11 +213,35 @@ export default function App() {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
   }, []);
 
-  const rootSessionId = state.root_session_id ?? null;
+  const rootOptions = useMemo(() => parentlessSessions(state), [state]);
+  const effectiveRootId = useMemo(
+    () => resolveEffectiveRoot(state, rootPick),
+    [state, rootPick],
+  );
+
+  // Hide a finished row: UI-local only (the server session stays alive) — it
+  // also closes any pane and drops the stream so nothing is orphaned. The root
+  // row never reaches this handler (AgentPanel does not pass it the prop).
+  const dismiss = useCallback(
+    (sessionId: string) => {
+      if (sessionId === effectiveRootId) return;
+      setDismissed((current) => {
+        if (current.has(sessionId)) return current;
+        const next = new Set(current);
+        next.add(sessionId);
+        return next;
+      });
+      closePane(sessionId);
+      store.dropStream(sessionId);
+    },
+    [effectiveRootId, closePane],
+  );
+
+  const pickRoot = useCallback((sessionId: string) => setRootPick(sessionId), []);
 
   return (
     <div className="app">
-      <TopBar />
+      <TopBar rootSessionId={effectiveRootId} />
       <div className="app__body">
         <ActivityBar
           theme={theme}
@@ -140,8 +257,13 @@ export default function App() {
         {agentPanelOpen && (
           <AgentPanel
             openPanes={panes}
+            effectiveRootId={effectiveRootId}
+            parentless={rootOptions}
+            dismissed={dismissed}
             onTogglePane={togglePane}
             onAbort={handleAbort}
+            onDismiss={dismiss}
+            onPickRoot={pickRoot}
           />
         )}
         <main className="workspace">
@@ -160,9 +282,9 @@ export default function App() {
           )}
           <PaneGrid panes={panes} sessions={state.sessions} onClosePane={closePane} />
         </main>
-        {editorOpen && <EditorPanel theme={theme} />}
+        {editorOpen && <EditorPanel theme={theme} rootSessionId={effectiveRootId} />}
       </div>
-      {composerOpen && <Composer sessionId={rootSessionId} />}
+      {composerOpen && <Composer sessionId={effectiveRootId} />}
       <ApprovalDialog />
       <NotificationsDrawer
         effects={effects}
