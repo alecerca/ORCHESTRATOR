@@ -87,18 +87,22 @@ toggle; slash commands; `send_command` injection; skill sharing/sync; descriptio
 
 ## Tasks
 
-- [ ] **T1 — Core skills module (headless, testable)**: add `crates/orquestador-core/src/skills.rs`
+- [x] **T1 — Core skills module (headless, testable)**: add `crates/orquestador-core/src/skills.rs`
   with `slugify(&str) -> String`, `SkillInfo { name, path }`, and
   `build_preamble(&[(String, String)]) -> String` (delimited `<skills>` block, skips empty content).
   Declare the module in `lib.rs`. Unit tests: slugify normalization/rejection, preamble skips empties
   and preserves order. Route: inline (one new file + module decl, no research left). Verification:
-  `cargo test -p orquestador-core`.
-- [ ] **T2 — Tauri skill commands + hidden injection (shell)**: in `src-tauri/src/commands.rs` add
+  `cargo test -p orquestador-core`. **Evidence: commit `8850d73`; `cargo test -p orquestador-core skills`
+  → 4 passed, 0 failed.**
+- [x] **T2 — Tauri skill commands + hidden injection (shell)**: in `src-tauri/src/commands.rs` add
   `skills_dir(app)`, `list_skills`, `read_skill`, `save_skill`, `delete_skill`; extend
   `send_message`/`send_message_async` with `skills: Option<Vec<String>>` and set `body.system` from
   `skills::build_preamble` (reading each file; skip missing). Register the new commands in
   `src-tauri/src/lib.rs`. Route: delegated backend writer. Verification: `cargo check` /
-  `cargo test` (compile + core) — the shell crate is not unit-tested headless.
+  `cargo test` (compile + core). **Evidence: commit `88ca366`; `cargo check --manifest-path
+  src-tauri/Cargo.toml` clean; `cargo test -p orquestador-core` → 71 passed.** Worker flagged: `skills`
+  payload shape must match T3's frontend arg name; out-of-band non-slug `.md` files are returned by
+  file stem (spec says name = stem, so left as-is).
 - [ ] **T3 — Frontend skill IPC + selection store (frontend)**: `commands.ts` gains
   `listSkills`/`readSkill`/`saveSkill`/`deleteSkill` and an optional `skills?: string[]` on
   `sendMessageAsync`/`sendMessage`; new `frontend/src/skills.ts` owns the selected-name state with
