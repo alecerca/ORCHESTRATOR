@@ -68,6 +68,7 @@ Inter-agent channel: handoff docs in `docs/` (each agent reads the previous agen
 
 - [x] Feature document created (parent, 2026-10-10) — env probed: Rust 1.99, Node 24, npm 11; webkit2gtk missing; RDD on.
 - [x] T2 implemented (worker B) — core fix (`respond_permission` omits `remember: null`) + full frontend (store, 23 invoke commands, 16 components, local Monaco with 5 workers); 39 tests GREEN, clippy `--workspace --all-targets -D warnings` clean, `tsc --noEmit` clean, `vite build` OK, `scripts/verify-headless.sh` OK. src-tauri not compiled (env-blocked, expected).
-- [ ] T3 audited/documented — pending
-- Commits: `046b0c0` chore: scaffold orquestador workspace and implementation plan (T1) · `b662e94` feat: implement orquestador dashboard (core, UI, tauri shell) (T2)
-- Next step: launch worker C (auditor: adversarial review + full headless verification + AUDIT.md/RUNBOOK + fix bounded defects; doubles as independent verifier — RDD assess returned high/unassessable, writer self-verification done).
+- [x] T3 audited/documented (worker C) — **PASS** independiente: 39 tests, clippy clean, tsc + vite build re-verificados; fix acotado F1 (`OPENCODE_SERVER_BASE_URL` + alias legacy `OPENCODE_SERVER_URL`); hallazgos F2–F6 documentados; `docs/AUDIT.md` + `docs/RUNBOOK.md` + README finalizado.
+- Commits: `046b0c0` chore: scaffold (T1) · `b662e94` feat: implement (T2) · `2b412ff` docs: audit+runbook (T3)
+- Review nativo RDD: assessment `medium`/`slice_budget_reached` → preflight `fresh_target_ready` → START devolvió consent/v3 → **usuario declinó (10/10)**: revisión manual propia. Cierre validado: `action: declined` · `consent: declined_this_candidate` · target idéntico.
+- Next step: usuario instala deps del sistema (`sudo scripts/setup-system-deps.sh`) y corre `npx @tauri-apps/cli dev`; el pipeline de 3 agentes quedó COMPLETO.

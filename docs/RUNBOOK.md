@@ -42,15 +42,28 @@ If your server uses HTTP basic auth, note the password for step 4.
 
 ## 3. Install the system dependencies (once, GUI only)
 
-The `src-tauri` crate needs `webkit2gtk-4.1` and an ayatana appindicator. Print
-the exact command and run it yourself (an agent will not use `sudo`):
+The `src-tauri` crate needs `webkit2gtk-4.1` and an AppIndicator. The script
+detects your package manager and prints the exact command; run it yourself (an
+agent will not use `sudo`):
 
 ```sh
-bash scripts/setup-system-deps.sh      # prints the apt-get line
-# then, as your user:
-sudo apt-get update && sudo apt-get install -y \
-  build-essential curl wget file libssl-dev libgtk-3-dev \
-  libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+bash scripts/setup-system-deps.sh      # prints the dnf/apt line for your distro
+```
+
+Fedora (dnf):
+
+```sh
+sudo dnf groupinstall "Development Tools"
+sudo dnf install -y curl wget file openssl-devel gtk3-devel \
+  webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel patchelf
+```
+
+Debian/Ubuntu (apt-get):
+
+```sh
+sudo apt-get update && sudo apt-get install -y build-essential curl wget file \
+  libssl-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev librsvg2-dev patchelf
 ```
 
 First compile of the shell is slow:
