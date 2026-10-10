@@ -124,9 +124,9 @@ toggle; slash commands; `send_command` injection; skill sharing/sync; descriptio
 - [x] **T6 — Skill editor + save-on-close (frontend)**: new `SkillEditor.tsx`, `SkillSavePrompt.tsx`,
   `skillDrafts.ts`, and App wiring to intercept close for dirty skill tabs (Save/Discard/Cancel).
   Route: Worker B (T4+T6). Verification: typecheck + build. **Evidence: commit `2605478`.**
-- [ ] **T7 — Docs + feature finalization**: update `docs/PLAN.md` (command list, module) and
+- [x] **T7 — Docs + feature finalization**: update `docs/PLAN.md` (command list, module) and
   `docs/ARCHITECTURE.md` (skills store + injection) and check off this doc's tasks with evidence.
-  Route: inline.
+  Route: inline. **Evidence: commit `0668e9c`.**
 - [ ] **T8 — Verification**: `cargo test --workspace`, `cd frontend && npm run typecheck && npm run
   build`; record results. Manual in-app steps deferred to the user (needs `webkit2gtk-4.1` + a running
   opencode server). Route: delegated verifier.
