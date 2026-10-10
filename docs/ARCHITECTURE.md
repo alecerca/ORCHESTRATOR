@@ -68,3 +68,10 @@ plain workspace member with **zero** Tauri dependency and is verified headless
 - **No state framework** — `useSyncExternalStore` + a tiny store is enough and
   keeps the bundle small (SPEC §5 asks for "small").
 - **Monaco bundled locally** — offline, no CDN; workers via `?worker`.
+
+### Skills (header panel)
+
+- **Storage**: app config dir (`app.path().app_config_dir()`) under `skills/<slug>.md`. Name = slugified filename stem; `save_skill` writes/overwrites, `list_skills` scans for `*.md`, `read_skill`/`delete_skill` operate by slug.
+- **Core**: `crates/orquestador-core/src/skills.rs` provides pure helpers `slugify`, `SkillInfo { name, path }`, and `build_preamble(&[(String, String)])` which emits a delimited `<skills>` block (empty content skipped). Unit-tested (4 tests).
+- **Shell**: four Tauri commands `list_skills`/`read_skill`/`save_skill`/`delete_skill`. Both `send_message` and `send_message_async` take `app: AppHandle` + `skills: Option<Vec<String>>`; `apply_skills` reads each selected skill and folds them into `PromptBody.system` (appended; unreadable/missing skills are silently skipped). Never fails the send.
+- **Frontend**: `skills.ts` (selection store persisted to `localStorage["orquestador.skills"]`, `useSyncExternalStore`-compatible), `skillDrafts.ts` (per-tab editor drafts with baseline-based dirtiness), `SkillEditor` + `SkillSavePrompt` components. TopBar renders Skills dropdown + `+` (New/Import). Skill tabs (`kind: "skill"`) render in `PaneGrid`, are dropped on layout restore (`normalizeTab`), and closing a dirty skill tab prompts Save/Discard/Cancel (non-skill tabs unaffected). Composer/FollowUpInput pass selected skill names on every send; the Rust shell injects them as a hidden system block (no transcript pollution).

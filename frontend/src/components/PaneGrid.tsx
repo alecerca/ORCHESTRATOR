@@ -19,6 +19,7 @@ import type { SessionSnapshot } from "../types";
 import { AgentPane } from "./AgentPane";
 import { FileViewer } from "./FileViewer";
 import { GroupInfoBar } from "./GroupInfoBar";
+import { SkillEditor } from "./SkillEditor";
 import { SplitDivider } from "./SplitDivider";
 import { TAB_DRAG_MIME, TabStrip } from "./TabStrip";
 
@@ -170,10 +171,10 @@ function dropZone(event: DragEvent<HTMLDivElement>): DropSide {
 
 /**
  * One split group: its tab strip, the thin info bar for the active tab, and the
- * active tab's document — an agent transcript for a `session` tab or the file
- * viewer for a `file` tab. Clicking anywhere in the group makes it active
- * (where the next opened tab lands). Its content area is a drop target for tabs
- * dragged from any group.
+ * active tab's document — an agent transcript for a `session` tab, the file
+ * viewer for a `file` tab, or the skill editor for a `skill` tab. Clicking
+ * anywhere in the group makes it active (where the next opened tab lands). Its
+ * content area is a drop target for tabs dragged from any group.
  */
 function GroupView({
   group,
@@ -189,6 +190,7 @@ function GroupView({
   const activeTab = activeTabOf(group);
   const sessionId = activeTab ? tabSessionId(activeTab) : null;
   const filePath = activeTab ? tabPath(activeTab) : null;
+  const skill = activeTab && activeTab.kind === "skill" ? activeTab : null;
   const snapshot = sessionId
     ? sessions.find((entry) => entry.session.id === sessionId)
     : undefined;
@@ -261,6 +263,7 @@ function GroupView({
           </>
         )}
         {!sessionId && filePath && <FileViewer path={filePath} theme={theme} />}
+        {skill && <SkillEditor key={skill.id} tabId={skill.id} name={skill.name} theme={theme} />}
         {dropSide && (
           <div className={`drop-indicator drop-indicator--${dropSide}`} aria-hidden="true" />
         )}

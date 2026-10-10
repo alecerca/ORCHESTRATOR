@@ -18,6 +18,7 @@ import { Composer } from "./components/Composer";
 import { ApprovalDialog } from "./components/ApprovalDialog";
 import { NotificationsDrawer } from "./components/NotificationsDrawer";
 import { EditorPanel } from "./components/EditorPanel";
+import { SkillSavePrompt } from "./components/SkillSavePrompt";
 import {
   EMPTY_LAYOUT,
   LAYOUT_KEY,
@@ -27,9 +28,11 @@ import {
   closeAllTabs,
   closeSessionTabs,
   closeTab,
+  getTab,
   hasSessionTab,
   openFileTab,
   openSessionTab,
+  openSkillTab,
   parseLayout,
   pruneSessionTabs,
   sessionTabIds,
@@ -38,6 +41,7 @@ import {
   moveTab,
   type Layout,
 } from "./tabs";
+import { clearDraft, getDraft, isDirty, markSaved } from "./skillDrafts";
 
 type Theme = "dark" | "light";
 
@@ -125,6 +129,15 @@ export default function App() {
   const [banner, setBanner] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(loadDismissed);
   const [rootPick, setRootPick] = useState<string | null>(loadRootPick);
+  // Save-on-close gate: a dirty skill tab whose close was requested but not yet
+  // granted. Only skill tabs ever reach it — every other tab closes directly.
+  const [pendingSkillClose, setPendingSkillClose] = useState<{
+    groupId: string;
+    tabId: string;
+    name: string;
+  } | null>(null);
+  const [savingSkill, setSavingSkill] = useState(false);
+  const [saveSkillError, setSaveSkillError] = useState<string | null>(null);
 
   const hadPersistedLayout = useRef(persistedLayout !== null);
   const previousSessionIds = useRef<string[]>([]);
@@ -265,6 +278,64 @@ export default function App() {
 
   const closeAllPanes = useCallback(() => setLayout(closeAllTabs()), []);
 
+  /**
+   * Close a tab, gating dirty skill tabs behind the save prompt. A clean skill
+   * tab is closed straight away and its draft dropped; every other kind keeps
+   * today's behaviour. Both the TabStrip ✕ and its context-menu Close tab route
+   * through here.
+   */
+  const requestCloseTab = useCallback(
+    (groupId: string, tabId: string) => {
+      const tab = getTab(layout, groupId, tabId);
+      if (tab?.kind === "skill" && isDirty(tab.id)) {
+        setSaveSkillError(null);
+        setPendingSkillClose({ groupId, tabId, name: tab.name });
+        return;
+      }
+      if (tab?.kind === "skill") clearDraft(tab.id);
+      setLayout((current) => closeTab(current, groupId, tabId));
+    },
+    [layout],
+  );
+
+  /** Save the pending draft to disk, then close its tab. */
+  const savePendingSkill = useCallback(async () => {
+    if (!pendingSkillClose) return;
+    setSavingSkill(true);
+    setSaveSkillError(null);
+    try {
+      const draft = getDraft(pendingSkillClose.tabId);
+      await api.saveSkill(pendingSkillClose.name, draft?.content ?? "");
+      markSaved(pendingSkillClose.tabId);
+      clearDraft(pendingSkillClose.tabId);
+      setLayout((current) =>
+        closeTab(current, pendingSkillClose.groupId, pendingSkillClose.tabId),
+      );
+      setPendingSkillClose(null);
+    } catch (cause) {
+      // Keep the tab open and surface the failure so the content is not lost.
+      setSaveSkillError(describeError(cause));
+    } finally {
+      setSavingSkill(false);
+    }
+  }, [pendingSkillClose]);
+
+  /** Close without saving; the draft (and any scaffold) is dropped. */
+  const discardPendingSkill = useCallback(() => {
+    if (!pendingSkillClose) return;
+    clearDraft(pendingSkillClose.tabId);
+    setLayout((current) =>
+      closeTab(current, pendingSkillClose.groupId, pendingSkillClose.tabId),
+    );
+    setPendingSkillClose(null);
+    setSaveSkillError(null);
+  }, [pendingSkillClose]);
+
+  const cancelPendingSkill = useCallback(() => {
+    setPendingSkillClose(null);
+    setSaveSkillError(null);
+  }, []);
+
   const handleAbort = useCallback((sessionId: string) => {
     void api.abortSession(sessionId).catch((cause) => {
       setBanner(`Abort failed: ${describeError(cause)}`);
@@ -325,7 +396,10 @@ export default function App() {
 
   return (
     <div className="app">
-      <TopBar rootSessionId={effectiveRootId} />
+      <TopBar
+        rootSessionId={effectiveRootId}
+        onOpenSkill={(name) => setLayout((current) => openSkillTab(current, name))}
+      />
       <div className="app__body">
         <ActivityBar
           theme={theme}
@@ -375,9 +449,7 @@ export default function App() {
             onActivateGroup={(groupId) =>
               setLayout((current) => activateGroup(current, groupId))
             }
-            onCloseTab={(groupId, tabId) =>
-              setLayout((current) => closeTab(current, groupId, tabId))
-            }
+            onCloseTab={(groupId, tabId) => requestCloseTab(groupId, tabId)}
             onAbort={handleAbort}
             onSplit={(groupId, direction, tabId) =>
               setLayout((current) => splitGroup(current, groupId, direction, tabId))
@@ -403,6 +475,16 @@ export default function App() {
       </div>
       {composerOpen && <Composer sessionId={effectiveRootId} />}
       <ApprovalDialog />
+      {pendingSkillClose && (
+        <SkillSavePrompt
+          name={pendingSkillClose.name}
+          busy={savingSkill}
+          error={saveSkillError}
+          onSave={() => void savePendingSkill()}
+          onDiscard={discardPendingSkill}
+          onCancel={cancelPendingSkill}
+        />
+      )}
       <NotificationsDrawer
         effects={effects}
         onDismiss={(index) =>

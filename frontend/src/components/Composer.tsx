@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { sendMessageAsync } from "../commands";
+import { getSelectedNames } from "../skills";
 import { describeError } from "../utils";
 
 interface Props {
@@ -21,7 +22,7 @@ export function Composer({ sessionId }: Props) {
     setSending(true);
     setError(null);
     try {
-      await sendMessageAsync(sessionId, value);
+      await sendMessageAsync(sessionId, value, undefined, getSelectedNames());
       setText("");
     } catch (cause) {
       setError(describeError(cause));
