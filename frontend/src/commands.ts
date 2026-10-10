@@ -17,6 +17,7 @@ import type {
   PermissionResponse,
   Session,
   SessionStatus,
+  SkillInfo,
   Todo,
 } from "./types";
 
@@ -42,13 +43,18 @@ export const getTodos = (sessionId: string) =>
   invoke<Todo[]>("get_todos", { sessionId });
 
 // -- instructions ------------------------------------------------------------
-export const sendMessage = (sessionId: string, text: string, agent?: string) =>
-  invoke<MessageBundle>("send_message", { sessionId, text, agent });
+export const sendMessage = (
+  sessionId: string,
+  text: string,
+  agent?: string,
+  skills?: string[],
+) => invoke<MessageBundle>("send_message", { sessionId, text, agent, skills });
 export const sendMessageAsync = (
   sessionId: string,
   text: string,
   agent?: string,
-) => invoke<void>("send_message_async", { sessionId, text, agent });
+  skills?: string[],
+) => invoke<void>("send_message_async", { sessionId, text, agent, skills });
 export const sendCommand = (
   sessionId: string,
   command: string,
@@ -88,3 +94,11 @@ export const fileStatus = () => invoke<FileStatus[]>("file_status");
 export const findFiles = (query: string, limit?: number) =>
   invoke<string[]>("find_files", { query, limit });
 export const findSymbols = (query: string) => invoke<unknown[]>("find_symbols", { query });
+
+// -- skills ------------------------------------------------------------------
+export const listSkills = () => invoke<SkillInfo[]>("list_skills");
+export const readSkill = (name: string) => invoke<string>("read_skill", { name });
+export const saveSkill = (name: string, content: string) =>
+  invoke<SkillInfo>("save_skill", { name, content });
+export const deleteSkill = (name: string) =>
+  invoke<boolean>("delete_skill", { name });

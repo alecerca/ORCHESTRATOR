@@ -185,6 +185,16 @@ export interface MessageBundle {
 }
 
 // ---------------------------------------------------------------------------
+// Skills (Orquestador-owned markdown instruction files)
+// ---------------------------------------------------------------------------
+
+/** A stored skill as returned by the `list_skills` / `save_skill` commands. */
+export interface SkillInfo {
+  name: string;
+  path: string;
+}
+
+// ---------------------------------------------------------------------------
 // Files / diffs
 // ---------------------------------------------------------------------------
 
