@@ -127,9 +127,11 @@ toggle; slash commands; `send_command` injection; skill sharing/sync; descriptio
 - [x] **T7 — Docs + feature finalization**: update `docs/PLAN.md` (command list, module) and
   `docs/ARCHITECTURE.md` (skills store + injection) and check off this doc's tasks with evidence.
   Route: inline. **Evidence: commit `0668e9c`.**
-- [ ] **T8 — Verification**: `cargo test --workspace`, `cd frontend && npm run typecheck && npm run
+- [x] **T8 — Verification**: `cargo test --workspace`, `cd frontend && npm run typecheck && npm run
   build`; record results. Manual in-app steps deferred to the user (needs `webkit2gtk-4.1` + a running
-  opencode server). Route: delegated verifier.
+  opencode server). Route: delegated verifier. **Evidence: commit `26da528` context; `cargo test
+  --workspace` → 71 passed (core), 0 doc failures; `cd frontend && npx tsc --noEmit` → clean (0
+  errors); `npx vite build` → succeeded (1130 modules transformed).**
 
 ## Authorized scope
 
