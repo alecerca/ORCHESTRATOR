@@ -110,17 +110,18 @@ toggle; slash commands; `send_command` injection; skill sharing/sync; descriptio
   Also wired send call sites (`Composer.tsx`, `FollowUpInput.tsx`) to pass `getSelectedNames()`.
   Route: inline for call-site wiring + committed after Worker A delivered IPC/store. Verification:
   `npm run typecheck`. **Evidence: commit `4918662`; `cd frontend && npm run typecheck` → clean.**
-- [ ] **T4 — `skill` tab kind (frontend)**: extend `frontend/src/tabs.ts` (`SkillTab` union member, key
-  fn, `openTab`/`openSkillTab`, `isTab`/`normalizeTab` + drop-on-restore), `TabStrip.tsx` title, and
-  `PaneGrid.tsx` body branch (`kind==="skill"` → `SkillEditor`). Route: delegated frontend writer.
+- [x] **T4 — `skill` tab kind (frontend)**: extend `frontend/src/tabs.ts` (`SkillTab` union member, key
+  fn, `openSkillTab`, `isTab`/`normalizeTab` + drop-on-restore), `TabStrip.tsx` title, and
+  `PaneGrid.tsx` body branch (`kind==="skill"` → `SkillEditor`). Also added `skillDrafts.ts` and
+  `SkillEditor.tsx`. Route: Worker B (T4+T6). Verification: typecheck + build. **Evidence: commit
+  `2605478`; typecheck clean; `vite build` succeeded.**
 - [ ] **T5 — Header Skills + `+` (frontend)**: `TopBar.tsx` gains a `topbar__actions` region: a
   **Skills** button + popover (list from `listSkills`, toggle per skill, selection highlighted) and a
   **`+`** button + menu (**New skill…** name prompt → open skill tab with scaffold; **Import .md…** →
   hidden file input → `saveSkill`). Route: delegated frontend writer.
-- [ ] **T6 — Skill editor + save-on-close (frontend)**: new `frontend/src/components/SkillEditor.tsx`
-  (Monaco markdown, dirty tracking, load via `readSkill`); wire the close path so **only** `skill` tabs
-  prompt "Save skill?" (Save → `saveSkill` then close; Discard → close), covering both the `TabStrip` ✕
-  and the context-menu close in `App.tsx:378-380`. Route: delegated frontend writer.
+- [x] **T6 — Skill editor + save-on-close (frontend)**: new `SkillEditor.tsx`, `SkillSavePrompt.tsx`,
+  `skillDrafts.ts`, and App wiring to intercept close for dirty skill tabs (Save/Discard/Cancel).
+  Route: Worker B (T4+T6). Verification: typecheck + build. **Evidence: commit `2605478`.**
 - [ ] **T7 — Docs + feature finalization**: update `docs/PLAN.md` (command list, module) and
   `docs/ARCHITECTURE.md` (skills store + injection) and check off this doc's tasks with evidence.
   Route: inline.
