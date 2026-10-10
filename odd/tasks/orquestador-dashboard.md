@@ -67,8 +67,8 @@ Inter-agent channel: handoff docs in `docs/` (each agent reads the previous agen
 ## Progress log
 
 - [x] Feature document created (parent, 2026-10-10) — env probed: Rust 1.99, Node 24, npm 11; webkit2gtk missing; RDD on.
-- [ ] T1 planned/scaffolded — pending
+- [x] T1 planned/scaffolded (worker A) — `docs/PLAN.md` (466 lines) + ARCHITECTURE.md + IMPLEMENTATION_PLAN.md; core skeleton with 37 workspace tests GREEN; cargo metadata/check ok; npm install + tsc + vite build ok on stub; git initialized on main.
 - [ ] T2 implemented — pending
 - [ ] T3 audited/documented — pending
-- Commits: _none yet_
-- Next step: launch worker A (planner).
+- Commits: `046b0c0` chore: scaffold orquestador workspace and implementation plan (T1)
+- Next step: launch worker B (implementer, PLAN.md steps).

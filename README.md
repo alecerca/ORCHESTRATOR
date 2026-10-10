@@ -5,10 +5,11 @@ composer for the orchestrator session, a live panel of sub-agents with status,
 split panes with each agent's message stream, interrupt / re-instruct, approval
 prompts with desktop notifications, and a Monaco editor with a diff viewer.
 
-> **Status: planning / scaffold.** The architecture and the headless core are in
-> place and verified; the UI and the Tauri shell are scaffolded. See
-> `docs/PLAN.md` (master contract), `docs/ARCHITECTURE.md`, and the canonical
-> `SPEC.md`.
+> **Status: implemented.** The headless core is verified (39 unit tests) and the
+> frontend is complete and building; the Tauri shell is scaffolded and needs the
+> system dependencies below to compile. See `docs/PLAN.md` (master contract),
+> `docs/ARCHITECTURE.md`, `docs/IMPLEMENTATION_NOTES.md` (what was built and how
+> it was verified), and the canonical `SPEC.md`.
 
 ## Stack
 

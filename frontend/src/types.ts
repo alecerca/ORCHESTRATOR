@@ -49,6 +49,9 @@ export interface Permission {
   metadata?: unknown;
 }
 
+/** The set of answers the server accepts (NOT allow/deny). */
+export type PermissionResponse = "once" | "always" | "reject";
+
 export interface Agent {
   name: string;
   description?: string;
@@ -56,6 +59,12 @@ export interface Agent {
   builtIn: boolean;
   color?: string;
   model?: ModelRef;
+}
+
+/** `GET /global/health` */
+export interface Health {
+  healthy: boolean;
+  version: string;
 }
 
 export interface Todo {
@@ -98,6 +107,117 @@ export type CoreMessage =
   | { kind: "raw_event"; event: unknown }
   | { kind: "state_snapshot"; snapshot: AppStateSnapshot }
   | { kind: "effect"; effect: Effect };
+
+// ---------------------------------------------------------------------------
+// Messages / parts (stream UI)
+// ---------------------------------------------------------------------------
+
+export interface ToolTime {
+  start: number;
+  end?: number;
+}
+
+export type ToolState =
+  | { status: "pending"; input?: unknown; raw?: string }
+  | { status: "running"; input?: unknown; title?: string; time?: ToolTime }
+  | {
+      status: "completed";
+      input?: unknown;
+      output?: string;
+      title?: string;
+      metadata?: unknown;
+      time?: ToolTime;
+    }
+  | {
+      status: "error";
+      input?: unknown;
+      error?: string;
+      metadata?: unknown;
+      time?: ToolTime;
+    };
+
+/**
+ * A message part. Kept deliberately loose (an index signature plus the common
+ * optional fields) so a new part type on the server never breaks the stream
+ * renderer — it simply renders its fallback shape.
+ */
+export interface Part {
+  id: string;
+  sessionID: string;
+  messageID: string;
+  type: string;
+  text?: string;
+  tool?: string;
+  callID?: string;
+  state?: ToolState;
+  prompt?: string;
+  description?: string;
+  agent?: string;
+  name?: string;
+  filename?: string;
+  reason?: string;
+  [key: string]: unknown;
+}
+
+export interface MessageErrorInfo {
+  name?: string;
+  data?: { message?: string; statusCode?: number };
+}
+
+export interface Message {
+  id: string;
+  sessionID: string;
+  role: "user" | "assistant" | string;
+  time: { created: number; completed?: number };
+  error?: MessageErrorInfo;
+  agent?: string;
+  [key: string]: unknown;
+}
+
+/** `{ info, parts }` — every message-returning endpoint. */
+export interface MessageBundle {
+  info: Message;
+  parts: Part[];
+}
+
+// ---------------------------------------------------------------------------
+// Files / diffs
+// ---------------------------------------------------------------------------
+
+export interface FileDiff {
+  file: string;
+  before: string;
+  after: string;
+  additions: number;
+  deletions: number;
+}
+
+export type FileNodeKind = "file" | "directory";
+
+export interface FileNode {
+  name: string;
+  path: string;
+  absolute: string;
+  type: FileNodeKind;
+  ignored?: boolean;
+}
+
+export interface FileContent {
+  type: "text" | "binary";
+  content: string;
+  diff?: string;
+  encoding?: string;
+  mimeType?: string;
+}
+
+export type FileStatusKind = "added" | "deleted" | "modified";
+
+export interface FileStatus {
+  path: string;
+  added: number;
+  removed: number;
+  status: FileStatusKind;
+}
 
 /** Tauri event name emitted by the Rust shell. */
 export const CORE_EVENT = "core://message";

@@ -1,81 +1,176 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { store, useAppState, useLastMessage } from "./store";
-import { CORE_EVENT, type AppStateSnapshot, type CoreMessage } from "./types";
+import * as api from "./commands";
+import { store, useAppState } from "./store";
+import { CORE_EVENT, type CoreMessage, type Effect } from "./types";
+import { describeError } from "./utils";
+import { TopBar } from "./components/TopBar";
+import { ActivityBar } from "./components/ActivityBar";
+import { AgentPanel } from "./components/AgentPanel";
+import { PaneGrid } from "./components/PaneGrid";
+import { Composer } from "./components/Composer";
+import { ApprovalDialog } from "./components/ApprovalDialog";
+import { NotificationsDrawer } from "./components/NotificationsDrawer";
+import { EditorPanel } from "./components/EditorPanel";
 
-/**
- * Scaffold shell.
- *
- * It only proves the end-to-end contract (command `get_state` + the
- * `core://message` event) so the real UI work can build on a verified base.
- * AGENT 2 replaces the body with the component tree defined in `docs/PLAN.md`.
- */
+type Theme = "dark" | "light";
+
+const THEME_KEY = "orquestador.theme";
+const EFFECT_LIMIT = 20;
+
+function initialTheme(): Theme {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "dark" || saved === "light") return saved;
+  } catch {
+    // localStorage unavailable — fall through to system preference.
+  }
+  return window.matchMedia("(prefers-color-scheme: light)").matches
+    ? "light"
+    : "dark";
+}
+
 export default function App() {
   const state = useAppState();
-  const lastMessage = useLastMessage();
-  const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<Theme>(initialTheme);
+  const [panes, setPanes] = useState<string[]>([]);
+  const [effects, setEffects] = useState<Effect[]>([]);
+  const [agentPanelOpen, setAgentPanelOpen] = useState(true);
+  const [editorOpen, setEditorOpen] = useState(true);
+  const [composerOpen, setComposerOpen] = useState(true);
+  const [banner, setBanner] = useState<string | null>(null);
 
+  const prevPanesRef = useRef<string[]>([]);
+
+  // Persist theme + tag the document for the palette.
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let disposed = false;
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // ignore
+    }
+  }, [theme]);
 
+  // Bootstrap: seed the snapshot and open the orchestrator pane.
+  useEffect(() => {
+    let cancelled = false;
     void (async () => {
       try {
-        const initial = await invoke<AppStateSnapshot>("get_state");
-        store.setState(initial);
+        const snapshot = await api.getState();
+        if (cancelled) return;
+        store.setState(snapshot);
+        const rootId = snapshot.root_session_id;
+        if (rootId) {
+          setPanes((current) => (current.length === 0 ? [rootId] : current));
+        }
       } catch (cause) {
-        setError(String(cause));
-      }
-
-      const off = await listen<CoreMessage>(CORE_EVENT, (event) => {
-        store.pushMessage(event.payload);
-      });
-      if (disposed) {
-        off();
-      } else {
-        unlisten = off;
+        if (!cancelled) setBanner(`Could not reach the core: ${describeError(cause)}`);
       }
     })();
-
     return () => {
-      disposed = true;
-      unlisten?.();
+      cancelled = true;
     };
   }, []);
 
-  const rootId = state?.root_session_id ?? "—";
-  const connected = state?.connected ? "connected" : "disconnected";
+  // Live traffic from the Rust shell.
+  useEffect(() => {
+    const unlistenPromise = listen<CoreMessage>(CORE_EVENT, (event) => {
+      const message = event.payload;
+      store.pushMessage(message);
+      if (message.kind === "effect") {
+        setEffects((current) => [message.effect, ...current].slice(0, EFFECT_LIMIT));
+      }
+    });
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  // Drop the stream cache of panes that were closed.
+  useEffect(() => {
+    const previous = prevPanesRef.current;
+    for (const sessionId of previous) {
+      if (!panes.includes(sessionId)) store.dropStream(sessionId);
+    }
+    prevPanesRef.current = panes;
+  }, [panes]);
+
+  const togglePane = useCallback((sessionId: string) => {
+    setPanes((current) =>
+      current.includes(sessionId)
+        ? current.filter((id) => id !== sessionId)
+        : [...current, sessionId],
+    );
+  }, []);
+
+  const closePane = useCallback((sessionId: string) => {
+    setPanes((current) => current.filter((id) => id !== sessionId));
+  }, []);
+
+  const closeAllPanes = useCallback(() => setPanes([]), []);
+
+  const handleAbort = useCallback((sessionId: string) => {
+    void api.abortSession(sessionId).catch((cause) => {
+      setBanner(`Abort failed: ${describeError(cause)}`);
+    });
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
+  }, []);
+
+  const rootSessionId = state.root_session_id ?? null;
 
   return (
-    <main className="shell">
-      <header className="shell__header">
-        <h1>Orquestador</h1>
-        <span className={`status status--${state?.connected ? "up" : "down"}`}>
-          {connected}
-        </span>
-      </header>
-
-      <section className="shell__body">
-        <dl className="facts">
-          <dt>Root session</dt>
-          <dd>{rootId}</dd>
-          <dt>Sessions</dt>
-          <dd>{state?.sessions.length ?? 0}</dd>
-          <dt>Pending approvals</dt>
-          <dd>{state?.permissions.length ?? 0}</dd>
-          <dt>Server version</dt>
-          <dd>{state?.server_version ?? "—"}</dd>
-        </dl>
-
-        <pre className="stream">
-          {lastMessage
-            ? JSON.stringify(lastMessage, null, 2)
-            : "No core messages yet."}
-        </pre>
-      </section>
-
-      {error && <p className="error">{error}</p>}
-    </main>
+    <div className="app">
+      <TopBar />
+      <div className="app__body">
+        <ActivityBar
+          theme={theme}
+          agentPanelOpen={agentPanelOpen}
+          editorOpen={editorOpen}
+          composerOpen={composerOpen}
+          onToggleAgentPanel={() => setAgentPanelOpen((value) => !value)}
+          onToggleEditor={() => setEditorOpen((value) => !value)}
+          onToggleComposer={() => setComposerOpen((value) => !value)}
+          onCloseAllPanes={closeAllPanes}
+          onToggleTheme={toggleTheme}
+        />
+        {agentPanelOpen && (
+          <AgentPanel
+            openPanes={panes}
+            onTogglePane={togglePane}
+            onAbort={handleAbort}
+          />
+        )}
+        <main className="workspace">
+          {banner && (
+            <div className="banner" role="alert">
+              <span className="banner__text">{banner}</span>
+              <button
+                type="button"
+                className="banner__close"
+                onClick={() => setBanner(null)}
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+          <PaneGrid panes={panes} sessions={state.sessions} onClosePane={closePane} />
+        </main>
+        {editorOpen && <EditorPanel theme={theme} />}
+      </div>
+      {composerOpen && <Composer sessionId={rootSessionId} />}
+      <ApprovalDialog />
+      <NotificationsDrawer
+        effects={effects}
+        onDismiss={(index) =>
+          setEffects((current) => current.filter((_, i) => i !== index))
+        }
+        onDismissAll={() => setEffects([])}
+      />
+    </div>
   );
 }

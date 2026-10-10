@@ -329,7 +329,12 @@ impl OpenCodeClient {
             Self::seg(id),
             Self::seg(permission_id)
         );
-        let body = serde_json::json!({ "response": response.as_str(), "remember": remember });
+        // `remember` is optional and MUST be omitted when absent (PLAN §6.3);
+        // a JSON `null` would make strict servers reject the body.
+        let mut body = serde_json::json!({ "response": response.as_str() });
+        if let Some(remember) = remember {
+            body["remember"] = serde_json::Value::Bool(remember);
+        }
         let res = self
             .request(reqwest::Method::POST, &path)
             .json(&body)
@@ -492,15 +497,25 @@ mod tests {
             let raw = http_response(status, body);
             let request = tokio::spawn(async move {
                 let (mut socket, _) = listener.accept().await.unwrap();
-                let mut buf = vec![0u8; 8192];
+                let mut buf = vec![0u8; 16384];
                 let mut read = 0usize;
+                // Read until the client stops sending for a short idle window,
+                // so the request BODY is captured too (headers + body often
+                // arrive in separate segments; the old loop stopped at the
+                // header terminator and lost the body).
                 loop {
-                    let n = socket.read(&mut buf[read..]).await.unwrap();
-                    if n == 0 {
-                        break;
+                    match tokio::time::timeout(
+                        Duration::from_millis(50),
+                        socket.read(&mut buf[read..]),
+                    )
+                    .await
+                    {
+                        Ok(Ok(0)) => break,
+                        Ok(Ok(n)) => read += n,
+                        Ok(Err(_)) => break,
+                        Err(_) => break, // idle: request is fully buffered
                     }
-                    read += n;
-                    if buf[..read].windows(4).any(|w| w == b"\r\n\r\n") || read == buf.len() {
+                    if read == buf.len() {
                         break;
                     }
                 }
@@ -598,6 +613,40 @@ mod tests {
             map["ses_b"],
             SessionStatus::Retry { attempt: 1, .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn respond_permission_omits_remember_when_none() {
+        // PLAN §6.3: the `remember` field MUST be omitted when `None` so a
+        // server that does not know the field never sees `"remember": null`.
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        client
+            .respond_permission("ses_1", "perm_1", PermissionResponse::Once, None)
+            .await
+            .unwrap();
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("POST /session/ses_1/permissions/perm_1 HTTP/1.1"),
+            "got: {req}"
+        );
+        assert!(req.contains("\"response\":\"once\""), "got: {req}");
+        assert!(
+            !req.contains("remember"),
+            "None must omit the field, got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn respond_permission_includes_remember_when_set() {
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        client
+            .respond_permission("ses_1", "perm_2", PermissionResponse::Always, Some(true))
+            .await
+            .unwrap();
+        let req = server.request_text().await;
+        assert!(req.contains("\"remember\":true"), "got: {req}");
     }
 
     #[tokio::test]
