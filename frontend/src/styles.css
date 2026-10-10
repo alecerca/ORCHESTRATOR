@@ -225,6 +225,34 @@ button {
   gap: 8px;
 }
 
+/* Compact, theme-aware orchestrator picker. Replaces the native/OS widget look
+   (too bright and too tall on dark theme). Colors come from the shared tokens
+   so it stays legible in both themes. */
+.agent-panel__select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.agent-panel__select option {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.agent-panel__select:focus {
+  border-color: var(--brand);
+  outline: none;
+}
+
 .agent-card {
   background: var(--surface-alt);
   border: 1px solid var(--border);
@@ -261,6 +289,14 @@ button {
   white-space: nowrap;
 }
 
+/* Right-hand group in the card header: live/frozen timer + status chip. */
+.agent-card__badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .agent-card__meta {
   display: flex;
   align-items: center;
@@ -277,6 +313,24 @@ button {
 .agent-card__actions {
   display: flex;
   gap: 4px;
+}
+
+/* Per-row execution timer. Tabular numerals keep the width stable while it
+   ticks, so the header does not jitter. */
+.agent-timer {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.agent-timer--live {
+  color: var(--secondary);
+}
+
+.agent-timer--blocked {
+  color: var(--warning);
 }
 
 .agent-card__error {

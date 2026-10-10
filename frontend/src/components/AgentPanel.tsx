@@ -73,8 +73,7 @@ export function AgentPanel({
         <span>Orchestrator</span>
       </div>
       <select
-        className="composer__input"
-        style={{ width: "100%", marginBottom: "8px" }}
+        className="agent-panel__select"
         aria-label="Orchestrator session"
         title="Choose which session acts as the orchestrator"
         value={effectiveRootId ?? ""}

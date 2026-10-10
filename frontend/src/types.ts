@@ -79,6 +79,10 @@ export interface SessionSnapshot {
   status: AgentUiStatus;
   error?: string;
   server_status?: SessionStatus;
+  /** Epoch ms when the derived status last changed (approximate on first observation). */
+  status_since?: number;
+  /** Duration in ms of the previous run (set when leaving running/waiting_approval). */
+  last_run_ms?: number;
 }
 
 export interface AppStateSnapshot {

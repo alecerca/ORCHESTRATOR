@@ -1,5 +1,6 @@
 import type { AgentUiStatus, SessionSnapshot } from "../types";
 import { shortId } from "../utils";
+import { AgentTimer } from "./AgentTimer";
 import { StatusChip } from "./StatusChip";
 
 const FINISHED: ReadonlySet<AgentUiStatus> = new Set(["done", "idle", "error"]);
@@ -23,7 +24,7 @@ export function AgentCard({
   onAbort,
   onDismiss,
 }: Props) {
-  const { session, status, error } = snapshot;
+  const { session, status, error, status_since, last_run_ms } = snapshot;
   const canAbort = status === "running" || status === "waiting_approval";
   const canDismiss = !isRoot && onDismiss !== undefined && FINISHED.has(status);
 
@@ -42,7 +43,14 @@ export function AgentCard({
         <span className="agent-card__title">
           {session.title || shortId(session.id)}
         </span>
-        <StatusChip status={status} />
+        <span className="agent-card__badges">
+          <AgentTimer
+            status={status}
+            statusSince={status_since}
+            lastRunMs={last_run_ms}
+          />
+          <StatusChip status={status} />
+        </span>
       </button>
       <div className="agent-card__meta">
         <span className="agent-card__id">{shortId(session.id)}</span>
