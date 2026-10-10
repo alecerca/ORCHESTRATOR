@@ -239,6 +239,29 @@ export default function App() {
 
   const pickRoot = useCallback((sessionId: string) => setRootPick(sessionId), []);
 
+  // Delete is destructive and server-side: only after the call resolves do we
+  // drop the UI-local traces. Closing the pane drops its stream, and a persisted
+  // root pick that pointed at the deleted session is cleared so
+  // `resolveEffectiveRoot` falls back to `root_session_id` (the hub then pushes a
+  // fresh snapshot — no getState() here, which could race the event).
+  const deleteSession = useCallback(
+    async (sessionId: string) => {
+      await api.deleteSession(sessionId);
+      closePane(sessionId);
+      store.dropStream(sessionId);
+      setRootPick((current) =>
+        current === sessionId || sessionId === effectiveRootId ? null : current,
+      );
+      setDismissed((current) => {
+        if (!current.has(sessionId)) return current;
+        const next = new Set(current);
+        next.delete(sessionId);
+        return next;
+      });
+    },
+    [closePane, effectiveRootId],
+  );
+
   return (
     <div className="app">
       <TopBar rootSessionId={effectiveRootId} />
@@ -264,6 +287,7 @@ export default function App() {
             onAbort={handleAbort}
             onDismiss={dismiss}
             onPickRoot={pickRoot}
+            onDelete={deleteSession}
           />
         )}
         <main className="workspace">

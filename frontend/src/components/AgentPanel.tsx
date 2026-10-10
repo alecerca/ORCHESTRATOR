@@ -1,6 +1,8 @@
+import { useState } from "react";
+import * as api from "../commands";
 import { useAppState } from "../store";
 import type { SessionSnapshot } from "../types";
-import { shortId } from "../utils";
+import { describeError, shortId } from "../utils";
 import { AgentCard } from "./AgentCard";
 
 interface Props {
@@ -15,6 +17,8 @@ interface Props {
   onAbort: (sessionId: string) => void;
   onDismiss: (sessionId: string) => void;
   onPickRoot: (sessionId: string) => void;
+  /** Server-side delete, owned by the parent (closes pane/stream, clears pick). */
+  onDelete: (sessionId: string) => Promise<void>;
 }
 
 /** Truncated label for the root picker option. */
@@ -34,7 +38,9 @@ function rootOptionLabel(snapshot: SessionSnapshot): string {
  * is needed — see IMPLEMENTATION_NOTES).
  *
  * The root row is always rendered from the `isRoot` branch, which never receives
- * `onDismiss` — the orchestrator cannot be hidden even by state accident.
+ * `onDismiss` — the orchestrator cannot be hidden even by state accident. It
+ * still gets rename/delete, because a user who creates several orchestrator
+ * sessions needs to be able to remove them.
  */
 export function AgentPanel({
   openPanes,
@@ -45,8 +51,10 @@ export function AgentPanel({
   onAbort,
   onDismiss,
   onPickRoot,
+  onDelete,
 }: Props) {
   const state = useAppState();
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const rootSnapshot = effectiveRootId
     ? state.sessions.find((s) => s.session.id === effectiveRootId)
@@ -67,10 +75,34 @@ export function AgentPanel({
     return effectiveRootId ? parent === effectiveRootId : true;
   });
 
+  // Create a parentless orchestrator session and immediately make it the
+  // effective root. The hub pushes a fresh snapshot on its own (no getState()),
+  // so the new session appears and becomes selectable without extra steps.
+  const handleCreate = () => {
+    setCreateError(null);
+    void (async () => {
+      try {
+        const session = await api.createSession(undefined, "New session");
+        onPickRoot(session.id);
+      } catch (cause) {
+        setCreateError(describeError(cause));
+      }
+    })();
+  };
+
   return (
     <aside className="agent-panel">
       <div className="panel-heading">
         <span>Orchestrator</span>
+        <button
+          type="button"
+          className="btn btn--ghost btn--xs"
+          onClick={handleCreate}
+          title="Create a new orchestrator session"
+          aria-label="New orchestrator session"
+        >
+          New session
+        </button>
       </div>
       <select
         className="agent-panel__select"
@@ -91,6 +123,11 @@ export function AgentPanel({
           ))
         )}
       </select>
+      {createError && (
+        <p className="agent-panel__error" role="alert">
+          {createError}
+        </p>
+      )}
 
       {rootSnapshot ? (
         <AgentCard
@@ -99,6 +136,7 @@ export function AgentPanel({
           isOpen={openPanes.includes(rootSnapshot.session.id)}
           onToggle={onTogglePane}
           onAbort={onAbort}
+          onDelete={onDelete}
         />
       ) : (
         <p className="agent-panel__empty">Connecting to the orchestrator…</p>
@@ -122,6 +160,7 @@ export function AgentPanel({
               onToggle={onTogglePane}
               onAbort={onAbort}
               onDismiss={onDismiss}
+              onDelete={onDelete}
             />
           ))}
         </div>
