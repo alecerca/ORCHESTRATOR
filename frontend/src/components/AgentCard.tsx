@@ -146,6 +146,14 @@ export function AgentCard({
           <button
             type="button"
             className="btn btn--ghost btn--xs"
+            onClick={startRename}
+            title="Rename this session"
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--xs"
             onClick={() => onToggle(session.id)}
           >
             {isOpen ? "Close" : "Open"}
