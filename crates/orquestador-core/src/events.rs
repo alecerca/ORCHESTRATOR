@@ -45,6 +45,15 @@ pub const EVENT_BUFFER: usize = 512;
 /// hung" symptom, but with a healthy-looking connection flag.
 pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How often [`EventHub`] reconciles session statuses + pending permissions
+/// from plain HTTP while the stream is healthy.
+///
+/// SSE does not replay missed events, so a `permission.updated` that arrived
+/// while the stream was down (or before the app started) would be invisible
+/// forever without this safety net. Overridable for tests via
+/// [`EventHub::with_reconcile_interval`].
+pub const RECONCILE_INTERVAL: Duration = Duration::from_secs(5);
+
 // ---------------------------------------------------------------------------
 // Pure helpers (unit tested)
 // ---------------------------------------------------------------------------
@@ -165,6 +174,9 @@ pub async fn bootstrap(client: &OpenCodeClient, state: &Arc<RwLock<AppState>>) -
     let sessions = client.list_sessions().await.unwrap_or_default();
     let statuses = client.session_statuses().await.ok();
     let agents = client.agents().await.ok();
+    // A permission requested while the stream was down (or before the app
+    // started) is invisible to SSE; the list endpoint is the only way to see it.
+    let permissions = client.pending_permissions().await.ok();
 
     // Reuse the newest root session; create one only when there is nothing.
     let root = match pick_root(&sessions) {
@@ -200,6 +212,10 @@ pub async fn bootstrap(client: &OpenCodeClient, state: &Arc<RwLock<AppState>>) -
     if let Some(agents) = agents {
         st.apply_agents(agents);
     }
+    if let Some(permissions) = permissions {
+        // Bootstrap has no broadcast channel yet; the snapshot carries them.
+        st.apply_pending_permissions(permissions);
+    }
     if let Some(root) = &root {
         st.set_root_session(root.clone());
     }
@@ -223,6 +239,7 @@ pub struct EventHub {
     tx: broadcast::Sender<CoreMessage>,
     shutdown: watch::Receiver<bool>,
     idle_timeout: Duration,
+    reconcile_interval: Duration,
 }
 
 impl EventHub {
@@ -238,12 +255,19 @@ impl EventHub {
             tx,
             shutdown,
             idle_timeout: STREAM_IDLE_TIMEOUT,
+            reconcile_interval: RECONCILE_INTERVAL,
         }
     }
 
     /// Override the idle watchdog window (tests use a short one).
     pub fn with_idle_timeout(mut self, idle_timeout: Duration) -> Self {
         self.idle_timeout = idle_timeout;
+        self
+    }
+
+    /// Override the periodic reconcile interval (tests use a short one).
+    pub fn with_reconcile_interval(mut self, reconcile_interval: Duration) -> Self {
+        self.reconcile_interval = reconcile_interval;
         self
     }
 
@@ -297,9 +321,24 @@ impl EventHub {
         let mut stream = response.bytes_stream().eventsource();
         let mut saw_handshake = false;
 
+        // Clones so the reconcile arm does not borrow `self` while
+        // `self.shutdown.changed()` holds a mutable borrow across the select.
+        let reconcile_client = self.client.clone();
+        let reconcile_state = self.state.clone();
+        let reconcile_tx = self.tx.clone();
+        let reconcile_interval = self.reconcile_interval;
+
         loop {
             let next = tokio::select! {
                 item = stream.next() => item,
+                // Periodic safety net: a permission/status that arrived while
+                // the stream was down is otherwise invisible forever. Runs even
+                // while frames keep flowing, so it never fights the stream —
+                // `apply_pending_permissions` is add-only.
+                _ = tokio::time::sleep(reconcile_interval) => {
+                    reconcile_once(&reconcile_client, &reconcile_state, &reconcile_tx).await;
+                    continue;
+                }
                 // Half-open connection: no frame (not even a heartbeat) for the
                 // whole window. Give up this stream and let the loop reconnect
                 // instead of awaiting a dead socket forever.
@@ -361,6 +400,16 @@ impl EventHub {
             agents.sort_by(|a, b| a.name.cmp(&b.name));
             self.state.write().await.apply_agents(agents);
         }
+        if let Ok(permissions) = self.client.pending_permissions().await {
+            let effects = self
+                .state
+                .write()
+                .await
+                .apply_pending_permissions(permissions);
+            for effect in effects {
+                let _ = self.tx.send(CoreMessage::Effect { effect });
+            }
+        }
         self.publish_snapshot().await;
     }
 
@@ -373,6 +422,28 @@ impl EventHub {
         let snapshot = self.state.read().await.snapshot();
         let _ = self.tx.send(CoreMessage::StateSnapshot { snapshot });
     }
+}
+
+/// Refresh statuses + pending permissions from plain HTTP and publish the
+/// resulting snapshot. Called by the periodic tick so a missed SSE event (or a
+/// stream that died before it arrived) can never hide a blocked session
+/// forever. Errors are swallowed: a hiccup must not tear down the stream.
+async fn reconcile_once(
+    client: &OpenCodeClient,
+    state: &Arc<RwLock<AppState>>,
+    tx: &broadcast::Sender<CoreMessage>,
+) {
+    if let Ok(statuses) = client.session_statuses().await {
+        state.write().await.apply_statuses(statuses);
+    }
+    if let Ok(permissions) = client.pending_permissions().await {
+        let effects = state.write().await.apply_pending_permissions(permissions);
+        for effect in effects {
+            let _ = tx.send(CoreMessage::Effect { effect });
+        }
+    }
+    let snapshot = state.read().await.snapshot();
+    let _ = tx.send(CoreMessage::StateSnapshot { snapshot });
 }
 
 // ---------------------------------------------------------------------------
@@ -581,8 +652,161 @@ mod tests {
         (base, hits)
     }
 
+    /// Writes a `Content-Length`-terminated JSON response and closes the socket.
+    async fn write_json(socket: &mut tokio::net::TcpStream, status: &str, body: &str) {
+        let raw = format!(
+            "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = socket.write_all(raw.as_bytes()).await;
+        let _ = socket.shutdown().await;
+    }
+
+    /// Serves the endpoints the hub/bootstrap touch, concurrently. `/permission`
+    /// returns the n-th body from `permission_bodies` (the last one repeats);
+    /// `/event` streams `server.connected` then holds the socket open, so a
+    /// reconcile tick has time to fire.
+    async fn spawn_api_server(
+        sessions_body: &'static str,
+        permission_bodies: Vec<&'static str>,
+    ) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    return;
+                };
+                let calls = calls.clone();
+                let bodies = permission_bodies.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let mut read = 0usize;
+                    loop {
+                        let n = socket.read(&mut buf[read..]).await.unwrap_or(0);
+                        if n == 0 {
+                            break;
+                        }
+                        read += n;
+                        if buf[..read].windows(4).any(|w| w == b"\r\n\r\n") || read == buf.len() {
+                            break;
+                        }
+                    }
+                    let head = String::from_utf8_lossy(&buf[..read]).to_string();
+                    let method = head.split_whitespace().next().unwrap_or("GET");
+                    let path = head
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("/")
+                        .split('?')
+                        .next()
+                        .unwrap_or("/")
+                        .to_string();
+                    match (method, path.as_str()) {
+                        ("GET", "/global/health") => {
+                            write_json(
+                                &mut socket,
+                                "200 OK",
+                                r#"{"healthy":true,"version":"9.9.9"}"#,
+                            )
+                            .await
+                        }
+                        ("GET", "/session") => {
+                            write_json(&mut socket, "200 OK", sessions_body).await
+                        }
+                        ("POST", "/session") => {
+                            write_json(
+                                &mut socket,
+                                "200 OK",
+                                concat!(
+                                    r#"{"id":"sess_new","projectID":"p","directory":"/d","#,
+                                    r#""title":"Orchestrator","version":"1","#,
+                                    r#""time":{"created":1,"updated":1}}"#
+                                ),
+                            )
+                            .await
+                        }
+                        ("GET", "/session/status") => write_json(&mut socket, "200 OK", "{}").await,
+                        ("GET", "/agent") => write_json(&mut socket, "200 OK", "[]").await,
+                        ("GET", "/permission") => {
+                            let n = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            let idx = if bodies.is_empty() {
+                                0
+                            } else {
+                                n.min(bodies.len() - 1)
+                            };
+                            let body = bodies.get(idx).copied().unwrap_or("[]");
+                            write_json(&mut socket, "200 OK", body).await
+                        }
+                        ("GET", "/event") => {
+                            let sse = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                                       transfer-encoding: chunked\r\n\r\n";
+                            if socket.write_all(sse.as_bytes()).await.is_err() {
+                                return;
+                            }
+                            let frame =
+                                "data: {\"type\":\"server.connected\",\"properties\":{}}\n\n";
+                            let chunk = format!("{:x}\r\n{}\r\n", frame.len(), frame);
+                            let _ = socket.write_all(chunk.as_bytes()).await;
+                            tokio::time::sleep(Duration::from_secs(3)).await;
+                            let _ = socket.shutdown().await;
+                        }
+                        _ => {
+                            let body = r#"{"message":"not found"}"#;
+                            let raw = format!(
+                                "HTTP/1.1 404 Not Found\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                                body.len()
+                            );
+                            let _ = socket.write_all(raw.as_bytes()).await;
+                            let _ = socket.shutdown().await;
+                        }
+                    }
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
     fn test_state() -> Arc<RwLock<AppState>> {
         Arc::new(RwLock::new(AppState::default()))
+    }
+
+    #[tokio::test]
+    async fn bootstrap_surfaces_a_pending_permission_without_an_sse_event() {
+        let sessions = concat!(
+            r#"[{"id":"ses_perm","projectID":"p","directory":"/d","#,
+            r#""title":"Orchestrator","version":"1","#,
+            r#""time":{"created":1,"updated":2}}]"#
+        );
+        let perms = concat!(
+            r#"[{"id":"per_9","sessionID":"ses_perm","permission":"bash","#,
+            r#""patterns":["git commit -m x"],"metadata":{"command":"git commit -m x"},"#,
+            r#""always":["git commit *"]}]"#
+        );
+        let base = spawn_api_server(sessions, vec![perms]).await;
+        let client = OpenCodeClient::new(crate::client::ClientConfig {
+            base_url: base,
+            ..Default::default()
+        })
+        .unwrap();
+        let state = test_state();
+
+        let outcome = bootstrap(&client, &state).await;
+        assert!(matches!(outcome, BootstrapOutcome::Connected { .. }));
+
+        let snap = state.read().await.snapshot();
+        assert_eq!(
+            snap.permissions.len(),
+            1,
+            "a permission present on the server must be surfaced without an SSE event"
+        );
+        assert_eq!(snap.permissions[0].id, "per_9");
+        assert_eq!(snap.root_session_id.as_deref(), Some("ses_perm"));
+        assert_eq!(
+            snap.sessions[0].status,
+            crate::state::AgentUiStatus::WaitingApproval
+        );
     }
 
     #[tokio::test]
@@ -608,6 +832,58 @@ mod tests {
             Some("sess_new"),
             "with no sessions bootstrap must create the root session"
         );
+    }
+
+    #[tokio::test]
+    async fn reconcile_tick_picks_up_a_permission_that_appears_without_an_event() {
+        let perms_later = concat!(
+            r#"[{"id":"per_late","sessionID":"ses_x","permission":"bash","#,
+            r#""patterns":["rm -rf /tmp/x"],"metadata":{},"always":[]}]"#
+        );
+        // First `/permission` call (resync) is empty; the tick sees the request.
+        let base = spawn_api_server("[]", vec!["[]", perms_later]).await;
+        let client = Arc::new(
+            OpenCodeClient::new(crate::client::ClientConfig {
+                base_url: base,
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        let state = test_state();
+        let (tx, mut rx) = broadcast::channel::<CoreMessage>(super::EVENT_BUFFER);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let hub = EventHub::new(client, state.clone(), tx, shutdown_rx)
+            .with_reconcile_interval(Duration::from_millis(150));
+        tokio::spawn(hub.run());
+
+        let mut saw_approval = false;
+        let snapshot = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                match rx.recv().await {
+                    Ok(CoreMessage::StateSnapshot { snapshot })
+                        if !snapshot.permissions.is_empty() =>
+                    {
+                        break snapshot
+                    }
+                    Ok(CoreMessage::Effect {
+                        effect: Effect::Approval { permission_id, .. },
+                    }) if permission_id == "per_late" => saw_approval = true,
+                    Ok(_) => {}
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(e) => panic!("broadcast closed: {e}"),
+                }
+            }
+        })
+        .await
+        .expect("the reconcile tick never surfaced the permission");
+
+        assert_eq!(snapshot.permissions[0].id, "per_late");
+        assert!(
+            saw_approval,
+            "discovering a permission must notify once (Effect::Approval)"
+        );
+        let _ = shutdown_tx.send(true);
     }
 
     #[tokio::test]

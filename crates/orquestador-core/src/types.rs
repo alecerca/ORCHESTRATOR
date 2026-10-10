@@ -611,6 +611,75 @@ pub struct PermissionTime {
     pub created: i64,
 }
 
+/// `GET /permission` → one pending approval across all sessions.
+///
+/// This is a **different wire shape** from the `permission.updated` payload
+/// modelled by [`Permission`]: the list endpoint carries `permission` /
+/// `patterns` / `always`, nests the message id under `tool`, and has neither a
+/// `title` nor a timestamp. It is modelled faithfully here rather than forced
+/// into [`Permission`]; [`Self::into_permission`] performs the fold for the
+/// in-memory registry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PermissionRequest {
+    pub id: String,
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    /// Permission kind (`bash`, `edit`, `external_directory`, ...).
+    pub permission: String,
+    #[serde(default)]
+    pub patterns: Vec<String>,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    #[serde(default)]
+    pub always: Vec<String>,
+    #[serde(default)]
+    pub tool: Option<PermissionToolRef>,
+}
+
+/// The `tool` sub-object of a [`PermissionRequest`] (optional on the wire).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PermissionToolRef {
+    #[serde(rename = "messageID")]
+    pub message_id: String,
+    #[serde(rename = "callID")]
+    pub call_id: String,
+}
+
+impl PermissionRequest {
+    /// Fold this list entry into the `permission.updated`-shaped registry type.
+    ///
+    /// The list endpoint has no `title` and no `time`, so the kind is used as a
+    /// short title and `time.created` is `0` (these entries therefore sort
+    /// before SSE-discovered ones, whose real timestamps are positive).
+    pub fn into_permission(self) -> Permission {
+        let pattern = match self.patterns.as_slice() {
+            [] => None,
+            [only] => Some(PermissionPattern::One(only.clone())),
+            many => Some(PermissionPattern::Many(many.to_vec())),
+        };
+        let (message_id, call_id) = match &self.tool {
+            Some(tool) => (tool.message_id.clone(), Some(tool.call_id.clone())),
+            None => (String::new(), None),
+        };
+        let title = if self.permission.trim().is_empty() {
+            "permission".to_string()
+        } else {
+            self.permission.clone()
+        };
+        Permission {
+            id: self.id,
+            kind: self.permission,
+            pattern,
+            session_id: self.session_id,
+            message_id,
+            call_id,
+            title,
+            metadata: self.metadata,
+            time: PermissionTime { created: 0 },
+        }
+    }
+}
+
 /// Body of `POST /session/:id/permissions/:permissionID`.
 ///
 /// ⚠️ SPEC §4 says `{ response, remember? }`; the OpenAPI document narrows
@@ -1077,6 +1146,53 @@ mod tests {
         assert_eq!(v["parts"][0]["text"], "spawn 5 subagents");
         assert!(v.get("noReply").is_none(), "None fields must be omitted");
         assert!(v.get("messageID").is_none());
+    }
+
+    #[test]
+    fn permission_request_parses_the_list_payload_and_folds_into_a_permission() {
+        // Shape captured live from `GET /permission` on 2026-10-10.
+        let json = r#"{
+            "id":"per_126b00d0f001cyU1H4us7xUdRg",
+            "sessionID":"ses_edb2968abffe",
+            "permission":"bash",
+            "patterns":["git add a","git commit -m x"],
+            "metadata":{"command":"git add a && git commit -m x"},
+            "always":["git add *","git commit *"],
+            "tool":{"messageID":"msg_1","callID":"call_1"}
+        }"#;
+        let req: PermissionRequest = serde_json::from_str(json).expect("list payload parses");
+        assert_eq!(req.id, "per_126b00d0f001cyU1H4us7xUdRg");
+        assert_eq!(req.session_id, "ses_edb2968abffe");
+        assert_eq!(req.permission, "bash");
+        assert_eq!(req.patterns.len(), 2);
+        assert_eq!(req.always.len(), 2);
+        assert_eq!(req.tool.as_ref().unwrap().message_id, "msg_1");
+
+        let p = req.into_permission();
+        assert_eq!(p.id, "per_126b00d0f001cyU1H4us7xUdRg");
+        assert_eq!(p.kind, "bash");
+        assert_eq!(p.session_id, "ses_edb2968abffe");
+        assert_eq!(p.message_id, "msg_1");
+        assert_eq!(p.call_id.as_deref(), Some("call_1"));
+        assert_eq!(
+            p.pattern,
+            Some(PermissionPattern::Many(vec![
+                "git add a".into(),
+                "git commit -m x".into()
+            ]))
+        );
+    }
+
+    #[test]
+    fn permission_request_without_tool_or_patterns_folds_safely() {
+        let json = r#"{"id":"per_x","sessionID":"ses_y","permission":"external_directory",
+            "patterns":["/tmp/*"],"metadata":{},"always":["/tmp/*"]}"#;
+        let req: PermissionRequest = serde_json::from_str(json).expect("parses");
+        assert!(req.tool.is_none());
+        let p = req.into_permission();
+        assert_eq!(p.pattern, Some(PermissionPattern::One("/tmp/*".into())));
+        assert_eq!(p.message_id, "");
+        assert_eq!(p.title, "external_directory");
     }
 
     #[test]

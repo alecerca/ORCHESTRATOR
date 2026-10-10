@@ -6,7 +6,7 @@
 //! network, a runtime or a server (`cargo test -p orquestador-core`).
 //! All HTTP lives in [`crate::client`]; all orchestration in [`crate::events`].
 
-use crate::types::{Agent, Event, Permission, Session, SessionStatus, Todo};
+use crate::types::{Agent, Event, Permission, PermissionRequest, Session, SessionStatus, Todo};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
@@ -78,6 +78,16 @@ pub struct SessionSnapshot {
     /// Raw server status, kept so the UI can render the `retry` countdown.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_status: Option<SessionStatus>,
+    /// Epoch ms when the derived status last changed.
+    ///
+    /// Approximate for the first observation of a session: the true transition
+    /// may have happened before the app started, so the current time is used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_since: Option<i64>,
+    /// Duration in ms of the previous run (set when leaving
+    /// `Running`/`WaitingApproval`; `WaitingApproval` is part of the run).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_run_ms: Option<i64>,
 }
 
 /// The single source of truth for everything the UI renders as *data*
@@ -99,6 +109,32 @@ pub struct AppState {
     pending: HashMap<String, Permission>,
     todos: HashMap<String, Vec<Todo>>,
     agents: Vec<Agent>,
+    /// Last derived status seen per session (to detect transitions).
+    last_status: HashMap<String, AgentUiStatus>,
+    /// Epoch ms when the derived status last changed (see [`SessionSnapshot`]).
+    status_since: HashMap<String, i64>,
+    /// Epoch ms when the current run window began (`Running`/`WaitingApproval`).
+    run_started: HashMap<String, i64>,
+    /// Duration in ms of the previous completed run, per session.
+    last_run_ms: HashMap<String, i64>,
+}
+
+/// Is this derived status part of a run window? (`WaitingApproval` counts: the
+/// agent is blocked mid-run, not finished.)
+fn is_run_status(status: AgentUiStatus) -> bool {
+    matches!(
+        status,
+        AgentUiStatus::Running | AgentUiStatus::WaitingApproval
+    )
+}
+
+/// Wall clock in epoch ms. `AppState` is pure apart from this single read; the
+/// `*_at` mutators take the timestamp explicitly so tests stay deterministic.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 impl AppState {
@@ -126,12 +162,24 @@ impl AppState {
     // -- bootstrap (results of plain HTTP calls, no events involved) --------
 
     pub fn apply_sessions(&mut self, sessions: Vec<Session>) {
+        self.apply_sessions_at(sessions, now_ms());
+    }
+
+    /// [`Self::apply_sessions`] with an explicit clock (tests).
+    pub fn apply_sessions_at(&mut self, sessions: Vec<Session>, now_ms: i64) {
         for s in sessions {
-            self.sessions.insert(s.id.clone(), s);
+            let id = s.id.clone();
+            self.sessions.insert(id.clone(), s);
+            self.observe(&id, now_ms);
         }
     }
 
     pub fn apply_statuses(&mut self, statuses: HashMap<String, SessionStatus>) {
+        self.apply_statuses_at(statuses, now_ms());
+    }
+
+    /// [`Self::apply_statuses`] with an explicit clock (tests).
+    pub fn apply_statuses_at(&mut self, statuses: HashMap<String, SessionStatus>, now_ms: i64) {
         for (id, st) in &statuses {
             if matches!(st, SessionStatus::Busy | SessionStatus::Retry { .. }) {
                 self.active.insert(id.clone());
@@ -139,11 +187,56 @@ impl AppState {
                 self.errored.remove(id);
             }
         }
+        let ids: Vec<String> = statuses.keys().cloned().collect();
         self.statuses.extend(statuses);
+        for id in ids {
+            self.observe(&id, now_ms);
+        }
     }
 
     pub fn apply_agents(&mut self, agents: Vec<Agent>) {
         self.agents = agents;
+    }
+
+    /// Merge server-truth pending permissions (from `GET /permission`) into the
+    /// registry, keyed by the same `per_…` id the reply call needs.
+    ///
+    /// Add-only by design so reconcile cannot fight the SSE stream:
+    ///
+    /// * an id already in the registry is left untouched (its richer
+    ///   `permission.updated` payload is preserved and its `Effect::Approval`
+    ///   is not re-emitted);
+    /// * an id the server no longer lists is **not** removed here — removal is
+    ///   owned by `permission.replied`, so an answered approval can never be
+    ///   resurrected by a later reconcile.
+    ///
+    /// Returns one [`Effect::Approval`] per newly discovered permission.
+    pub fn apply_pending_permissions(&mut self, requests: Vec<PermissionRequest>) -> Vec<Effect> {
+        self.apply_pending_permissions_at(requests, now_ms())
+    }
+
+    /// [`Self::apply_pending_permissions`] with an explicit clock (tests).
+    pub fn apply_pending_permissions_at(
+        &mut self,
+        requests: Vec<PermissionRequest>,
+        now_ms: i64,
+    ) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        for request in requests {
+            if self.pending.contains_key(&request.id) {
+                continue;
+            }
+            let permission = request.into_permission();
+            let session_id = permission.session_id.clone();
+            effects.push(Effect::Approval {
+                session_id: session_id.clone(),
+                permission_id: permission.id.clone(),
+                title: permission.title.clone(),
+            });
+            self.pending.insert(permission.id.clone(), permission);
+            self.observe(&session_id, now_ms);
+        }
+        effects
     }
 
     // -- reads --------------------------------------------------------------
@@ -208,11 +301,17 @@ impl AppState {
     /// notifications) the caller should act on. State changes always happen;
     /// effects are derived from transitions so that repeats are harmless.
     pub fn apply_event(&mut self, event: &Event) -> Vec<Effect> {
+        self.apply_event_at(event, now_ms())
+    }
+
+    /// [`Self::apply_event`] with an explicit clock (tests).
+    pub fn apply_event_at(&mut self, event: &Event, now_ms: i64) -> Vec<Effect> {
         let mut effects = Vec::new();
         match event {
             Event::SessionCreated { properties } | Event::SessionUpdated { properties } => {
-                self.sessions
-                    .insert(properties.info.id.clone(), properties.info.clone());
+                let id = properties.info.id.clone();
+                self.sessions.insert(id.clone(), properties.info.clone());
+                self.observe(&id, now_ms);
             }
             Event::SessionDeleted { properties } => {
                 let id = properties.info.id.clone();
@@ -223,15 +322,18 @@ impl AppState {
                 self.errored.remove(&id);
                 self.todos.remove(&id);
                 self.pending.retain(|_, p| p.session_id != id);
+                self.forget(&id);
                 if self.root_session_id.as_deref() == Some(id.as_str()) {
                     self.root_session_id = None;
                 }
             }
             Event::SessionStatus { properties } => {
                 self.apply_status(&properties.session_id, &properties.status, &mut effects);
+                self.observe(&properties.session_id, now_ms);
             }
             Event::SessionIdle { properties } => {
                 self.on_idle(&properties.session_id, &mut effects);
+                self.observe(&properties.session_id, now_ms);
             }
             Event::SessionError { properties } => {
                 if let Some(id) = properties.session_id.as_deref() {
@@ -254,6 +356,7 @@ impl AppState {
                         });
                     }
                     self.errored.insert(id.to_string(), message);
+                    self.observe(id, now_ms);
                 }
             }
             Event::PermissionUpdated { properties } => {
@@ -267,9 +370,11 @@ impl AppState {
                         title: properties.title.clone(),
                     });
                 }
+                self.observe(&properties.session_id, now_ms);
             }
             Event::PermissionReplied { properties } => {
                 self.pending.remove(&properties.permission_id);
+                self.observe(&properties.session_id, now_ms);
             }
             Event::TodoUpdated { properties } => {
                 self.todos
@@ -328,6 +433,40 @@ impl AppState {
         }
     }
 
+    /// Record the derived status transition for one session at `now_ms`.
+    ///
+    /// * `status_since` advances whenever the derived status changes;
+    /// * the run window starts when the session enters `Running`/
+    ///   `WaitingApproval` and ends when it leaves both, at which point
+    ///   `last_run_ms` records the elapsed time.
+    fn observe(&mut self, session_id: &str, now_ms: i64) {
+        let status = self.agent_status(session_id);
+        let prev = self.last_status.get(session_id).copied();
+        if prev == Some(status) {
+            return;
+        }
+        let was_in_run = matches!(prev, Some(s) if is_run_status(s));
+        let now_in_run = is_run_status(status);
+        if now_in_run && !was_in_run {
+            self.run_started.insert(session_id.to_string(), now_ms);
+        } else if was_in_run && !now_in_run {
+            if let Some(start) = self.run_started.remove(session_id) {
+                self.last_run_ms
+                    .insert(session_id.to_string(), (now_ms - start).max(0));
+            }
+        }
+        self.last_status.insert(session_id.to_string(), status);
+        self.status_since.insert(session_id.to_string(), now_ms);
+    }
+
+    /// Drop every timer-tracking trace of a session (used on delete).
+    fn forget(&mut self, session_id: &str) {
+        self.last_status.remove(session_id);
+        self.status_since.remove(session_id);
+        self.run_started.remove(session_id);
+        self.last_run_ms.remove(session_id);
+    }
+
     fn title_of(&self, session_id: &str) -> String {
         self.sessions
             .get(session_id)
@@ -352,6 +491,8 @@ impl AppState {
                 status: self.agent_status(&session.id),
                 error: self.errored.get(&session.id).cloned(),
                 server_status: self.statuses.get(&session.id).cloned(),
+                status_since: self.status_since.get(&session.id).copied(),
+                last_run_ms: self.last_run_ms.get(&session.id).copied(),
             })
             .collect();
         // Newest first, id as tie-breaker → stable ordering for the UI + tests.
@@ -548,6 +689,152 @@ mod tests {
         st.apply_event(&replied);
         assert!(!st.has_pending_permission("a"));
         assert_eq!(st.agent_status("a"), AgentUiStatus::Running);
+        assert!(st.pending_permissions().is_empty());
+    }
+
+    #[test]
+    fn running_to_done_records_last_run_ms_and_advances_status_since() {
+        let mut st = AppState::default();
+        // First observation of the session: `status_since` = now (approximation).
+        st.apply_sessions_at(vec![session("a", None, 1)], 1_000);
+        let snap = st.snapshot();
+        assert_eq!(snap.sessions[0].status_since, Some(1_000));
+        assert_eq!(snap.sessions[0].last_run_ms, None);
+
+        st.apply_event_at(
+            &event(r#"{"type":"session.status","properties":{"sessionID":"a","status":{"type":"busy"}}}"#),
+            2_000,
+        );
+        let snap = st.snapshot();
+        assert_eq!(snap.sessions[0].status, AgentUiStatus::Running);
+        assert_eq!(snap.sessions[0].status_since, Some(2_000));
+
+        st.apply_event_at(
+            &event(r#"{"type":"session.idle","properties":{"sessionID":"a"}}"#),
+            2_500,
+        );
+        let snap = st.snapshot();
+        assert_eq!(snap.sessions[0].status, AgentUiStatus::Done);
+        assert_eq!(
+            snap.sessions[0].status_since,
+            Some(2_500),
+            "status_since must advance on the transition"
+        );
+        assert_eq!(snap.sessions[0].last_run_ms, Some(500));
+    }
+
+    #[test]
+    fn waiting_approval_counts_as_part_of_the_same_run_window() {
+        let mut st = AppState::default();
+        st.apply_sessions_at(vec![session("a", None, 1)], 1_000);
+        st.apply_event_at(
+            &event(r#"{"type":"session.status","properties":{"sessionID":"a","status":{"type":"busy"}}}"#),
+            2_000,
+        );
+        st.apply_event_at(
+            &event(r#"{"type":"permission.updated","properties":{"id":"perm_1","type":"bash","sessionID":"a","messageID":"m1","title":"Run","metadata":{},"time":{"created":10}}}"#),
+            2_200,
+        );
+        let snap = st.snapshot();
+        assert_eq!(snap.sessions[0].status, AgentUiStatus::WaitingApproval);
+        assert_eq!(snap.sessions[0].status_since, Some(2_200));
+
+        st.apply_event_at(
+            &event(r#"{"type":"permission.replied","properties":{"sessionID":"a","permissionID":"perm_1","response":"once"}}"#),
+            2_300,
+        );
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Running);
+
+        st.apply_event_at(
+            &event(r#"{"type":"session.idle","properties":{"sessionID":"a"}}"#),
+            2_600,
+        );
+        let snap = st.snapshot();
+        assert_eq!(
+            snap.sessions[0].last_run_ms,
+            Some(600),
+            "the run window starts when the session first became busy, WaitingApproval included"
+        );
+    }
+
+    #[test]
+    fn deleting_a_session_clears_timer_state() {
+        let mut st = AppState::default();
+        st.apply_sessions_at(vec![session("a", None, 1)], 1_000);
+        st.apply_event_at(
+            &event(r#"{"type":"session.status","properties":{"sessionID":"a","status":{"type":"busy"}}}"#),
+            2_000,
+        );
+        st.apply_event_at(
+            &event(r#"{"type":"session.idle","properties":{"sessionID":"a"}}"#),
+            2_500,
+        );
+        assert_eq!(st.snapshot().sessions[0].last_run_ms, Some(500));
+
+        st.apply_event_at(
+            &event(r#"{"type":"session.deleted","properties":{"info":{"id":"a","projectID":"p","directory":"/d","title":"t","version":"1","time":{"created":1,"updated":2}}}}"#),
+            3_000,
+        );
+        assert!(st.session("a").is_none());
+
+        // Re-adding the same id must start a fresh timer, not inherit the old one.
+        st.apply_sessions_at(vec![session("a", None, 1)], 4_000);
+        let snap = st.snapshot();
+        assert_eq!(snap.sessions[0].status_since, Some(4_000));
+        assert_eq!(snap.sessions[0].last_run_ms, None);
+    }
+
+    #[test]
+    fn apply_pending_permissions_surfaces_unknown_serverside_permissions_once() {
+        use crate::types::PermissionRequest;
+
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_statuses(
+            [("a".to_string(), SessionStatus::Busy)]
+                .into_iter()
+                .collect(),
+        );
+
+        let request = || PermissionRequest {
+            id: "per_1".into(),
+            session_id: "a".into(),
+            permission: "bash".into(),
+            patterns: vec!["git commit -m x".into()],
+            metadata: serde_json::json!({ "command": "git commit -m x" }),
+            always: vec!["git commit *".into()],
+            tool: None,
+        };
+
+        let fx = st.apply_pending_permissions(vec![request()]);
+        assert_eq!(fx.len(), 1);
+        assert!(
+            matches!(&fx[0], Effect::Approval { permission_id, .. } if permission_id == "per_1")
+        );
+        assert_eq!(st.agent_status("a"), AgentUiStatus::WaitingApproval);
+        assert_eq!(st.pending_permissions().len(), 1);
+
+        // Re-applying the same server truth must NOT re-notify.
+        assert!(st.apply_pending_permissions(vec![request()]).is_empty());
+        assert_eq!(st.pending_permissions().len(), 1);
+    }
+
+    #[test]
+    fn replied_permission_is_not_resurrected_by_an_empty_reconcile() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_event(&event(
+            r#"{"type":"permission.updated","properties":{"id":"perm_1","type":"bash","sessionID":"a","messageID":"m1","title":"Run","metadata":{},"time":{"created":10}}}"#,
+        ));
+        assert_eq!(st.pending_permissions().len(), 1);
+
+        st.apply_event(&event(
+            r#"{"type":"permission.replied","properties":{"sessionID":"a","permissionID":"perm_1","response":"once"}}"#,
+        ));
+        assert!(st.pending_permissions().is_empty());
+
+        // A reconcile that sees no pending permissions must not resurrect it.
+        assert!(st.apply_pending_permissions(Vec::new()).is_empty());
         assert!(st.pending_permissions().is_empty());
     }
 

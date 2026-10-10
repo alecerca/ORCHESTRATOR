@@ -332,6 +332,15 @@ impl OpenCodeClient {
     // Permissions (approval prompts)
     // -----------------------------------------------------------------------
 
+    /// `GET /permission` → every pending approval across all sessions.
+    ///
+    /// This is the bootstrap/reconcile source of truth: unlike the
+    /// `permission.updated` SSE event, it survives a stream that was down when
+    /// the approval was requested.
+    pub async fn pending_permissions(&self) -> Result<Vec<PermissionRequest>, CoreError> {
+        self.get_json("/permission").await
+    }
+
     /// `POST /session/:id/permissions/:permissionID`
     pub async fn respond_permission(
         &self,
@@ -635,6 +644,23 @@ mod tests {
             map["ses_b"],
             SessionStatus::Retry { attempt: 1, .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn pending_permissions_hits_get_permission_and_parses_the_list() {
+        let body = r#"[{"id":"per_1","sessionID":"ses_a","permission":"bash",
+            "patterns":["rm -rf /"],"metadata":{"command":"rm -rf /"},
+            "always":["rm *"],"tool":{"messageID":"m","callID":"c"}}]"#;
+        let server = MockServer::start("200 OK", body).await;
+        let client = server.client(None).await;
+        let perms = client.pending_permissions().await.unwrap();
+        assert_eq!(perms.len(), 1);
+        assert_eq!(perms[0].id, "per_1");
+        assert_eq!(perms[0].session_id, "ses_a");
+        assert_eq!(perms[0].permission, "bash");
+
+        let req = server.request_text().await;
+        assert!(req.starts_with("GET /permission HTTP/1.1"), "got: {req}");
     }
 
     #[tokio::test]
