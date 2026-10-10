@@ -10,8 +10,9 @@ use orquestador_core::types::{
     Agent, CommandBody, CreateSessionBody, FileContent, FileDiff, FileNode, FileStatus, Health,
     MessageBundle, PermissionResponse, PromptBody, Session, SessionStatus, Todo,
 };
+use orquestador_core::{build_preamble, slugify, SkillInfo};
 use std::collections::HashMap;
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::bridge::AppBridge;
 
@@ -111,13 +112,16 @@ pub async fn get_todos(
 
 #[tauri::command]
 pub async fn send_message(
+    app: tauri::AppHandle,
     bridge: State<'_, AppBridge>,
     session_id: String,
     text: String,
     agent: Option<String>,
+    skills: Option<Vec<String>>,
 ) -> Result<MessageBundle, String> {
     let mut body = PromptBody::text(text);
     body.agent = agent;
+    apply_skills(&app, &mut body, skills);
     bridge
         .client()
         .prompt(&session_id, &body)
@@ -127,13 +131,16 @@ pub async fn send_message(
 
 #[tauri::command]
 pub async fn send_message_async(
+    app: tauri::AppHandle,
     bridge: State<'_, AppBridge>,
     session_id: String,
     text: String,
     agent: Option<String>,
+    skills: Option<Vec<String>>,
 ) -> Result<(), String> {
     let mut body = PromptBody::text(text);
     body.agent = agent;
+    apply_skills(&app, &mut body, skills);
     bridge
         .client()
         .prompt_async(&session_id, &body)
@@ -306,4 +313,134 @@ pub async fn find_symbols(
         .find_symbols(&query)
         .await
         .map_err(stringify)
+}
+
+// -- skills ------------------------------------------------------------------
+//
+// Orquestador owns a small store of user-authored markdown *skills* kept at
+// `<app_config_dir>/skills/<slug>.md`. The file stem is the skill's slug, so a
+// user-facing name is slugged consistently on every read/write/delete. The
+// commands below are the only local-disk IO in the shell (the `list_files` /
+// `read_file` pair above proxies the opencode server instead).
+//
+// When the user has skills switched on, `apply_skills` folds them into the
+// outbound prompt's hidden `system` field. opencode appends that field after the
+// agent prompt, so the skills reach the model on every message without ever
+// showing up in the user's transcript.
+
+/// Resolve the app-owned skills directory (`<app_config_dir>/skills`), creating
+/// it on first use so callers can read/write without a separate mkdir.
+fn skills_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(stringify)?
+        .join("skills");
+    std::fs::create_dir_all(&dir).map_err(stringify)?;
+    Ok(dir)
+}
+
+/// Fold the selected skills into `body.system`.
+///
+/// Each name is slugged and its `<dir>/<slug>.md` read; empty slugs and
+/// unreadable files are skipped so a bad or missing skill can never fail a send.
+/// The rendered `<skills>` preamble is appended to any existing system prompt.
+fn apply_skills(app: &tauri::AppHandle, body: &mut PromptBody, skills: Option<Vec<String>>) {
+    let Some(names) = skills else { return };
+    if names.is_empty() {
+        return;
+    }
+    let Ok(dir) = skills_dir(app) else { return };
+
+    let loaded: Vec<(String, String)> = names
+        .iter()
+        .filter_map(|name| {
+            let slug = slugify(name);
+            if slug.is_empty() {
+                return None;
+            }
+            let content = std::fs::read_to_string(dir.join(format!("{slug}.md"))).ok()?;
+            Some((slug, content))
+        })
+        .collect();
+
+    let preamble = build_preamble(&loaded);
+    if preamble.is_empty() {
+        return;
+    }
+
+    let existing = body.system.take().unwrap_or_default();
+    body.system = Some(if existing.is_empty() {
+        preamble
+    } else {
+        format!("{existing}\n\n{preamble}")
+    });
+}
+
+/// List every stored skill (`.md` files in the skills dir), sorted by name.
+#[tauri::command]
+pub async fn list_skills(app: tauri::AppHandle) -> Result<Vec<SkillInfo>, String> {
+    let dir = skills_dir(&app)?;
+    let entries = std::fs::read_dir(&dir).map_err(stringify)?;
+    let mut skills = Vec::new();
+    for entry in entries {
+        let path = entry.map_err(stringify)?.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") || !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        skills.push(SkillInfo {
+            name: name.to_string(),
+            path: path.to_string_lossy().into_owned(),
+        });
+    }
+    skills.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(skills)
+}
+
+/// Read a skill's markdown by user-facing name (slugged to its file stem).
+#[tauri::command]
+pub async fn read_skill(app: tauri::AppHandle, name: String) -> Result<String, String> {
+    let slug = slugify(&name);
+    if slug.is_empty() {
+        return Err(format!("invalid skill name: {name:?}"));
+    }
+    let path = skills_dir(&app)?.join(format!("{slug}.md"));
+    std::fs::read_to_string(&path).map_err(stringify)
+}
+
+/// Write a skill's markdown, creating or overwriting `<dir>/<slug>.md`.
+#[tauri::command]
+pub async fn save_skill(
+    app: tauri::AppHandle,
+    name: String,
+    content: String,
+) -> Result<SkillInfo, String> {
+    let slug = slugify(&name);
+    if slug.is_empty() {
+        return Err(format!("invalid skill name: {name:?}"));
+    }
+    let path = skills_dir(&app)?.join(format!("{slug}.md"));
+    std::fs::write(&path, content).map_err(stringify)?;
+    Ok(SkillInfo {
+        name: slug,
+        path: path.to_string_lossy().into_owned(),
+    })
+}
+
+/// Delete a skill's markdown. A skill that does not exist reports `Ok(false)`.
+#[tauri::command]
+pub async fn delete_skill(app: tauri::AppHandle, name: String) -> Result<bool, String> {
+    let slug = slugify(&name);
+    if slug.is_empty() {
+        return Err(format!("invalid skill name: {name:?}"));
+    }
+    let path = skills_dir(&app)?.join(format!("{slug}.md"));
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(stringify(err)),
+    }
 }
