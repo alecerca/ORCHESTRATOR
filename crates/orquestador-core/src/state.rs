@@ -31,8 +31,8 @@ pub enum AgentUiStatus {
     Error,
 }
 
-/// Desktop notification requested by the reducer. The Tauri shell decides
-/// whether to actually show it (e.g. skip when the window is focused).
+/// Desktop notification requested by the reducer. The Tauri shell always shows
+/// these, regardless of window focus (see `docs/PLAN.md`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "effect", rename_all = "snake_case")]
 pub enum Effect {
@@ -1129,5 +1129,28 @@ mod tests {
             .unwrap()
         })
         .is_empty());
+    }
+
+    #[test]
+    fn every_effect_maps_to_a_notification_payload() {
+        let finished = Effect::Finished {
+            session_id: "s".into(),
+            title: "t".into(),
+        };
+        let failed = Effect::Failed {
+            session_id: "s".into(),
+            title: "t".into(),
+            message: "boom".into(),
+        };
+        let approval = Effect::Approval {
+            session_id: "s".into(),
+            permission_id: "p".into(),
+            title: "t".into(),
+        };
+        // Serialization contract consumed by the shell's notifier.
+        for effect in [finished, failed, approval] {
+            let v = serde_json::to_value(&effect).unwrap();
+            assert!(v.get("effect").and_then(|e| e.as_str()).is_some());
+        }
     }
 }

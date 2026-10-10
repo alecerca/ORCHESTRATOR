@@ -3,44 +3,66 @@
 //! Decision (see `docs/PLAN.md`): notifications are produced in Rust with
 //! `notify-rust` instead of the Tauri notification plugin, so the same
 //! `Effect` values that the core already computes can be shown without the
-//! webview. They are suppressed while the main window is focused, **except**
-//! approval requests, which always notify.
+//! webview. Every effect notifies, whether or not the main window is focused.
+
+use std::io::Write;
 
 use notify_rust::Notification;
 use orquestador_core::state::Effect;
-use tauri::{AppHandle, Manager};
 
-/// Show a desktop notification for an `Effect` unless the window is focused.
-pub fn handle_effect(app: &AppHandle, effect: &Effect) {
-    let focused = app
-        .get_webview_window("main")
-        .and_then(|window| window.is_focused().ok())
-        .unwrap_or(false);
+/// TEMPORARY diagnostic (notification investigation). Remove once the path is
+/// confirmed. Appends one line per event to a file the agent can read.
+pub(crate) fn debug_log(line: &str) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/orquestador-notify.log")
+    {
+        let _ = writeln!(file, "{line}");
+    }
+}
 
-    let (summary, body, always) = match effect {
+fn effect_kind(effect: &Effect) -> &'static str {
+    match effect {
+        Effect::Finished { .. } => "finished",
+        Effect::Failed { .. } => "failed",
+        Effect::Approval { .. } => "approval",
+    }
+}
+
+/// Show a desktop notification for an `Effect`.
+pub fn handle_effect(effect: &Effect) {
+    let (summary, body) = match effect {
         Effect::Finished { title, .. } => (
             "Sub-agent finished".to_string(),
             format!("{title} finished its run."),
-            false,
         ),
         Effect::Failed { title, message, .. } => (
             "Sub-agent failed".to_string(),
             format!("{title}: {message}"),
-            false,
         ),
         Effect::Approval { title, .. } => (
             "Approval required".to_string(),
             format!("{title} is waiting for your approval."),
-            true,
         ),
     };
 
-    if focused && !always {
-        return;
-    }
+    debug_log(&format!(
+        "handle_effect kind={} summary={summary:?}",
+        effect_kind(effect)
+    ));
 
     // A missing notification daemon (no D-Bus) must never break the app.
-    if let Err(error) = Notification::new().summary(&summary).body(&body).show() {
-        eprintln!("[orquestador] desktop notification failed: {error}");
+    match Notification::new()
+        .appname("Orquestador")
+        .summary(&summary)
+        .body(&body)
+        .show()
+    {
+        Ok(_) => debug_log("  -> shown (daemon accepted)"),
+        Err(error) => {
+            debug_log(&format!("  -> show FAILED: {error}"));
+            eprintln!("[orquestador] desktop notification failed: {error}");
+        }
     }
 }

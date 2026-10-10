@@ -62,7 +62,7 @@ plain workspace member with **zero** Tauri dependency and is verified headless
 
 - **rustls over openssl** — no system TLS lib needed to build/test the core.
 - **notify-rust in the shell, not core** — keeps the core headless; a missing
-  D-Bus daemon only logs. Suppress when focused except approvals.
+  D-Bus daemon only logs. Every `Effect` notifies, whether focused or not.
 - **`CoreMessage` envelope** — one event channel carries both high-frequency
   display data (`raw_event`) and debounced truth (`state_snapshot`).
 - **No state framework** — `useSyncExternalStore` + a tiny store is enough and

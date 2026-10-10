@@ -33,7 +33,8 @@ pub fn run() {
                     match receiver.recv().await {
                         Ok(message) => {
                             if let CoreMessage::Effect { effect } = &message {
-                                notify::handle_effect(&handle, effect);
+                                notify::debug_log(&format!("forwarder: received {effect:?}"));
+                                notify::handle_effect(effect);
                             }
                             let _ = handle.emit(CORE_EVENT, &message);
                         }
@@ -53,6 +54,18 @@ pub fn run() {
                 }
             }
             bridge.spawn_hub();
+
+            // TEMP (notification investigation): fire one notification a few
+            // seconds after startup so we can observe whether the app's own
+            // notification path shows a banner. Remove after investigation.
+            std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_secs(6));
+                notify::handle_effect(&orquestador_core::state::Effect::Approval {
+                    session_id: "startup-test".to_string(),
+                    permission_id: "startup".to_string(),
+                    title: "STARTUP TEST".to_string(),
+                });
+            });
 
             app.manage(bridge);
             Ok(())

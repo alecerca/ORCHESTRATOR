@@ -83,7 +83,7 @@ extend it if a UI need proves a gap (record it).
 │  lib.rs      Builder: manage(AppBridge), emit("core://message"), bootstrap  │
 │  bridge.rs   owns Arc<OpenCodeClient> + Arc<RwLock<AppState>> + broadcast    │
 │  commands.rs 21 #[tauri::command]s -> core (Result<T,String>)               │
-│  notify.rs   Effect -> notify-rust (suppress when focused; approval always)  │
+│  notify.rs   Effect -> notify-rust (always notifies)                          │
 └───────────────▲───────────────────────────────────────────────┬────────────┘
         invoke()│ Tauri IPC                              emit() │ "core://message"
 ┌───────────────┴───────────────────────────────────────────────▼────────────┐
@@ -252,9 +252,9 @@ pending). `session.created|updated` upserts.
 
 ### 6.6 Notification policy
 
-Core computes `Effect`; the **shell** decides to show it (`src-tauri/src/notify.rs`):
-suppress when the main window is focused, **except** `Approval` (always notify).
-Do not send notifications for message/part streaming.
+Core computes `Effect`; the **shell** always shows it (`src-tauri/src/notify.rs`),
+regardless of whether the main window is focused. Do not send notifications for
+message/part streaming.
 
 ---
 
