@@ -1,8 +1,8 @@
 // Pure tab/group model for the workspace centre.
 //
-// One tab = one document, unique across the whole workspace. A document is a
-// `session` today; T4 adds a `file` kind to the same union without reshaping the
-// model. The layout is a nested split tree (T3); leaves are groups holding tabs.
+// One tab = one document, unique across the whole workspace. A document is an
+// agent `session` or a `file` (discriminated union kinds). The layout is a
+// nested split tree (T3); leaves are groups holding tabs.
 //
 // Every helper is pure: it takes a `Layout` and returns a new one (or the same
 // reference when nothing changed). Generation of ids is the only module state,
@@ -15,8 +15,15 @@ export interface SessionTab {
   sessionId: string;
 }
 
-/** Discriminated union so `{ kind: "file" }` can be added later. */
-export type Tab = SessionTab;
+/** A file-backed document. `id` is derived from the path. */
+export interface FileTab {
+  id: string;
+  kind: "file";
+  path: string;
+}
+
+/** Discriminated union: agent histories and files are both documents. */
+export type Tab = SessionTab | FileTab;
 
 export interface GroupNode {
   id: string;
@@ -50,9 +57,19 @@ function sessionTabKey(sessionId: string): string {
   return `session:${sessionId}`;
 }
 
-/** The session a tab points at, or `null` for non-session kinds (T4). */
+/** Globally unique tab id for a file document. */
+export function fileTabKey(path: string): string {
+  return `file:${path}`;
+}
+
+/** The session a tab points at, or `null` for non-session kinds. */
 export function tabSessionId(tab: Tab): string | null {
   return tab.kind === "session" ? tab.sessionId : null;
+}
+
+/** The path a tab points at, or `null` for non-file kinds. */
+export function tabPath(tab: Tab): string | null {
+  return tab.kind === "file" ? tab.path : null;
 }
 
 // Id sequences; bumped on restore so new ids cannot collide with saved ones.
@@ -98,17 +115,26 @@ export function sessionTabIds(layout: Layout): string[] {
   return ids;
 }
 
+/** True when any group holds a tab for `path`. */
+export function hasFileTab(layout: Layout, path: string): boolean {
+  return groupsInTree(layout.root).some((group) =>
+    group.tabs.some((tab) => tab.kind === "file" && tab.path === path),
+  );
+}
+
 /**
- * Open a session tab or focus the existing one. Never duplicates: if the
- * session already has a tab anywhere, that tab and its group become active.
- * Otherwise the tab opens in the active group, creating the first group when
- * none exists.
+ * Open a tab or focus the existing one for the same document. Never
+ * duplicates: if the document already has a tab anywhere, that tab and its
+ * group become active. Otherwise the tab opens in the active group, creating
+ * the first group when none exists.
  */
-export function openSessionTab(layout: Layout, sessionId: string): Layout {
+function openTab(
+  layout: Layout,
+  tab: Tab,
+  isSameDocument: (candidate: Tab) => boolean,
+): Layout {
   for (const group of groupsInTree(layout.root)) {
-    const existing = group.tabs.find(
-      (tab) => tab.kind === "session" && tab.sessionId === sessionId,
-    );
+    const existing = group.tabs.find(isSameDocument);
     if (existing) {
       if (group.activeTabId === existing.id && layout.activeGroupId === group.id) {
         return layout;
@@ -117,8 +143,6 @@ export function openSessionTab(layout: Layout, sessionId: string): Layout {
       return { root, activeGroupId: group.id };
     }
   }
-
-  const tab: Tab = { id: sessionTabKey(sessionId), kind: "session", sessionId };
 
   if (layout.root === null) {
     const group: GroupNode = { id: nextGroupId(), kind: "group", tabs: [tab], activeTabId: tab.id };
@@ -150,6 +174,42 @@ export function openSessionTab(layout: Layout, sessionId: string): Layout {
     activeTabId: tab.id,
   }));
   return { root, activeGroupId: target.id };
+}
+
+/**
+ * Open a session tab or focus the existing one. Never duplicates: if the
+ * session already has a tab anywhere, that tab and its group become active.
+ * Otherwise the tab opens in the active group, creating the first group when
+ * none exists.
+ */
+export function openSessionTab(layout: Layout, sessionId: string): Layout {
+  return openTab(
+    layout,
+    { id: sessionTabKey(sessionId), kind: "session", sessionId },
+    (tab) => tab.kind === "session" && tab.sessionId === sessionId,
+  );
+}
+
+/**
+ * Open a file tab or focus the existing one. Never duplicates: if the path
+ * already has a tab anywhere, that tab and its group become active. Otherwise
+ * the tab opens in the active group, creating the first group when none exists.
+ */
+export function openFileTab(layout: Layout, path: string): Layout {
+  return openTab(
+    layout,
+    { id: fileTabKey(path), kind: "file", path },
+    (tab) => tab.kind === "file" && tab.path === path,
+  );
+}
+
+/** Path of the file tab active in the active group, or `null`. */
+export function activeFilePath(layout: Layout): string | null {
+  const activeGroup =
+    (layout.activeGroupId ? groupById(layout.root, layout.activeGroupId) : null) ??
+    groupsInTree(layout.root)[0];
+  const tab = activeGroup ? activeTabOf(activeGroup) : undefined;
+  return tab ? tabPath(tab) : null;
 }
 
 /** Activate a tab and its group. */
@@ -613,6 +673,7 @@ function isTab(value: unknown): value is Tab {
   const tab = value as Record<string, unknown>;
   if (typeof tab.id !== "string") return false;
   if (tab.kind === "session") return typeof tab.sessionId === "string";
+  if (tab.kind === "file") return typeof tab.path === "string";
   return false;
 }
 
@@ -660,7 +721,10 @@ function isLayout(value: unknown): value is Layout {
 }
 
 function normalizeTab(tab: Tab): Tab {
-  return { id: sessionTabKey(tab.sessionId), kind: "session", sessionId: tab.sessionId };
+  if (tab.kind === "session") {
+    return { id: sessionTabKey(tab.sessionId), kind: "session", sessionId: tab.sessionId };
+  }
+  return { id: fileTabKey(tab.path), kind: "file", path: tab.path };
 }
 
 function sanitizeGroup(group: GroupNode): GroupNode | null {

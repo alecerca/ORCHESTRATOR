@@ -23,10 +23,12 @@ import {
   LAYOUT_KEY,
   activateGroup,
   activateTab,
+  activeFilePath,
   closeAllTabs,
   closeSessionTabs,
   closeTab,
   hasSessionTab,
+  openFileTab,
   openSessionTab,
   parseLayout,
   pruneSessionTabs,
@@ -246,6 +248,9 @@ export default function App() {
     previousSessionIds.current = openSessionIds;
   }, [openSessionIds]);
 
+  // The file tree highlights the file tab that is active in the active group.
+  const activePath = useMemo(() => activeFilePath(layout), [layout]);
+
   const togglePane = useCallback((sessionId: string) => {
     setLayout((current) =>
       hasSessionTab(current, sessionId)
@@ -363,6 +368,7 @@ export default function App() {
           <PaneGrid
             layout={layout}
             sessions={state.sessions}
+            theme={theme}
             onActivateTab={(groupId, tabId) =>
               setLayout((current) => activateTab(current, groupId, tabId))
             }
@@ -386,7 +392,14 @@ export default function App() {
             }
           />
         </main>
-        {editorOpen && <EditorPanel theme={theme} rootSessionId={effectiveRootId} />}
+        {editorOpen && (
+          <EditorPanel
+            theme={theme}
+            rootSessionId={effectiveRootId}
+            activePath={activePath}
+            onOpenFile={(path) => setLayout((current) => openFileTab(current, path))}
+          />
+        )}
       </div>
       {composerOpen && <Composer sessionId={effectiveRootId} />}
       <ApprovalDialog />

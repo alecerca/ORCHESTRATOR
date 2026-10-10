@@ -8,7 +8,7 @@ import {
 } from "react";
 import { tabSessionId, type GroupNode, type Tab } from "../tabs";
 import type { SessionSnapshot } from "../types";
-import { shortId } from "../utils";
+import { baseName, shortId } from "../utils";
 
 /** Custom MIME type carrying the dragged tab payload (see PaneGrid's drop targets). */
 export const TAB_DRAG_MIME = "application/x-orquestador-tab";
@@ -21,8 +21,9 @@ interface Props {
   onSplit?: (groupId: string, direction: "right" | "down", tabId?: string) => void;
 }
 
-/** Tab title: the session title, falling back to its short id. */
+/** Tab title: a file tab shows its basename; a session tab its title, falling back to its short id. */
 function tabTitle(tab: Tab, sessions: SessionSnapshot[]): string {
+  if (tab.kind === "file") return baseName(tab.path);
   const sessionId = tabSessionId(tab);
   if (!sessionId) return tab.id;
   const snapshot = sessions.find((entry) => entry.session.id === sessionId);

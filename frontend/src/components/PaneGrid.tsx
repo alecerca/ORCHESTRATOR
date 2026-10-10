@@ -8,6 +8,7 @@ import {
 import {
   activeTabOf,
   groupsInTree,
+  tabPath,
   tabSessionId,
   type GroupNode,
   type Layout,
@@ -16,6 +17,7 @@ import {
 } from "../tabs";
 import type { SessionSnapshot } from "../types";
 import { AgentPane } from "./AgentPane";
+import { FileViewer } from "./FileViewer";
 import { GroupInfoBar } from "./GroupInfoBar";
 import { SplitDivider } from "./SplitDivider";
 import { TAB_DRAG_MIME, TabStrip } from "./TabStrip";
@@ -26,6 +28,7 @@ type DropSide = "left" | "right" | "top" | "bottom";
 interface Props {
   layout: Layout;
   sessions: SessionSnapshot[];
+  theme: "dark" | "light";
   onActivateTab: (groupId: string, tabId: string) => void;
   onActivateGroup: (groupId: string) => void;
   onCloseTab: (groupId: string, tabId: string) => void;
@@ -44,6 +47,7 @@ interface Props {
 export function PaneGrid({
   layout,
   sessions,
+  theme,
   onActivateTab,
   onActivateGroup,
   onCloseTab,
@@ -70,6 +74,7 @@ export function PaneGrid({
         <NodeView
           node={layout.root}
           sessions={sessions}
+          theme={theme}
           onActivateTab={onActivateTab}
           onActivateGroup={onActivateGroup}
           onCloseTab={onCloseTab}
@@ -83,9 +88,9 @@ export function PaneGrid({
   );
 }
 
-interface NodeProps {
-  node: Node;
+interface SharedProps {
   sessions: SessionSnapshot[];
+  theme: "dark" | "light";
   onActivateTab: (groupId: string, tabId: string) => void;
   onActivateGroup: (groupId: string) => void;
   onCloseTab: (groupId: string, tabId: string) => void;
@@ -99,6 +104,8 @@ interface NodeProps {
   ) => void;
   onUpdateSplitSizes?: (splitId: string, sizes: number[]) => void;
 }
+
+type NodeProps = SharedProps & { node: Node };
 
 function NodeView({ node, ...props }: NodeProps) {
   if (node.kind === "group") {
@@ -107,22 +114,7 @@ function NodeView({ node, ...props }: NodeProps) {
   return <SplitView split={node} {...props} />;
 }
 
-interface SplitProps {
-  split: SplitNode;
-  sessions: SessionSnapshot[];
-  onActivateTab: (groupId: string, tabId: string) => void;
-  onActivateGroup: (groupId: string) => void;
-  onCloseTab: (groupId: string, tabId: string) => void;
-  onAbort: (sessionId: string) => void;
-  onSplit?: (groupId: string, direction: "right" | "down", tabId?: string) => void;
-  onMoveTab?: (
-    sourceGroupId: string,
-    tabId: string,
-    targetGroupId: string,
-    targetSide: "left" | "right" | "top" | "bottom",
-  ) => void;
-  onUpdateSplitSizes?: (splitId: string, sizes: number[]) => void;
-}
+type SplitProps = SharedProps & { split: SplitNode };
 
 function SplitView({ split, ...props }: SplitProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -148,22 +140,7 @@ function SplitView({ split, ...props }: SplitProps) {
   );
 }
 
-interface GroupProps {
-  group: GroupNode;
-  sessions: SessionSnapshot[];
-  onActivateTab: (groupId: string, tabId: string) => void;
-  onActivateGroup: (groupId: string) => void;
-  onCloseTab: (groupId: string, tabId: string) => void;
-  onAbort: (sessionId: string) => void;
-  onSplit?: (groupId: string, direction: "right" | "down", tabId?: string) => void;
-  onMoveTab?: (
-    sourceGroupId: string,
-    tabId: string,
-    targetGroupId: string,
-    targetSide: "left" | "right" | "top" | "bottom",
-  ) => void;
-  onUpdateSplitSizes?: (splitId: string, sizes: number[]) => void;
-}
+type GroupProps = SharedProps & { group: GroupNode };
 
 /**
  * Nearest of the four half-zones to the pointer, comparing the distance to each
@@ -193,13 +170,15 @@ function dropZone(event: DragEvent<HTMLDivElement>): DropSide {
 
 /**
  * One split group: its tab strip, the thin info bar for the active tab, and the
- * active session's transcript. Clicking anywhere in the group makes it active
+ * active tab's document — an agent transcript for a `session` tab or the file
+ * viewer for a `file` tab. Clicking anywhere in the group makes it active
  * (where the next opened tab lands). Its content area is a drop target for tabs
  * dragged from any group.
  */
 function GroupView({
   group,
   sessions,
+  theme,
   onActivateTab,
   onActivateGroup,
   onCloseTab,
@@ -209,6 +188,7 @@ function GroupView({
 }: GroupProps) {
   const activeTab = activeTabOf(group);
   const sessionId = activeTab ? tabSessionId(activeTab) : null;
+  const filePath = activeTab ? tabPath(activeTab) : null;
   const snapshot = sessionId
     ? sessions.find((entry) => entry.session.id === sessionId)
     : undefined;
@@ -280,6 +260,7 @@ function GroupView({
             <AgentPane key={sessionId} sessionId={sessionId} />
           </>
         )}
+        {!sessionId && filePath && <FileViewer path={filePath} theme={theme} />}
         {dropSide && (
           <div className={`drop-indicator drop-indicator--${dropSide}`} aria-hidden="true" />
         )}
