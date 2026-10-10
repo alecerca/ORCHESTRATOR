@@ -308,7 +308,8 @@ button {
 .agent-card__meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   margin-top: 8px;
 }
 
@@ -318,9 +319,16 @@ button {
   color: var(--muted);
 }
 
+/* Wraps instead of overflowing the fixed-width panel: Abort + Rename +
+   Open/Close + Hide + Delete can be wider than the card, and a single
+   non-wrapping row clipped the tail buttons against the tab strip. The auto
+   left margin keeps the group right-aligned whether or not it wraps. */
 .agent-card__actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
+  margin-left: auto;
 }
 
 /* Per-row execution timer. Tabular numerals keep the width stable while it
