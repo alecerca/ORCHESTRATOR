@@ -32,6 +32,7 @@ import {
   hasSessionTab,
   openFileTab,
   openSessionTab,
+  openSkillTab,
   parseLayout,
   pruneSessionTabs,
   sessionTabIds,
@@ -395,7 +396,10 @@ export default function App() {
 
   return (
     <div className="app">
-      <TopBar rootSessionId={effectiveRootId} />
+      <TopBar
+        rootSessionId={effectiveRootId}
+        onOpenSkill={(name) => setLayout((current) => openSkillTab(current, name))}
+      />
       <div className="app__body">
         <ActivityBar
           theme={theme}
