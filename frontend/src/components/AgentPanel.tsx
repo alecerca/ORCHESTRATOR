@@ -6,6 +6,7 @@ import { describeError, shortId } from "../utils";
 import { AgentCard } from "./AgentCard";
 
 interface Props {
+  /** Session ids that currently have a tab anywhere in the workspace. */
   openPanes: string[];
   /** Effective orchestrator root (persisted pick, else `root_session_id`). */
   effectiveRootId: string | null;

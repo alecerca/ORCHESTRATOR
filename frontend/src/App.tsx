@@ -18,6 +18,21 @@ import { Composer } from "./components/Composer";
 import { ApprovalDialog } from "./components/ApprovalDialog";
 import { NotificationsDrawer } from "./components/NotificationsDrawer";
 import { EditorPanel } from "./components/EditorPanel";
+import {
+  EMPTY_LAYOUT,
+  LAYOUT_KEY,
+  activateGroup,
+  activateTab,
+  closeAllTabs,
+  closeSessionTabs,
+  closeTab,
+  hasSessionTab,
+  openSessionTab,
+  parseLayout,
+  pruneSessionTabs,
+  sessionTabIds,
+  type Layout,
+} from "./tabs";
 
 type Theme = "dark" | "light";
 
@@ -85,7 +100,19 @@ function loadRootPick(): string | null {
 export default function App() {
   const state = useAppState();
   const [theme, setTheme] = useState<Theme>(initialTheme);
-  const [panes, setPanes] = useState<string[]>([]);
+  // Restore the persisted tab layout once; `null` means "no saved layout", which
+  // lets the bootstrap open a tab for the effective root (today's behaviour).
+  const [persistedLayout] = useState<Layout | null>(() => {
+    try {
+      return parseLayout(localStorage.getItem(LAYOUT_KEY));
+    } catch {
+      return null;
+    }
+  });
+  const [layout, setLayout] = useState<Layout>(() => persistedLayout ?? EMPTY_LAYOUT);
+  // Flips true once the first authoritative snapshot lands, gating persistence
+  // and pruning so a restored layout is never wiped before bootstrap.
+  const [storeReady, setStoreReady] = useState(false);
   const [effects, setEffects] = useState<Effect[]>([]);
   const [agentPanelOpen, setAgentPanelOpen] = useState(true);
   const [editorOpen, setEditorOpen] = useState(true);
@@ -94,7 +121,8 @@ export default function App() {
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(loadDismissed);
   const [rootPick, setRootPick] = useState<string | null>(loadRootPick);
 
-  const prevPanesRef = useRef<string[]>([]);
+  const hadPersistedLayout = useRef(persistedLayout !== null);
+  const previousSessionIds = useRef<string[]>([]);
 
   // Persist theme + tag the document for the palette.
   useEffect(() => {
@@ -125,6 +153,27 @@ export default function App() {
     }
   }, [rootPick]);
 
+  // Persist the tab layout once the core has been reached. Writing before the
+  // first snapshot could clobber a restored layout with an empty pre-bootstrap
+  // one and block the root bootstrap tab on the next launch.
+  useEffect(() => {
+    if (!storeReady) return;
+    try {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+    } catch {
+      // ignore
+    }
+  }, [storeReady, layout]);
+
+  // Prune tabs whose session no longer exists (deleted server-side or absent
+  // from the first snapshot). Gated on `storeReady` so a restored layout is not
+  // pruned against the empty initial snapshot.
+  useEffect(() => {
+    if (!storeReady) return;
+    const existing = new Set(state.sessions.map((entry) => entry.session.id));
+    setLayout((current) => pruneSessionTabs(current, existing));
+  }, [storeReady, state.sessions]);
+
   // A hidden row that becomes active again must reappear.
   useEffect(() => {
     setDismissed((current) => {
@@ -151,9 +200,10 @@ export default function App() {
         const snapshot = await api.getState();
         if (cancelled) return;
         store.setState(snapshot);
+        setStoreReady(true);
         const rootId = resolveEffectiveRoot(snapshot, rootPick);
-        if (rootId) {
-          setPanes((current) => (current.length === 0 ? [rootId] : current));
+        if (rootId && !hadPersistedLayout.current) {
+          setLayout((current) => openSessionTab(current, rootId));
         }
       } catch (cause) {
         if (!cancelled) setBanner(`Could not reach the core: ${describeError(cause)}`);
@@ -171,6 +221,7 @@ export default function App() {
     const unlistenPromise = listen<CoreMessage>(CORE_EVENT, (event) => {
       const message = event.payload;
       store.pushMessage(message);
+      if (message.kind === "state_snapshot") setStoreReady(true);
       if (message.kind === "effect") {
         setEffects((current) => [message.effect, ...current].slice(0, EFFECT_LIMIT));
       }
@@ -180,28 +231,31 @@ export default function App() {
     };
   }, []);
 
-  // Drop the stream cache of panes that were closed.
+  // Streams are keyed by session, so a session's stream is dropped only once no
+  // tab anywhere still references it. `openSessionIds` is memoised to keep the
+  // effect dependency stable across unrelated re-renders.
+  const openSessionIds = useMemo(() => sessionTabIds(layout), [layout]);
   useEffect(() => {
-    const previous = prevPanesRef.current;
-    for (const sessionId of previous) {
-      if (!panes.includes(sessionId)) store.dropStream(sessionId);
+    const current = new Set(openSessionIds);
+    for (const sessionId of previousSessionIds.current) {
+      if (!current.has(sessionId)) store.dropStream(sessionId);
     }
-    prevPanesRef.current = panes;
-  }, [panes]);
+    previousSessionIds.current = openSessionIds;
+  }, [openSessionIds]);
 
   const togglePane = useCallback((sessionId: string) => {
-    setPanes((current) =>
-      current.includes(sessionId)
-        ? current.filter((id) => id !== sessionId)
-        : [...current, sessionId],
+    setLayout((current) =>
+      hasSessionTab(current, sessionId)
+        ? closeSessionTabs(current, sessionId)
+        : openSessionTab(current, sessionId),
     );
   }, []);
 
   const closePane = useCallback((sessionId: string) => {
-    setPanes((current) => current.filter((id) => id !== sessionId));
+    setLayout((current) => closeSessionTabs(current, sessionId));
   }, []);
 
-  const closeAllPanes = useCallback(() => setPanes([]), []);
+  const closeAllPanes = useCallback(() => setLayout(closeAllTabs()), []);
 
   const handleAbort = useCallback((sessionId: string) => {
     void api.abortSession(sessionId).catch((cause) => {
@@ -220,8 +274,9 @@ export default function App() {
   );
 
   // Hide a finished row: UI-local only (the server session stays alive) — it
-  // also closes any pane and drops the stream so nothing is orphaned. The root
-  // row never reaches this handler (AgentPanel does not pass it the prop).
+  // also closes any tab for that session; once the tab is gone the layout effect
+  // drops the stream. The root row never reaches this handler (AgentPanel does
+  // not pass it the prop).
   const dismiss = useCallback(
     (sessionId: string) => {
       if (sessionId === effectiveRootId) return;
@@ -232,7 +287,6 @@ export default function App() {
         return next;
       });
       closePane(sessionId);
-      store.dropStream(sessionId);
     },
     [effectiveRootId, closePane],
   );
@@ -248,7 +302,6 @@ export default function App() {
     async (sessionId: string) => {
       await api.deleteSession(sessionId);
       closePane(sessionId);
-      store.dropStream(sessionId);
       setRootPick((current) =>
         current === sessionId || sessionId === effectiveRootId ? null : current,
       );
@@ -279,7 +332,7 @@ export default function App() {
         />
         {agentPanelOpen && (
           <AgentPanel
-            openPanes={panes}
+            openPanes={openSessionIds}
             effectiveRootId={effectiveRootId}
             parentless={rootOptions}
             dismissed={dismissed}
@@ -304,7 +357,20 @@ export default function App() {
               </button>
             </div>
           )}
-          <PaneGrid panes={panes} sessions={state.sessions} onClosePane={closePane} />
+          <PaneGrid
+            layout={layout}
+            sessions={state.sessions}
+            onActivateTab={(groupId, tabId) =>
+              setLayout((current) => activateTab(current, groupId, tabId))
+            }
+            onActivateGroup={(groupId) =>
+              setLayout((current) => activateGroup(current, groupId))
+            }
+            onCloseTab={(groupId, tabId) =>
+              setLayout((current) => closeTab(current, groupId, tabId))
+            }
+            onAbort={handleAbort}
+          />
         </main>
         {editorOpen && <EditorPanel theme={theme} rootSessionId={effectiveRootId} />}
       </div>
