@@ -103,11 +103,13 @@ toggle; slash commands; `send_command` injection; skill sharing/sync; descriptio
   src-tauri/Cargo.toml` clean; `cargo test -p orquestador-core` → 71 passed.** Worker flagged: `skills`
   payload shape must match T3's frontend arg name; out-of-band non-slug `.md` files are returned by
   file stem (spec says name = stem, so left as-is).
-- [ ] **T3 — Frontend skill IPC + selection store (frontend)**: `commands.ts` gains
+- [x] **T3 — Frontend skill IPC + selection store (frontend)**: `commands.ts` gains
   `listSkills`/`readSkill`/`saveSkill`/`deleteSkill` and an optional `skills?: string[]` on
   `sendMessageAsync`/`sendMessage`; new `frontend/src/skills.ts` owns the selected-name state with
-  `localStorage` persistence, `toggle`, `remove`, `isSelected`, `subscribe`, `getSelectedNames`. Route:
-  delegated frontend writer. Verification: `npm run typecheck`.
+  `localStorage` persistence, `toggle`, `remove`, `isSelected`, `subscribe`, `getSelectedNames`. 
+  Also wired send call sites (`Composer.tsx`, `FollowUpInput.tsx`) to pass `getSelectedNames()`.
+  Route: inline for call-site wiring + committed after Worker A delivered IPC/store. Verification:
+  `npm run typecheck`. **Evidence: commit `4918662`; `cd frontend && npm run typecheck` → clean.**
 - [ ] **T4 — `skill` tab kind (frontend)**: extend `frontend/src/tabs.ts` (`SkillTab` union member, key
   fn, `openTab`/`openSkillTab`, `isTab`/`normalizeTab` + drop-on-restore), `TabStrip.tsx` title, and
   `PaneGrid.tsx` body branch (`kind==="skill"` → `SkillEditor`). Route: delegated frontend writer.
