@@ -21,9 +21,13 @@ interface Props {
   onSplit?: (groupId: string, direction: "right" | "down", tabId?: string) => void;
 }
 
-/** Tab title: a file tab shows its basename; a session tab its title, falling back to its short id. */
+/**
+ * Tab title: a file tab shows its basename, a skill tab its skill name, and a
+ * session tab its title, falling back to its short id.
+ */
 function tabTitle(tab: Tab, sessions: SessionSnapshot[]): string {
   if (tab.kind === "file") return baseName(tab.path);
+  if (tab.kind === "skill") return tab.name;
   const sessionId = tabSessionId(tab);
   if (!sessionId) return tab.id;
   const snapshot = sessions.find((entry) => entry.session.id === sessionId);

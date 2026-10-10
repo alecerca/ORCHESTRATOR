@@ -1290,6 +1290,35 @@ html[data-theme="light"] .drop-indicator {
   font-size: 13px;
 }
 
+/* -- skill editor + save prompt ---------------------------------------------- */
+
+.skill-editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.skill-editor__muted {
+  margin: 0;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.skill-prompt__body {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.skill-prompt__name {
+  color: var(--text);
+  font-family: var(--mono);
+}
+
 /* -- file tree -------------------------------------------------------------- */
 
 .filetree {

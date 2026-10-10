@@ -1,8 +1,8 @@
 // Pure tab/group model for the workspace centre.
 //
 // One tab = one document, unique across the whole workspace. A document is an
-// agent `session` or a `file` (discriminated union kinds). The layout is a
-// nested split tree (T3); leaves are groups holding tabs.
+// agent `session`, a `file`, or a `skill` (discriminated union kinds). The
+// layout is a nested split tree (T3); leaves are groups holding tabs.
 //
 // Every helper is pure: it takes a `Layout` and returns a new one (or the same
 // reference when nothing changed). Generation of ids is the only module state,
@@ -22,8 +22,20 @@ export interface FileTab {
   path: string;
 }
 
-/** Discriminated union: agent histories and files are both documents. */
-export type Tab = SessionTab | FileTab;
+/**
+ * A skill-backed document: an Orquestador-owned markdown instruction file open
+ * in the editor. Its content lives in the draft store, never here — a skill tab
+ * only names the skill. Skill tabs are deliberately NOT restored from a
+ * persisted layout (unsaved content cannot be resurrected safely).
+ */
+export interface SkillTab {
+  id: string;
+  kind: "skill";
+  name: string;
+}
+
+/** Discriminated union: agent histories, files and skills are all documents. */
+export type Tab = SessionTab | FileTab | SkillTab;
 
 export interface GroupNode {
   id: string;
@@ -62,6 +74,11 @@ export function fileTabKey(path: string): string {
   return `file:${path}`;
 }
 
+/** Globally unique tab id for a skill document. */
+export function skillTabKey(name: string): string {
+  return `skill:${name}`;
+}
+
 /** The session a tab points at, or `null` for non-session kinds. */
 export function tabSessionId(tab: Tab): string | null {
   return tab.kind === "session" ? tab.sessionId : null;
@@ -70,6 +87,11 @@ export function tabSessionId(tab: Tab): string | null {
 /** The path a tab points at, or `null` for non-file kinds. */
 export function tabPath(tab: Tab): string | null {
   return tab.kind === "file" ? tab.path : null;
+}
+
+/** The name a skill tab points at, or `null` for non-skill kinds. */
+export function tabSkillName(tab: Tab): string | null {
+  return tab.kind === "skill" ? tab.name : null;
 }
 
 // Id sequences; bumped on restore so new ids cannot collide with saved ones.
@@ -120,6 +142,12 @@ export function hasFileTab(layout: Layout, path: string): boolean {
   return groupsInTree(layout.root).some((group) =>
     group.tabs.some((tab) => tab.kind === "file" && tab.path === path),
   );
+}
+
+/** The tab `tabId` inside `groupId`, or `undefined` when absent. */
+export function getTab(layout: Layout, groupId: string, tabId: string): Tab | undefined {
+  const group = groupsInTree(layout.root).find((g) => g.id === groupId);
+  return group?.tabs.find((tab) => tab.id === tabId);
 }
 
 /**
@@ -200,6 +228,19 @@ export function openFileTab(layout: Layout, path: string): Layout {
     layout,
     { id: fileTabKey(path), kind: "file", path },
     (tab) => tab.kind === "file" && tab.path === path,
+  );
+}
+
+/**
+ * Open a skill tab or focus the existing one. Never duplicates: if the skill
+ * already has a tab anywhere, that tab and its group become active. Otherwise
+ * the tab opens in the active group, creating the first group when none exists.
+ */
+export function openSkillTab(layout: Layout, name: string): Layout {
+  return openTab(
+    layout,
+    { id: skillTabKey(name), kind: "skill", name },
+    (tab) => tab.kind === "skill" && tab.name === name,
   );
 }
 
@@ -674,6 +715,7 @@ function isTab(value: unknown): value is Tab {
   if (typeof tab.id !== "string") return false;
   if (tab.kind === "session") return typeof tab.sessionId === "string";
   if (tab.kind === "file") return typeof tab.path === "string";
+  if (tab.kind === "skill") return typeof tab.name === "string";
   return false;
 }
 
@@ -724,6 +766,9 @@ function normalizeTab(tab: Tab): Tab {
   if (tab.kind === "session") {
     return { id: sessionTabKey(tab.sessionId), kind: "session", sessionId: tab.sessionId };
   }
+  if (tab.kind === "skill") {
+    return { id: skillTabKey(tab.name), kind: "skill", name: tab.name };
+  }
   return { id: fileTabKey(tab.path), kind: "file", path: tab.path };
 }
 
@@ -731,6 +776,9 @@ function sanitizeGroup(group: GroupNode): GroupNode | null {
   const tabs: Tab[] = [];
   const seen = new Set<string>();
   for (const raw of group.tabs) {
+    // Skill tabs are open documents backed by unsaved drafts; a restored tab
+    // could point at stale content, so they are dropped on restore instead.
+    if (raw.kind === "skill") continue;
     const tab = normalizeTab(raw);
     if (seen.has(tab.id)) continue;
     seen.add(tab.id);
