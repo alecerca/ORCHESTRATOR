@@ -30,3 +30,6 @@ Thumbs.db
 .expo/
 tmp/
 .codegraph/
+
+# Local skill registry index
+.atl/
