@@ -115,10 +115,12 @@ toggle; slash commands; `send_command` injection; skill sharing/sync; descriptio
   `PaneGrid.tsx` body branch (`kind==="skill"` → `SkillEditor`). Also added `skillDrafts.ts` and
   `SkillEditor.tsx`. Route: Worker B (T4+T6). Verification: typecheck + build. **Evidence: commit
   `2605478`; typecheck clean; `vite build` succeeded.**
-- [ ] **T5 — Header Skills + `+` (frontend)**: `TopBar.tsx` gains a `topbar__actions` region: a
+- [x] **T5 — Header Skills + `+` (frontend)**: `TopBar.tsx` gains a `topbar__actions` region: a
   **Skills** button + popover (list from `listSkills`, toggle per skill, selection highlighted) and a
   **`+`** button + menu (**New skill…** name prompt → open skill tab with scaffold; **Import .md…** →
-  hidden file input → `saveSkill`). Route: delegated frontend writer.
+  hidden file input → `saveSkill`). Also wired `onOpenSkill` in `App.tsx`. Route: Worker C (T5).
+  Verification: typecheck + build. **Evidence: commit `068abb9`; typecheck clean; `vite build`
+  succeeded.**
 - [x] **T6 — Skill editor + save-on-close (frontend)**: new `SkillEditor.tsx`, `SkillSavePrompt.tsx`,
   `skillDrafts.ts`, and App wiring to intercept close for dirty skill tabs (Save/Discard/Cancel).
   Route: Worker B (T4+T6). Verification: typecheck + build. **Evidence: commit `2605478`.**
