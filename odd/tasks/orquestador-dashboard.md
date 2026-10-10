@@ -67,8 +67,7 @@ Inter-agent channel: handoff docs in `docs/` (each agent reads the previous agen
 ## Progress log
 
 - [x] Feature document created (parent, 2026-10-10) — env probed: Rust 1.99, Node 24, npm 11; webkit2gtk missing; RDD on.
-- [x] T1 planned/scaffolded (worker A) — `docs/PLAN.md` (466 lines) + ARCHITECTURE.md + IMPLEMENTATION_PLAN.md; core skeleton with 37 workspace tests GREEN; cargo metadata/check ok; npm install + tsc + vite build ok on stub; git initialized on main.
-- [ ] T2 implemented — pending
+- [x] T2 implemented (worker B) — core fix (`respond_permission` omits `remember: null`) + full frontend (store, 23 invoke commands, 16 components, local Monaco with 5 workers); 39 tests GREEN, clippy `--workspace --all-targets -D warnings` clean, `tsc --noEmit` clean, `vite build` OK, `scripts/verify-headless.sh` OK. src-tauri not compiled (env-blocked, expected).
 - [ ] T3 audited/documented — pending
-- Commits: `046b0c0` chore: scaffold orquestador workspace and implementation plan (T1)
-- Next step: launch worker B (implementer, PLAN.md steps).
+- Commits: `046b0c0` chore: scaffold orquestador workspace and implementation plan (T1) · `b662e94` feat: implement orquestador dashboard (core, UI, tauri shell) (T2)
+- Next step: launch worker C (auditor: adversarial review + full headless verification + AUDIT.md/RUNBOOK + fix bounded defects; doubles as independent verifier — RDD assess returned high/unassessable, writer self-verification done).

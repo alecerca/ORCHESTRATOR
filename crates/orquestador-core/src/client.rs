@@ -79,12 +79,15 @@ impl OpenCodeClient {
     }
 
     /// Build a client from the environment:
-    /// `OPENCODE_SERVER_URL` (optional, defaults to `127.0.0.1:4096`),
+    /// `OPENCODE_SERVER_BASE_URL` (optional, defaults to `127.0.0.1:4096`;
+    /// `OPENCODE_SERVER_URL` is accepted as a legacy alias),
     /// `OPENCODE_SERVER_PASSWORD` (optional, enables basic auth),
     /// `OPENCODE_SERVER_USERNAME` (optional, defaults to `opencode`).
     pub fn from_env() -> Result<Self, CoreError> {
         let mut cfg = ClientConfig::default();
-        if let Ok(url) = std::env::var("OPENCODE_SERVER_URL") {
+        let url = std::env::var("OPENCODE_SERVER_BASE_URL")
+            .or_else(|_| std::env::var("OPENCODE_SERVER_URL"));
+        if let Ok(url) = url {
             if !url.trim().is_empty() {
                 cfg.base_url = url;
             }

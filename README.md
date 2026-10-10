@@ -5,11 +5,12 @@ composer for the orchestrator session, a live panel of sub-agents with status,
 split panes with each agent's message stream, interrupt / re-instruct, approval
 prompts with desktop notifications, and a Monaco editor with a diff viewer.
 
-> **Status: implemented.** The headless core is verified (39 unit tests) and the
-> frontend is complete and building; the Tauri shell is scaffolded and needs the
-> system dependencies below to compile. See `docs/PLAN.md` (master contract),
-> `docs/ARCHITECTURE.md`, `docs/IMPLEMENTATION_NOTES.md` (what was built and how
-> it was verified), and the canonical `SPEC.md`.
+> **Status: implemented and audited.** The headless core is verified (39 unit
+> tests), the frontend is complete and building, and an independent audit passed
+> (`docs/AUDIT.md`). The Tauri shell is scaffolded and needs the system
+> dependencies below to compile. See `docs/PLAN.md` (master contract),
+> `docs/ARCHITECTURE.md`, `docs/AUDIT.md`, `docs/RUNBOOK.md` (first run),
+> `docs/IMPLEMENTATION_NOTES.md`, and the canonical `SPEC.md`.
 
 ## Stack
 
@@ -65,6 +66,7 @@ src-tauri/                 # Tauri shell (standalone workspace, needs webkit2gtk
 frontend/                  # Vite + React + TS + Monaco
 scripts/                   # setup-system-deps.sh · install-deps.sh · verify-headless.sh
 docs/                      # PLAN.md · ARCHITECTURE.md · IMPLEMENTATION_PLAN.md
+                           # IMPLEMENTATION_NOTES.md · AUDIT.md · RUNBOOK.md
 ```
 
-The `README.md` first-run RUNBOOK is finalized by the auditor (AGENT 3).
+New here? Follow **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)** for the first run.
