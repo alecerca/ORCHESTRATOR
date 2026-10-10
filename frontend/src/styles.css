@@ -362,13 +362,19 @@ button {
   outline: none;
 }
 
-/* Two-step inline delete confirmation (no window.confirm). */
+/* Two-step inline delete confirmation (no window.confirm). Framed so the
+   destructive choice reads as a distinct, deliberate step — the trigger stays
+   a quiet ghost button next to Open/Hide, and only Confirm is danger-red. */
 .agent-card__confirm {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-top: 8px;
+  padding: 6px 8px;
   flex-wrap: wrap;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
 .agent-card__confirm-text {

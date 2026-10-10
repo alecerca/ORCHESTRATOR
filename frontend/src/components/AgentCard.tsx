@@ -162,7 +162,7 @@ export function AgentCard({
           )}
           <button
             type="button"
-            className="btn btn--danger btn--xs"
+            className="btn btn--ghost btn--xs"
             onClick={() => setConfirming(true)}
             title="Delete this session"
             aria-label="Delete this session"
