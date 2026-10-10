@@ -9,7 +9,8 @@ prompts with desktop notifications, and a Monaco editor with a diff viewer.
 > tests), the frontend is complete and building, and an independent audit passed
 > (`docs/AUDIT.md`). The Tauri shell is scaffolded and needs the system
 > dependencies below to compile. See `docs/PLAN.md` (master contract),
-> `docs/ARCHITECTURE.md`, `docs/AUDIT.md`, `docs/RUNBOOK.md` (first run),
+> `docs/ARCHITECTURE.md`, `docs/ROADMAP.md` (future directions), `docs/AUDIT.md`,
+> `docs/RUNBOOK.md` (first run),
 > `docs/IMPLEMENTATION_NOTES.md`, and the canonical `SPEC.md`.
 
 ## Stack
@@ -65,7 +66,7 @@ crates/orquestador-core/   # all logic (headless, tested)
 src-tauri/                 # Tauri shell (standalone workspace, needs webkit2gtk)
 frontend/                  # Vite + React + TS + Monaco
 scripts/                   # setup-system-deps.sh · install-deps.sh · verify-headless.sh
-docs/                      # PLAN.md · ARCHITECTURE.md · IMPLEMENTATION_PLAN.md
+docs/                      # PLAN.md · ARCHITECTURE.md · ROADMAP.md · IMPLEMENTATION_PLAN.md
                            # IMPLEMENTATION_NOTES.md · AUDIT.md · RUNBOOK.md
 ```
 
