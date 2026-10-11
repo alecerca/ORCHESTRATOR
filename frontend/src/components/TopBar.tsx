@@ -175,6 +175,13 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings }: Props) {
     }
   }
 
+  // Count only selected skills that exist in the current list: the persisted
+  // store can hold names from another backend or a since-deleted file, and the
+  // badge must never over-report them.
+  const availableCount = selected.filter((name) =>
+    skills.some((skill) => skill.name === name),
+  ).length;
+
   return (
     <header className="topbar">
       <div className="topbar__brand">
@@ -195,7 +202,7 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings }: Props) {
               onClick={toggleSkillsPanel}
             >
               Skills
-              {selected.length > 0 ? ` (${selected.length})` : ""}
+              {availableCount > 0 ? ` (${availableCount})` : ""}
             </button>
             {skillsOpen && (
               <div className="skills-popover" role="group" aria-label="Saved skills">
@@ -220,6 +227,22 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings }: Props) {
                               {active ? "✓" : ""}
                             </span>
                             <span className="skills-item__name">{skill.name}</span>
+                            <span
+                              className="skills-item__source"
+                              title={
+                                skill.editable
+                                  ? "App skill (editable)"
+                                  : `${skill.source} skill (read-only)`
+                              }
+                              style={{
+                                marginLeft: "auto",
+                                flexShrink: 0,
+                                color: "var(--muted)",
+                                fontSize: "11px",
+                              }}
+                            >
+                              {skill.source}
+                            </span>
                           </button>
                         </li>
                       );
