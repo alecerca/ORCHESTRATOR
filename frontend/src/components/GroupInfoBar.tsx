@@ -1,6 +1,7 @@
 import type { SessionSnapshot } from "../types";
 import { shortId } from "../utils";
 import { AgentTimer } from "./AgentTimer";
+import { BranchChip } from "./BranchChip";
 import { StatusChip } from "./StatusChip";
 
 interface Props {
@@ -23,6 +24,7 @@ export function GroupInfoBar({ sessionId, snapshot, onAbort }: Props) {
       <span className="group-infobar__title" title={sessionId}>
         {snapshot?.session.title || shortId(sessionId)}
       </span>
+      {snapshot && <BranchChip directory={snapshot.session.directory} />}
       <AgentTimer
         status={status}
         statusSince={snapshot?.status_since}
