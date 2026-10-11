@@ -123,21 +123,47 @@ the trait must mirror the existing inherent surface 1:1 so delegation is trivial
 
 ## Tasks
 
-1. [ ] Add `async-trait` to workspace deps and to `crates/orquestador-core`.
-2. [ ] `backend.rs`: trait + `EventStream` + `BackendEvent` + `BACKEND_OPENCODE`.
-3. [ ] `client.rs`: `impl AgentBackend for OpenCodeClient` delegating via
+1. [x] Add `async-trait` to workspace deps and to `crates/orquestador-core`.
+2. [x] `backend.rs`: trait + `EventStream` + `BackendEvent` + `BACKEND_OPENCODE`.
+3. [x] `client.rs`: `impl AgentBackend for OpenCodeClient` delegating via
        fully-qualified inherent calls; new `stream_events` that frames SSE with
        `eventsource()` and yields `BackendEvent`; move `decode_payload` (+ its unit
        tests) from `events.rs` to `client.rs`.
-4. [ ] `events.rs`: `bootstrap(&dyn AgentBackend, ...)`, `EventHub.client:
+4. [x] `events.rs`: `bootstrap(&dyn AgentBackend, ...)`, `EventHub.client:
        Arc<dyn AgentBackend>`, connection loop consumes `stream_events()`,
        `reconcile_once(&dyn AgentBackend, ...)`. Remove now-unused `eventsource`
        import locally.
-5. [ ] `bridge.rs`: hold/return `Arc<dyn AgentBackend>`; wrap `OpenCodeClient`.
-6. [ ] `lib.rs`: re-exports.
-7. [ ] Add a `FakeBackend` (test-only) and one test driving `bootstrap` and/or
+5. [x] `bridge.rs`: hold/return `Arc<dyn AgentBackend>`; wrap `OpenCodeClient`.
+6. [x] `lib.rs`: re-exports.
+7. [x] Add a `FakeBackend` (test-only) and one test driving `bootstrap` and/or
        the hub against it, proving the seam is backend-agnostic.
-8. [ ] Run the full verification chain.
+8. [x] Run the full verification chain.
+
+## Verification results
+
+- `cargo test --workspace` → **ok. 73 passed; 0 failed** (was 71; +2 seam tests).
+  Relocated `client::tests::decode_handles_the_three_wire_shapes` stays green
+  (OpenCode framing unchanged). Independent parent re-run confirmed: 73 passed.
+- `cargo check --manifest-path src-tauri/Cargo.toml` → **clean** (parent re-run confirmed).
+- `cd frontend && npx tsc --noEmit` → **exit 0** (parent re-run confirmed).
+- Diff reviewed by the parent: pure delegation in `impl AgentBackend`, SSE framing
+  semantics identical (undecodable frame → skip; stream error → `?` → reconnect),
+  hub loop order (raw → snapshot → effects) unchanged.
+
+## Progress
+
+- 2026-10-10: feature doc created; implementation delegated to `gentle-ai-worker`.
+- 2026-10-10: implemented and verified. Commit
+  `695a949` `feat(core): introduce AgentBackend trait and run OpenCode behind it`
+  on stacked branch `feat/agent-backend` (on top of `feat/remote-server-settings`).
+- RDD: `review assess` (base `1e90174`, committed-only) → risk **medium**,
+  `review_due=true` (`slice_budget_reached`, 1603 lines / 21 paths for the stack).
+  STATUS → START emitted a `gentle-ai.review-integration.consent/v3` envelope.
+  **BLOCKED**: this runtime has no native `question` tool, so the blocking consent
+  envelope cannot be rendered and no chat-token fallback is permitted. No
+  continuation was invoked; no review authority was created or burned. The human
+  must run the provider-issued `review start … --consent granted|declined`
+  invocation, or disable RDD for the clone.
 
 ## Acceptance criteria
 
@@ -159,7 +185,3 @@ the trait must mirror the existing inherent surface 1:1 so delegation is trivial
 - Module cycle `client.rs -> backend.rs` and `events.rs -> backend.rs` is fine
   (trait-only dependency, no item cycle).
 - `test_connection` and any raw OpenCode HTTP probing stay outside the trait.
-
-## Progress
-
-- 2026-10-10: feature doc created; implementation delegated.
