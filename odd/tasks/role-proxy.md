@@ -134,3 +134,12 @@ point at any address. The missing half is the role gate in front of OpenCode.
   `text/event-stream` with the body passed through.
 - Follow-up (not v0): TLS termination / deployment UX; stronger timing proof for
   SSE (currently asserted by content-type + body relay, not timing).
+- RDD status (2026-10-10): `gentle-ai review assess --cwd <repo> --agent opencode
+  --base-ref 41841e5 --committed-only` → risk **high** (hot path `auth.rs`),
+  `review_due=true` (`high_risk`), 12 paths / 1420 lines. Review **deferred to
+  delivery** per the user's instruction; no review was started for this slice.
+
+## Commit
+
+- `9fea838` `feat(proxy): add role-enforcing reverse proxy with viewer/editor RBAC`
+  (branch `feat/role-proxy`, stacked on `feat/agent-backend`).
