@@ -104,7 +104,8 @@ export type Effect =
       session_id: string;
       permission_id: string;
       title: string;
-    };
+    }
+  | { effect: "usage_limit"; session_id: string; title: string; message: string };
 
 // `CoreMessage` is internally tagged on `kind` (serde `tag = "kind"`).
 export type CoreMessage =
