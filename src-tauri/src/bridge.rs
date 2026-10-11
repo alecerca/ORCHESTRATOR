@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, RwLock as StdRwLock};
 use orquestador_core::client::ClientConfig;
 use orquestador_core::events::{bootstrap, BootstrapOutcome, CoreMessage, EVENT_BUFFER};
 use orquestador_core::state::AppStateSnapshot;
-use orquestador_core::{AppState, CoreError, EventHub, OpenCodeClient};
+use orquestador_core::{AgentBackend, AppState, CoreError, EventHub, OpenCodeClient};
 use tokio::sync::{broadcast, watch, RwLock};
 
 /// Shared application handle stored in Tauri's state and cloned into every
@@ -22,7 +22,7 @@ use tokio::sync::{broadcast, watch, RwLock};
 /// owned client. `reconnect` swaps the client and restarts the hub so a change
 /// to the server settings takes effect without relaunching the app.
 pub struct AppBridge {
-    client: Arc<StdRwLock<OpenCodeClient>>,
+    client: Arc<StdRwLock<Arc<dyn AgentBackend>>>,
     state: Arc<RwLock<AppState>>,
     tx: broadcast::Sender<CoreMessage>,
     shutdown: Mutex<watch::Sender<bool>>,
@@ -43,6 +43,8 @@ impl AppBridge {
             OpenCodeClient::new(ClientConfig::default())
                 .expect("the default client configuration is always valid")
         });
+        // Store behind the trait object so the shell never names a backend.
+        let client: Arc<dyn AgentBackend> = Arc::new(client);
         let (tx, _rx) = broadcast::channel(EVENT_BUFFER);
         let (shutdown, _rx) = watch::channel(false);
         Self {
@@ -54,15 +56,9 @@ impl AppBridge {
     }
 
     /// Cheap synchronous snapshot of the current client. Commands call methods
-    /// on the returned [`Arc`]; cloning the inner client is a couple of tiny
-    /// allocations (the underlying `reqwest::Client` is `Arc`-shared).
-    pub fn client(&self) -> Arc<OpenCodeClient> {
-        Arc::new(
-            self.client
-                .read()
-                .expect("client lock poisoned")
-                .clone(),
-        )
+    /// on the returned [`Arc`]; the inner backend is `Arc`-shared already.
+    pub fn client(&self) -> Arc<dyn AgentBackend> {
+        Arc::clone(&self.client.read().expect("client lock poisoned"))
     }
 
     pub fn state(&self) -> Arc<RwLock<AppState>> {
@@ -86,7 +82,7 @@ impl AppBridge {
     /// dropped, and a fresh hub is spawned. Returns the error string if the new
     /// configuration is invalid (nothing is swapped in that case).
     pub async fn reconnect(&self, config: ClientConfig) -> Result<(), CoreError> {
-        let client = OpenCodeClient::new(config)?;
+        let client: Arc<dyn AgentBackend> = Arc::new(OpenCodeClient::new(config)?);
 
         // Stop the current hub by flipping its watch flag.
         self.request_shutdown();
@@ -124,7 +120,7 @@ impl AppBridge {
     /// panics; a dead server yields [`BootstrapOutcome::Disconnected`].
     pub async fn bootstrap(&self) -> BootstrapOutcome {
         let client = self.client();
-        bootstrap(&client, &self.state).await
+        bootstrap(&*client, &self.state).await
     }
 
     /// Start the long-lived SSE connection on the Tauri async runtime.

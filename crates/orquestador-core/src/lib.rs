@@ -13,6 +13,7 @@
 //! * [`state`]  — session tree, per-agent status derivation, permission registry.
 //! * [`skills`] — app-owned markdown skills: name slugging + prompt preamble.
 
+pub mod backend;
 pub mod client;
 pub mod error;
 pub mod events;
@@ -20,6 +21,7 @@ pub mod skills;
 pub mod state;
 pub mod types;
 
+pub use backend::{AgentBackend, BackendEvent, EventStream, BACKEND_OPENCODE};
 pub use client::OpenCodeClient;
 pub use error::CoreError;
 pub use events::EventHub;

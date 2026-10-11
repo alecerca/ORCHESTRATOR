@@ -9,10 +9,15 @@
 //!   in the codebase builds a URL by hand.
 //! * Optional HTTP basic auth (`OPENCODE_SERVER_PASSWORD`, user `opencode`).
 
+use crate::backend::{AgentBackend, BackendEvent, EventStream, BACKEND_OPENCODE};
 use crate::error::CoreError;
 use crate::types::*;
+use async_trait::async_trait;
+use eventsource_stream::Eventsource;
+use futures_util::StreamExt;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -531,6 +536,206 @@ impl OpenCodeClient {
         }
         Ok(res)
     }
+
+    /// `GET /event` framed into decoded [`BackendEvent`]s.
+    ///
+    /// Owns the SSE framing that used to live in [`crate::events`]: the raw byte
+    /// stream is parsed by `eventsource`, each `data` payload is decoded with
+    /// [`decode_payload`], and the pair is yielded. A frame the server sends
+    /// that does not decode to a typed event is skipped; a transport/parse
+    /// error ends the stream with [`CoreError::Stream`] so the hub reconnects.
+    pub async fn stream_events(&self) -> Result<EventStream, CoreError> {
+        let response = self.event_stream().await?;
+        let stream = response.bytes_stream().eventsource().filter_map(|frame| async move {
+            let frame = match frame {
+                Ok(frame) => frame,
+                Err(e) => return Some(Err(CoreError::Stream(e.to_string()))),
+            };
+            let event_name = if frame.event.is_empty() {
+                None
+            } else {
+                Some(frame.event.as_str())
+            };
+            let (event, raw) = decode_payload(&frame.data, event_name)?;
+            Some(Ok(BackendEvent { event, raw }))
+        });
+        Ok(Box::pin(stream))
+    }
+}
+
+/// Decode one SSE `data` payload.
+///
+/// Handles the three shapes observed/expected from the server:
+/// 1. `{"type": "...", "properties": {...}}`          — plain event
+/// 2. `{"directory": "...", "payload": {...event...}}` — `/global/event` wrapper
+/// 3. bare JSON + an SSE `event:` line                 — fallback: synthesise `type`
+///
+/// Returns the typed event **and** the raw payload to forward to the webview.
+pub fn decode_payload(data: &str, event_name: Option<&str>) -> Option<(Event, Value)> {
+    let trimmed = data.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut value: Value = serde_json::from_str(trimmed).ok()?;
+
+    // Unwrap the /global/event envelope if present.
+    if value.get("payload").map(Value::is_object).unwrap_or(false)
+        && value.get("directory").is_some()
+    {
+        value = value.get("payload").cloned()?;
+    }
+
+    if !value.is_object() {
+        return None;
+    }
+
+    // No `type` on the payload but the SSE `event:` line names it → synthesise.
+    if value.get("type").is_none() {
+        let name = event_name.filter(|n| !n.is_empty())?;
+        let mut obj = serde_json::Map::new();
+        obj.insert("type".to_string(), Value::String(name.to_string()));
+        obj.insert("properties".to_string(), value);
+        value = Value::Object(obj);
+    }
+
+    let typed = serde_json::from_value::<Event>(value.clone()).unwrap_or(Event::Unknown);
+    Some((typed, value))
+}
+
+/// [`OpenCodeClient`] is the [`AgentBackend`] implementation for `opencode serve`.
+///
+/// Every method delegates to its inherent counterpart via a fully-qualified call
+/// (`OpenCodeClient::health(self)`) so the inherent and trait methods, which
+/// share names, never resolve ambiguously. `stream_events` is the one method
+/// that lives only here and adds SSE framing on top of the raw `event_stream`.
+#[async_trait]
+impl AgentBackend for OpenCodeClient {
+    fn id(&self) -> &'static str {
+        BACKEND_OPENCODE
+    }
+
+    async fn health(&self) -> Result<Health, CoreError> {
+        OpenCodeClient::health(self).await
+    }
+
+    async fn agents(&self) -> Result<Vec<Agent>, CoreError> {
+        OpenCodeClient::agents(self).await
+    }
+
+    async fn list_sessions(&self) -> Result<Vec<Session>, CoreError> {
+        OpenCodeClient::list_sessions(self).await
+    }
+
+    async fn create_session(&self, body: &CreateSessionBody) -> Result<Session, CoreError> {
+        OpenCodeClient::create_session(self, body).await
+    }
+
+    async fn session_statuses(&self) -> Result<HashMap<String, SessionStatus>, CoreError> {
+        OpenCodeClient::session_statuses(self).await
+    }
+
+    async fn session(&self, id: &str) -> Result<Session, CoreError> {
+        OpenCodeClient::session(self, id).await
+    }
+
+    async fn session_children(&self, id: &str) -> Result<Vec<Session>, CoreError> {
+        OpenCodeClient::session_children(self, id).await
+    }
+
+    async fn delete_session(&self, id: &str) -> Result<bool, CoreError> {
+        OpenCodeClient::delete_session(self, id).await
+    }
+
+    async fn rename_session(&self, id: &str, title: &str) -> Result<Session, CoreError> {
+        OpenCodeClient::rename_session(self, id, title).await
+    }
+
+    async fn todos(&self, id: &str) -> Result<Vec<Todo>, CoreError> {
+        OpenCodeClient::todos(self, id).await
+    }
+
+    async fn abort(&self, id: &str) -> Result<bool, CoreError> {
+        OpenCodeClient::abort(self, id).await
+    }
+
+    async fn prompt(&self, id: &str, body: &PromptBody) -> Result<MessageBundle, CoreError> {
+        OpenCodeClient::prompt(self, id, body).await
+    }
+
+    async fn prompt_async(&self, id: &str, body: &PromptBody) -> Result<(), CoreError> {
+        OpenCodeClient::prompt_async(self, id, body).await
+    }
+
+    async fn messages(
+        &self,
+        id: &str,
+        limit: Option<u32>,
+    ) -> Result<Vec<MessageBundle>, CoreError> {
+        OpenCodeClient::messages(self, id, limit).await
+    }
+
+    async fn message(&self, id: &str, message_id: &str) -> Result<MessageBundle, CoreError> {
+        OpenCodeClient::message(self, id, message_id).await
+    }
+
+    async fn command(&self, id: &str, body: &CommandBody) -> Result<MessageBundle, CoreError> {
+        OpenCodeClient::command(self, id, body).await
+    }
+
+    async fn pending_permissions(&self) -> Result<Vec<PermissionRequest>, CoreError> {
+        OpenCodeClient::pending_permissions(self).await
+    }
+
+    async fn reply_permission(
+        &self,
+        request_id: &str,
+        response: PermissionResponse,
+        message: Option<&str>,
+    ) -> Result<bool, CoreError> {
+        OpenCodeClient::reply_permission(self, request_id, response, message).await
+    }
+
+    async fn respond_permission(
+        &self,
+        id: &str,
+        permission_id: &str,
+        response: PermissionResponse,
+        remember: Option<bool>,
+    ) -> Result<bool, CoreError> {
+        OpenCodeClient::respond_permission(self, id, permission_id, response, remember).await
+    }
+
+    async fn diff(&self, id: &str, message_id: Option<&str>) -> Result<Vec<FileDiff>, CoreError> {
+        OpenCodeClient::diff(self, id, message_id).await
+    }
+
+    async fn file_tree(&self, path: Option<&str>) -> Result<Vec<FileNode>, CoreError> {
+        OpenCodeClient::file_tree(self, path).await
+    }
+
+    async fn file_content(&self, path: &str) -> Result<FileContent, CoreError> {
+        OpenCodeClient::file_content(self, path).await
+    }
+
+    async fn file_status(&self) -> Result<Vec<FileStatus>, CoreError> {
+        OpenCodeClient::file_status(self).await
+    }
+
+    async fn find_files(&self, query: &str, limit: Option<u32>) -> Result<Vec<String>, CoreError> {
+        OpenCodeClient::find_files(self, query, limit).await
+    }
+
+    async fn find_symbols(&self, query: &str) -> Result<Vec<Value>, CoreError> {
+        OpenCodeClient::find_symbols(self, query).await
+    }
+
+    async fn find_by_pattern(&self, pattern: &str) -> Result<Vec<String>, CoreError> {
+        OpenCodeClient::find_by_pattern(self, pattern).await
+    }
+
+    async fn stream_events(&self) -> Result<EventStream, CoreError> {
+        OpenCodeClient::stream_events(self).await
+    }
 }
 
 /// HTTP-status classification for [`CoreError`].
@@ -862,6 +1067,40 @@ mod tests {
     fn urlencoding_lite_keeps_slashes_and_encodes_spaces() {
         assert_eq!(urlencoding_lite("src/main.rs"), "src/main.rs");
         assert_eq!(urlencoding_lite("a b+c"), "a%20b%2Bc");
+    }
+
+    #[test]
+    fn decode_handles_the_three_wire_shapes() {
+        // 1. plain typed event
+        let (typed, raw) = decode_payload(
+            r#"{"type":"session.idle","properties":{"sessionID":"s"}}"#,
+            None,
+        )
+        .expect("decodes");
+        assert!(matches!(typed, Event::SessionIdle { .. }));
+        assert_eq!(raw["type"], "session.idle");
+
+        // 2. /global/event style envelope
+        let (typed, raw) = decode_payload(
+            r#"{"directory":"/proj","payload":{"type":"permission.updated","properties":{"id":"p","type":"edit","sessionID":"s","messageID":"m","title":"t","metadata":{},"time":{"created":1}}}}"#,
+            None,
+        )
+        .expect("decodes");
+        assert!(matches!(typed, Event::PermissionUpdated { .. }));
+        assert_eq!(raw["type"], "permission.updated");
+        assert!(raw.get("directory").is_none(), "envelope must be unwrapped");
+
+        // 3. bare payload + SSE event name
+        let (typed, raw) =
+            decode_payload(r#"{"sessionID":"s"}"#, Some("session.idle")).expect("decodes");
+        assert!(matches!(typed, Event::SessionIdle { .. }));
+        assert_eq!(raw["type"], "session.idle");
+
+        // Garbage and empty payloads are dropped, never panic.
+        assert!(decode_payload("", None).is_none());
+        assert!(decode_payload("{not json", None).is_none());
+        assert!(decode_payload("42", None).is_none());
+        assert!(decode_payload(r#"{"nope":1}"#, None).is_none());
     }
 
     #[tokio::test]
