@@ -18,6 +18,7 @@ import { PaneGrid } from "./components/PaneGrid";
 import { Composer } from "./components/Composer";
 import { ApprovalDialog } from "./components/ApprovalDialog";
 import { NotificationsDrawer } from "./components/NotificationsDrawer";
+import { ConnectionBanner } from "./components/ConnectionBanner";
 import { EditorPanel } from "./components/EditorPanel";
 import { SkillSavePrompt } from "./components/SkillSavePrompt";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -449,6 +450,7 @@ export default function App() {
         onOpenSkill={(name) => setLayout((current) => openSkillTab(current, name))}
         onOpenSettings={() => setSettingsOpen(true)}
       />
+      <ConnectionBanner ready={storeReady} />
       <div className="app__body">
         <ActivityBar
           theme={theme}

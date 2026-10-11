@@ -6,6 +6,7 @@
 //! network, a runtime or a server (`cargo test -p orquestador-core`).
 //! All HTTP lives in [`crate::client`]; all orchestration in [`crate::events`].
 
+use crate::error::{is_usage_limit, is_usage_limit_message};
 use crate::types::{Agent, Event, Permission, PermissionRequest, Session, SessionStatus, Todo};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -49,6 +50,13 @@ pub enum Effect {
         session_id: String,
         permission_id: String,
         title: String,
+    },
+    /// A sub-agent's run was blocked by a usage/rate limit. Distinct from
+    /// [`Effect::Failed`] so the UI can say "waiting to retry", not "broke".
+    UsageLimit {
+        session_id: String,
+        title: String,
+        message: String,
     },
 }
 
@@ -195,10 +203,20 @@ impl AppState {
     /// [`Self::apply_statuses`] with an explicit clock (tests).
     pub fn apply_statuses_at(&mut self, statuses: HashMap<String, SessionStatus>, now_ms: i64) {
         for (id, st) in &statuses {
-            if matches!(st, SessionStatus::Busy | SessionStatus::Retry { .. }) {
-                self.active.insert(id.clone());
-                self.finished.remove(id);
-                self.errored.remove(id);
+            match st {
+                // A limit retry is a block, not progress: mark it errored so a
+                // bootstrap/reconcile snapshot never shows it as "running".
+                SessionStatus::Retry { message, .. } if is_usage_limit_message(message) => {
+                    self.active.remove(id);
+                    self.finished.remove(id);
+                    self.errored.insert(id.clone(), message.clone());
+                }
+                SessionStatus::Busy | SessionStatus::Retry { .. } => {
+                    self.active.insert(id.clone());
+                    self.finished.remove(id);
+                    self.errored.remove(id);
+                }
+                SessionStatus::Idle => {}
             }
         }
         let ids: Vec<String> = statuses.keys().cloned().collect();
@@ -400,23 +418,37 @@ impl AppState {
             }
             Event::SessionError { properties } => {
                 if let Some(id) = properties.session_id.as_deref() {
-                    let message = properties
-                        .error
-                        .as_ref()
-                        .and_then(|e| e.get("data"))
+                    let data = properties.error.as_ref().and_then(|e| e.get("data"));
+                    let message = data
                         .and_then(|d| d.get("message"))
                         .and_then(|m| m.as_str())
                         .map(str::to_owned)
                         .unwrap_or_else(|| "session error".to_string());
+                    let status = data
+                        .and_then(|d| d.get("statusCode"))
+                        .and_then(|s| s.as_u64())
+                        .unwrap_or(0) as u16;
                     // Only notify on the not-errored → errored transition so a
                     // burst of error events cannot spam notifications.
                     if !self.errored.contains_key(id) {
                         let title = self.title_of(id);
-                        effects.push(Effect::Failed {
-                            session_id: id.to_string(),
-                            title,
-                            message: message.clone(),
-                        });
+                        // A usage/rate limit gets its own warning instead of a
+                        // generic failure, so the UI can say "waiting to retry"
+                        // rather than "broke".
+                        let effect = if is_usage_limit(status, &message) {
+                            Effect::UsageLimit {
+                                session_id: id.to_string(),
+                                title,
+                                message: message.clone(),
+                            }
+                        } else {
+                            Effect::Failed {
+                                session_id: id.to_string(),
+                                title,
+                                message: message.clone(),
+                            }
+                        };
+                        effects.push(effect);
                     }
                     self.errored.insert(id.to_string(), message);
                     self.observe(id, now_ms);
@@ -471,6 +503,21 @@ impl AppState {
         effects: &mut Vec<Effect>,
     ) {
         match status {
+            // A usage/rate limit is a hard block, not a transient retry:
+            // surface a distinct warning and leave the "running" state, so the
+            // UI shows the run is waiting rather than silently in progress.
+            SessionStatus::Retry { message, .. } if is_usage_limit_message(message) => {
+                if !self.errored.contains_key(session_id) {
+                    effects.push(Effect::UsageLimit {
+                        session_id: session_id.to_string(),
+                        title: self.title_of(session_id),
+                        message: message.clone(),
+                    });
+                }
+                self.active.remove(session_id);
+                self.finished.remove(session_id);
+                self.errored.insert(session_id.to_string(), message.clone());
+            }
             SessionStatus::Busy | SessionStatus::Retry { .. } => {
                 self.active.insert(session_id.to_string());
                 self.finished.remove(session_id);
@@ -1132,6 +1179,98 @@ mod tests {
     }
 
     #[test]
+    fn usage_limit_session_error_emits_a_distinct_effect_and_clears_running() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_statuses(
+            [("a".to_string(), SessionStatus::Busy)]
+                .into_iter()
+                .collect(),
+        );
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Running);
+
+        let err = event(
+            r#"{"type":"session.error","properties":{"sessionID":"a","error":{"name":"APIError","data":{"message":"rate limit exceeded","statusCode":429,"isRetryable":true}}}}"#,
+        );
+        let fx = st.apply_event(&err);
+        assert_eq!(fx.len(), 1);
+        assert!(
+            matches!(&fx[0], Effect::UsageLimit { session_id, message, .. }
+                if session_id == "a" && message.contains("rate limit")),
+            "expected a usage-limit effect, got {fx:?}"
+        );
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Error);
+        assert_ne!(st.agent_status("a"), AgentUiStatus::Running);
+
+        // A repeat of the same limit must not spam a second warning.
+        assert!(st.apply_event(&err).is_empty());
+
+        // A new run clears the sticky limit state.
+        st.apply_event(&event(
+            r#"{"type":"session.status","properties":{"sessionID":"a","status":{"type":"busy"}}}"#,
+        ));
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Running);
+    }
+
+    #[test]
+    fn usage_limit_retry_status_does_not_stay_running() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+
+        let retry = event(
+            r#"{"type":"session.status","properties":{"sessionID":"a","status":{"type":"retry","attempt":1,"message":"usage limit reached, retry later","next":9999}}}"#,
+        );
+        let fx = st.apply_event(&retry);
+        assert_eq!(fx.len(), 1, "a limit retry must warn: {fx:?}");
+        assert!(
+            matches!(&fx[0], Effect::UsageLimit { session_id, .. } if session_id == "a"),
+            "expected a usage-limit effect, got {fx:?}"
+        );
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Error);
+
+        // Repeats stay quiet.
+        assert!(st.apply_event(&retry).is_empty());
+
+        // The run ending after the limit must not also shout "Finished".
+        assert!(st
+            .apply_event(&event(
+                r#"{"type":"session.idle","properties":{"sessionID":"a"}}"#,
+            ))
+            .is_empty());
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Idle);
+    }
+
+    #[test]
+    fn a_non_limit_retry_still_reports_running_without_a_warning() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        let retry = event(
+            r#"{"type":"session.status","properties":{"sessionID":"a","status":{"type":"retry","attempt":1,"message":"connection reset","next":9999}}}"#,
+        );
+        assert!(st.apply_event(&retry).is_empty());
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Running);
+    }
+
+    #[test]
+    fn a_limit_retry_in_a_status_map_is_blocked_not_running() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_statuses(
+            [(
+                "a".to_string(),
+                SessionStatus::Retry {
+                    attempt: 1,
+                    message: "free tier limit".into(),
+                    next: 9,
+                },
+            )]
+            .into_iter()
+            .collect(),
+        );
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Error);
+    }
+
+    #[test]
     fn every_effect_maps_to_a_notification_payload() {
         let finished = Effect::Finished {
             session_id: "s".into(),
@@ -1147,8 +1286,17 @@ mod tests {
             permission_id: "p".into(),
             title: "t".into(),
         };
+        let limit = Effect::UsageLimit {
+            session_id: "s".into(),
+            title: "t".into(),
+            message: "rate limit".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&limit).unwrap()["effect"],
+            "usage_limit"
+        );
         // Serialization contract consumed by the shell's notifier.
-        for effect in [finished, failed, approval] {
+        for effect in [finished, failed, approval, limit] {
             let v = serde_json::to_value(&effect).unwrap();
             assert!(v.get("effect").and_then(|e| e.as_str()).is_some());
         }
