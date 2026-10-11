@@ -167,16 +167,42 @@ The app is anchored to the server's cwd project. The user wants to run one
 
 ### Tasks
 
-- [ ] **B1 — Core: directory plumbing (TDD).** `ClientConfig.directory`; header
-  in the request builder + SSE request; a unit test asserting the header is
-  present/absent per config.
-- [ ] **B2 — Shell: project commands.** `list_projects`, `current_project`,
-  `set_project_directory`; wire through `AppBridge` with the reconnect path;
-  persist to `server.json`.
-- [ ] **B3 — Frontend: picker.** TopBar project control + dropdown + folder
-  dialog + persistence + re-scope on change.
-- [ ] **B4 — Verify.** Same chain as A4; manual: switch to `LookingForMates_App`
-  and confirm sessions/files scope to it.
+- [x] **B1 — Core: directory plumbing (TDD).** Added `ClientConfig.directory`
+  and `DIRECTORY_HEADER` (`x-opencode-directory`);
+  the header is injected in the shared `request()` builder (same place as basic
+  auth) **and** in the SSE `event_stream()` request. `file_tree`/`file_content`
+  were refactored to route through `request()` so they can no longer miss the
+  header (or auth). `AgentBackend` gained `projects()`/`current_project()`
+  (delegated by `OpenCodeClient`; `FakeBackend` stubbed). TDD RED → GREEN: 3 new
+  unit tests (`directory_header_is_sent_when_a_directory_is_configured`,
+  `directory_header_is_absent_when_no_directory_is_configured`,
+  `directory_header_is_sent_on_the_event_stream`); core lib 86 passed / 0 failed.
+- [x] **B2 — Shell: project commands.** `commands.rs`:
+  `list_projects`, `current_project`, `set_project_directory` (registered in
+  `lib.rs`). `ServerConfigFile.directory` added with `#[serde(default)]` (old
+  `server.json` still loads) + `normalize_directory` + `effective_file` helper so
+  a partial save never drops an env-configured server or the project scope;
+  `set_server_config` now preserves `directory`. Both switch commands persist
+  then rebuild the client through the existing `AppBridge::reconnect` path.
+  **Deviation from doc:** no new `AppBridge` setter method was added — the
+  existing `reconnect(config)` already *is* the atomic re-scope path, so the
+  commands call it directly. `server_config.rs` tests: 5 passed / 0 failed.
+- [x] **B3 — Frontend: picker.** New `components/ProjectPicker.tsx` in the TopBar
+  actions: current project (basename of `worktree`, or "Default project"),
+  dropdown of `GET /project` results + a "Server default (cwd)" option + an
+  absolute-path text input to open any directory. `types.ts` gained `Project` and
+  `ServerConfig.directory`; `commands.ts` wrappers; `serverConfig.ts`
+  `setDirectory` (and `directory` preserved across credential saves);
+  `App.tsx` seeds the mirror from `getServerConfig()` and `handleProjectChanged`
+  resets project-scoped UI (layout, root pick, dismissed, effects) then re-adopts
+  a fresh snapshot and re-opens the new root tab. `styles.css` `.project-picker`.
+  **Deviation from doc:** no native folder dialog — `tauri-plugin-dialog` is not a
+  dependency and adding one would violate the no-new-dependency constraint; a
+  custom absolute-path input stands in.
+- [ ] **B4 — Verify (automated green; manual pending).** See Progress. The manual
+  "switch to `LookingForMates_App` and confirm sessions/files scope to it" step
+  is a reviewer check (no live server / GUI in the writer's environment).
+
 
 ## Acceptance criteria
 
@@ -213,3 +239,34 @@ The app is anchored to the server's cwd project. The user wants to run one
 - 2026-10-11: Orchestrator spot-check (parent): `cargo test -p orquestador-core
   --lib` → 83 passed / 0 failed; `npx tsc --noEmit` → exit 0. Slice A ready to
   merge. Slice B (`feat/project-switching`) is next.
+- 2026-10-11: Slice B implemented (B1–B3; B4 automated). Core: `directory` +
+  `x-opencode-directory` on every request and the SSE stream; `projects()` /
+  `current_project()` on `AgentBackend`. Shell: `list_projects` /
+  `current_project` / `set_project_directory`; `server.json` `directory` with
+  `#[serde(default)]` + `effective_file` (preserves scope on a config save, and
+  never drops an env-configured server). Frontend: `ProjectPicker` in the TopBar,
+  config mirror + re-scope-on-change. Verification:
+  `cargo test --workspace` → 121 passed / 0 failed (orquestador-core 86,
+  orquestador-proxy 30 + 5 integration); `cargo check --manifest-path
+  src-tauri/Cargo.toml` clean; `cargo check --manifest-path src-tauri/Cargo.toml
+  --tests` clean; src-tauri lib tests 5 passed / 0 failed; `npx tsc --noEmit`
+  clean; `npx vite build` OK (pre-existing >500 kB chunk warning only). Commit id:
+  pending (owned by the parent).
+  **Open item (SSE scoping):** the directory header is now sent on `/event`, but
+  whether this server actually scopes the SSE stream by it is unverified (no live
+  server here). This is low-risk by construction: a switch goes through
+  `AppBridge::reconnect`, which restarts the hub and re-subscribes a fresh stream
+  on the new directory — the "re-subscribe on switch" fallback in the design
+  decisions is therefore always satisfied. Reviewer should confirm `/event`
+  scoping live.
+
+## Deviations from the Slice B plan (for the reviewer)
+
+- **No native folder dialog.** The plan named an "open folder…" native dialog, but
+  `tauri-plugin-dialog` is not a dependency and the task forbade new dependencies;
+  a plain absolute-path input replaces it. The dropdown of `GET /project` is the
+  primary path.
+- **No new `AppBridge` setter.** The plan listed "an `AppBridge` method to set the
+  active directory"; the existing `reconnect(config)` is already that atomic
+  re-scope path, so the commands reuse it directly rather than adding a wrapper.
+

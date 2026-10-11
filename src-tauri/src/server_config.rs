@@ -19,12 +19,41 @@ pub struct ServerConfigFile {
     pub base_url: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,
+    /// Absolute path of the active project (`x-opencode-directory`). Absent in a
+    /// `server.json` written before project switching existed; `#[serde(default)]`
+    /// keeps those files loadable.
+    #[serde(default)]
+    pub directory: Option<String>,
 }
 
 /// Trim and drop a trailing slash so `http://host:4096/` matches the client's
 /// URL builder.
 pub fn normalize_base_url(url: &str) -> String {
     url.trim().trim_end_matches('/').to_string()
+}
+
+/// Trim a directory and treat a blank value as "not set" (use the server's own
+/// cwd project), matching how blank credentials collapse to defaults.
+pub fn normalize_directory(dir: Option<String>) -> Option<String> {
+    dir.map(|d| d.trim().to_string()).filter(|d| !d.is_empty())
+}
+
+/// The raw file to build a save on: the persisted one when present, otherwise
+/// the effective environment / default configuration materialized into a file.
+///
+/// Persisting one field must never silently drop a server that was configured
+/// only through the environment, so a partial save always starts from this.
+pub fn effective_file(dir: &Path) -> ServerConfigFile {
+    if let Some(file) = load_file(dir) {
+        return file;
+    }
+    let cfg = ClientConfig::from_env_or_default();
+    ServerConfigFile {
+        base_url: Some(cfg.base_url),
+        username: Some(cfg.username),
+        password: cfg.password,
+        directory: cfg.directory,
+    }
 }
 
 /// Collapse the optional on-disk shape into a validated [`ClientConfig`].
@@ -46,6 +75,7 @@ pub fn to_client_config(file: &ServerConfigFile) -> ClientConfig {
         base_url,
         username,
         password: file.password.clone().filter(|p| !p.is_empty()),
+        directory: normalize_directory(file.directory.clone()),
         ..ClientConfig::default()
     }
 }
@@ -86,10 +116,15 @@ mod tests {
             base_url: Some("  ".to_string()),
             username: Some("".to_string()),
             password: Some("".to_string()),
+            directory: Some("   ".to_string()),
         });
         assert_eq!(cfg.base_url, DEFAULT_BASE_URL);
         assert_eq!(cfg.username, DEFAULT_USERNAME);
         assert!(cfg.password.is_none());
+        assert!(
+            cfg.directory.is_none(),
+            "a blank directory means the server's own cwd project"
+        );
     }
 
     #[test]
@@ -98,10 +133,31 @@ mod tests {
             base_url: Some("http://host:4096/".to_string()),
             username: Some("alice".to_string()),
             password: Some("secret".to_string()),
+            directory: Some("  /home/dev/proj  ".to_string()),
         });
         assert_eq!(cfg.base_url, "http://host:4096");
         assert_eq!(cfg.username, "alice");
         assert_eq!(cfg.password.as_deref(), Some("secret"));
+        assert_eq!(cfg.directory.as_deref(), Some("/home/dev/proj"));
+    }
+
+    #[test]
+    fn old_server_json_without_directory_still_loads() {
+        // Backward compatibility: a file written before project switching has no
+        // `directory` key; it must still deserialize with `directory: None`.
+        let dir = std::env::temp_dir().join(format!("orq-cfg-old-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(FILE_NAME),
+            r#"{"base_url":"http://old:1","username":"u","password":"p"}"#,
+        )
+        .unwrap();
+
+        let cfg = load_from_dir(&dir).expect("old file must still load");
+        assert_eq!(cfg.base_url, "http://old:1");
+        assert!(cfg.directory.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -112,12 +168,14 @@ mod tests {
             base_url: Some("http://example:1234".to_string()),
             username: Some("bob".to_string()),
             password: Some("pw".to_string()),
+            directory: Some("/home/dev/proj".to_string()),
         };
         save_to_dir(&dir, &file).unwrap();
         let loaded = load_file(&dir).expect("file should load back");
         assert_eq!(loaded.base_url.as_deref(), Some("http://example:1234"));
         assert_eq!(loaded.username.as_deref(), Some("bob"));
         assert_eq!(loaded.password.as_deref(), Some("pw"));
+        assert_eq!(loaded.directory.as_deref(), Some("/home/dev/proj"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
