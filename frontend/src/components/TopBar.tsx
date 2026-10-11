@@ -17,6 +17,8 @@ interface Props {
   rootSessionId: string | null;
   /** Open or focus the skill editor tab for `name`; App owns the layout. */
   onOpenSkill?: (name: string) => void;
+  /** Open the server settings dialog; App owns the dialog instance. */
+  onOpenSettings?: () => void;
 }
 
 /**
@@ -50,7 +52,7 @@ function readText(file: File): Promise<string> {
  * Skills controls — a dropdown of saved skills (each a selection toggle) plus a
  * `+` menu to author a new skill or import a `.md`.
  */
-export function TopBar({ rootSessionId, onOpenSkill }: Props) {
+export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings }: Props) {
   const state = useAppState();
   const rootId = rootSessionId;
   const rootSnapshot = rootId
@@ -281,6 +283,14 @@ export function TopBar({ rootSessionId, onOpenSkill }: Props) {
             className={`dot ${state.connected ? "dot--up" : "dot--down"}`}
             title={state.connected ? "connected" : "disconnected"}
           />
+          <button
+            className="btn btn--ghost btn--xs"
+            onClick={() => onOpenSettings?.()}
+            aria-label="Server settings"
+            title="Server settings"
+          >
+            ⚙
+          </button>
         </div>
       </div>
     </header>

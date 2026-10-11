@@ -1317,6 +1317,60 @@ html[data-theme="light"] .drop-indicator {
   justify-content: flex-end;
 }
 
+/* -- settings dialog -------------------------------------------------------- */
+
+.settings-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-field > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: var(--mono);
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.settings-input:focus {
+  outline: none;
+  border-color: var(--muted);
+}
+
+.settings-test {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.settings-test__result {
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.settings-test__result--error {
+  color: var(--error);
+}
+
 /* -- notifications ---------------------------------------------------------- */
 
 .notifications {

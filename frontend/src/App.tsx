@@ -19,6 +19,7 @@ import { ApprovalDialog } from "./components/ApprovalDialog";
 import { NotificationsDrawer } from "./components/NotificationsDrawer";
 import { EditorPanel } from "./components/EditorPanel";
 import { SkillSavePrompt } from "./components/SkillSavePrompt";
+import { SettingsDialog } from "./components/SettingsDialog";
 import {
   EMPTY_LAYOUT,
   LAYOUT_KEY,
@@ -138,6 +139,7 @@ export default function App() {
   } | null>(null);
   const [savingSkill, setSavingSkill] = useState(false);
   const [saveSkillError, setSaveSkillError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const hadPersistedLayout = useRef(persistedLayout !== null);
   const previousSessionIds = useRef<string[]>([]);
@@ -399,6 +401,7 @@ export default function App() {
       <TopBar
         rootSessionId={effectiveRootId}
         onOpenSkill={(name) => setLayout((current) => openSkillTab(current, name))}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       <div className="app__body">
         <ActivityBar
@@ -475,6 +478,7 @@ export default function App() {
       </div>
       {composerOpen && <Composer sessionId={effectiveRootId} />}
       <ApprovalDialog />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       {pendingSkillClose && (
         <SkillSavePrompt
           name={pendingSkillClose.name}
