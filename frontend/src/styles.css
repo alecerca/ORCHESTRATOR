@@ -295,6 +295,28 @@ button {
   display: none;
 }
 
+.project-picker {
+  position: relative;
+}
+
+.project-picker__popover {
+  min-width: 260px;
+}
+
+.project-picker__custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.project-picker__custom .settings-input {
+  flex: 1;
+  min-width: 0;
+}
+
 .skills-error {
   position: absolute;
   top: calc(100% + 6px);

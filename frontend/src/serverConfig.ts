@@ -23,6 +23,7 @@ function load(): ServerConfig {
         baseUrl: parsed.baseUrl.trim(),
         username: parsed.username,
         password: parsed.password,
+        directory: parsed.directory,
       };
     }
   } catch {
@@ -65,7 +66,23 @@ export function setConfig(c: Partial<ServerConfig>): void {
     baseUrl: c.baseUrl?.trim() || config.baseUrl,
     username: c.username,
     password: c.password,
+    // Preserve the current project scope unless the caller is changing it, so
+    // saving credentials does not silently reset which project is active.
+    directory: c.directory !== undefined ? c.directory : config.directory,
   };
+  config = next;
+  persist(next);
+  emit();
+}
+
+/**
+ * Mirror the active project scope (absolute directory, or `null` for the
+ * server's cwd project). The Rust side is authoritative; this keeps the UI in
+ * sync so a reload shows the right project.
+ */
+export function setDirectory(directory: string | null): void {
+  ensureLoaded();
+  const next: ServerConfig = { ...config, directory };
   config = next;
   persist(next);
   emit();

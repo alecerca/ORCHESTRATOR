@@ -67,6 +67,21 @@ export interface Health {
   version: string;
 }
 
+export interface ProjectTime {
+  created: number;
+  initialized?: number;
+}
+
+/** `GET /project`, `GET /project/current` — a project the server can serve. */
+export interface Project {
+  id: string;
+  /** Absolute directory of the project's worktree; used as the scope value. */
+  worktree: string;
+  vcsDir?: string;
+  vcs?: string;
+  time: ProjectTime;
+}
+
 export interface Todo {
   id: string;
   content: string;
@@ -211,6 +226,8 @@ export interface ServerConfig {
   baseUrl: string;
   username?: string;
   password?: string | null;
+  /** Active project directory (`x-opencode-directory`); unset = server cwd. */
+  directory?: string | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -8,9 +8,11 @@ import {
 } from "react";
 import { listSkills, saveSkill } from "../commands";
 import { getSnapshot, subscribe, toggle } from "../skills";
+import { useServerConfig } from "../serverConfig";
 import { useAppState } from "../store";
-import type { SkillInfo } from "../types";
+import type { ServerConfig, SkillInfo } from "../types";
 import { describeError, shortId } from "../utils";
+import { ProjectPicker } from "./ProjectPicker";
 
 interface Props {
   /** Effective orchestrator root (persisted pick, else `root_session_id`). */
@@ -19,6 +21,8 @@ interface Props {
   onOpenSkill?: (name: string) => void;
   /** Open the server settings dialog; App owns the dialog instance. */
   onOpenSettings?: () => void;
+  /** A project switch happened; App refreshes its project-scoped state. */
+  onProjectChanged?: (config: ServerConfig) => void;
 }
 
 /**
@@ -52,8 +56,9 @@ function readText(file: File): Promise<string> {
  * Skills controls — a dropdown of saved skills (each a selection toggle) plus a
  * `+` menu to author a new skill or import a `.md`.
  */
-export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings }: Props) {
+export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings, onProjectChanged }: Props) {
   const state = useAppState();
+  const serverConfig = useServerConfig();
   const rootId = rootSessionId;
   const rootSnapshot = rootId
     ? state.sessions.find((s) => s.session.id === rootId)
@@ -192,6 +197,10 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings }: Props) {
       </div>
       <div className="topbar__right">
         <div className="topbar__actions" ref={actionsRef}>
+          <ProjectPicker
+            directory={serverConfig.directory ?? null}
+            onChanged={(config) => onProjectChanged?.(config)}
+          />
           <div className="skills">
             <button
               type="button"
