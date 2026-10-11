@@ -112,3 +112,10 @@ plugins, no writes outside `crates/`, `src-tauri/`, `frontend/`, `docs/`, `odd/`
 - `cargo check --manifest-path src-tauri/Cargo.toml`
 - `cd frontend && npx tsc --noEmit`
 - Manual (user): restart the app, open Skills, confirm the OpenCode skills show and a message carries them.
+
+## RDD status
+
+- `gentle-ai review assess --base-ref 41841e5 --committed-only` → risk **medium** (`executable_change`),
+  `review_due=true` (`slice_budget_reached`, 443 changed lines). Preflight STATUS returns a ready
+  `review.start` (`--consent=relay`, lineage `review-f457c93b051a9671`).
+- **Deferred to delivery by the user** — the review transaction was not started.
