@@ -43,6 +43,35 @@ impl Default for ClientConfig {
     }
 }
 
+impl ClientConfig {
+    /// Read the server configuration from the environment, falling back to the
+    /// built-in defaults when a variable is missing or empty:
+    ///
+    /// * `OPENCODE_SERVER_BASE_URL` (optional, defaults to `127.0.0.1:4096`;
+    ///   `OPENCODE_SERVER_URL` is accepted as a legacy alias),
+    /// * `OPENCODE_SERVER_USERNAME` (optional, defaults to `opencode`),
+    /// * `OPENCODE_SERVER_PASSWORD` (optional, enables basic auth).
+    pub fn from_env_or_default() -> Self {
+        let mut cfg = ClientConfig::default();
+        let url = std::env::var("OPENCODE_SERVER_BASE_URL")
+            .or_else(|_| std::env::var("OPENCODE_SERVER_URL"));
+        if let Ok(url) = url {
+            if !url.trim().is_empty() {
+                cfg.base_url = url.trim().to_string();
+            }
+        }
+        if let Ok(user) = std::env::var("OPENCODE_SERVER_USERNAME") {
+            if !user.trim().is_empty() {
+                cfg.username = user;
+            }
+        }
+        cfg.password = std::env::var("OPENCODE_SERVER_PASSWORD")
+            .ok()
+            .filter(|p| !p.is_empty());
+        cfg
+    }
+}
+
 /// Typed OpenCode server client. Cheap to clone (shares one connection pool).
 #[derive(Debug, Clone)]
 pub struct OpenCodeClient {
@@ -97,23 +126,7 @@ impl OpenCodeClient {
     /// `OPENCODE_SERVER_PASSWORD` (optional, enables basic auth),
     /// `OPENCODE_SERVER_USERNAME` (optional, defaults to `opencode`).
     pub fn from_env() -> Result<Self, CoreError> {
-        let mut cfg = ClientConfig::default();
-        let url = std::env::var("OPENCODE_SERVER_BASE_URL")
-            .or_else(|_| std::env::var("OPENCODE_SERVER_URL"));
-        if let Ok(url) = url {
-            if !url.trim().is_empty() {
-                cfg.base_url = url;
-            }
-        }
-        if let Ok(user) = std::env::var("OPENCODE_SERVER_USERNAME") {
-            if !user.trim().is_empty() {
-                cfg.username = user;
-            }
-        }
-        cfg.password = std::env::var("OPENCODE_SERVER_PASSWORD")
-            .ok()
-            .filter(|p| !p.is_empty());
-        Self::new(cfg)
+        Self::new(ClientConfig::from_env_or_default())
     }
 
     pub fn base_url(&self) -> &str {
