@@ -125,3 +125,12 @@ export const currentProject = () => invoke<Project>("current_project");
 export const setProjectDirectory = (directory: string | null) =>
   invoke<ServerConfig>("set_project_directory", { directory });
 
+// -- git ---------------------------------------------------------------------
+/**
+ * The git branch of a session's working directory, or `null` when it cannot be
+ * determined (empty directory, not a repository, or git unavailable). Read-only:
+ * the shell only ever runs `git rev-parse`.
+ */
+export const gitBranch = (directory: string) =>
+  invoke<string | null>("git_branch", { directory });
+
