@@ -716,3 +716,26 @@ pub async fn delete_skill(app: tauri::AppHandle, name: String) -> Result<bool, S
         Err(err) => Err(stringify(err)),
     }
 }
+
+// -- git ---------------------------------------------------------------------
+//
+// The OpenCode API does not expose the git branch, so the UI derives it locally
+// from each session's `directory`. This is read-only introspection: the command
+// runs `git rev-parse` (never a mutating command) on a blocking thread so a slow
+// or missing `git` cannot stall the async runtime. There is nothing the UI must
+// surface as an error — an unknown branch is simply `None`.
+
+/// The current branch of the git repository at `directory`, or `None` when the
+/// directory is empty, is not a repository, or git fails.
+#[tauri::command]
+pub async fn git_branch(directory: String) -> Option<String> {
+    if directory.trim().is_empty() {
+        return None;
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        orquestador_core::git::branch_for_dir(std::path::Path::new(&directory))
+    })
+    .await
+    .ok()
+    .flatten()
+}

@@ -3,6 +3,7 @@ import * as api from "../commands";
 import type { AgentUiStatus, SessionSnapshot } from "../types";
 import { describeError, shortId } from "../utils";
 import { AgentTimer } from "./AgentTimer";
+import { BranchChip } from "./BranchChip";
 import { StatusChip } from "./StatusChip";
 
 const FINISHED: ReadonlySet<AgentUiStatus> = new Set(["done", "idle", "error"]);
@@ -132,6 +133,7 @@ export function AgentCard({
       )}
       <div className="agent-card__meta">
         <span className="agent-card__id">{shortId(session.id)}</span>
+        <BranchChip directory={session.directory} />
         <div className="agent-card__actions">
           {canAbort && (
             <button
