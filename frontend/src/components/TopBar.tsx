@@ -11,6 +11,7 @@ import { getSnapshot, subscribe, toggle } from "../skills";
 import { useAppState } from "../store";
 import type { SkillInfo } from "../types";
 import { describeError, shortId } from "../utils";
+import { SettingsDialog } from "./SettingsDialog";
 
 interface Props {
   /** Effective orchestrator root (persisted pick, else `root_session_id`). */
@@ -60,6 +61,7 @@ export function TopBar({ rootSessionId, onOpenSkill }: Props) {
     ? rootSnapshot.session.title || shortId(rootSnapshot.session.id)
     : null;
   const pending = state.permissions.length;
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Selected names live in the persisted skills store; the snapshot reference is
   // stable between mutations, so the highlighted toggles track it directly.
@@ -281,8 +283,17 @@ export function TopBar({ rootSessionId, onOpenSkill }: Props) {
             className={`dot ${state.connected ? "dot--up" : "dot--down"}`}
             title={state.connected ? "connected" : "disconnected"}
           />
+          <button
+            className="btn btn--ghost btn--xs"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Server settings"
+            title="Server settings"
+          >
+            ⚙
+          </button>
         </div>
       </div>
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </header>
   );
 }

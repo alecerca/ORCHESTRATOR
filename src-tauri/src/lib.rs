@@ -8,6 +8,7 @@
 mod bridge;
 mod commands;
 mod notify;
+mod server_config;
 
 use bridge::AppBridge;
 use orquestador_core::events::{BootstrapOutcome, CoreMessage};
@@ -21,7 +22,15 @@ pub const CORE_EVENT: &str = "core://message";
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let bridge = AppBridge::new();
+            // Prefer the persisted server settings (written by the Settings
+            // dialog); otherwise fall back to the environment / defaults.
+            let config = app
+                .path()
+                .app_config_dir()
+                .ok()
+                .and_then(|dir| server_config::load_from_dir(&dir))
+                .unwrap_or_else(orquestador_core::client::ClientConfig::from_env_or_default);
+            let bridge = AppBridge::new_with_config(config);
             // Subscribe before the hub starts so no message is lost.
             let mut receiver = bridge.subscribe();
 
@@ -80,6 +89,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_state,
             commands::get_health,
+            commands::test_connection,
+            commands::get_server_config,
+            commands::set_server_config,
             commands::get_agents,
             commands::session_statuses,
             commands::list_sessions,

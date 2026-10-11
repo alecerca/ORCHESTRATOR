@@ -15,6 +15,7 @@ import type {
   Health,
   MessageBundle,
   PermissionResponse,
+  ServerConfig,
   Session,
   SessionStatus,
   SkillInfo,
@@ -102,3 +103,11 @@ export const saveSkill = (name: string, content: string) =>
   invoke<SkillInfo>("save_skill", { name, content });
 export const deleteSkill = (name: string) =>
   invoke<boolean>("delete_skill", { name });
+
+// -- server config ------------------------------------------------------------
+export const testConnection = (baseUrl: string, username?: string, password?: string) =>
+  invoke<Health>("test_connection", { baseUrl, username, password });
+export const getServerConfig = () => invoke<ServerConfig>("get_server_config");
+export const setServerConfig = (baseUrl: string, username?: string, password?: string) =>
+  invoke<ServerConfig>("set_server_config", { baseUrl, username, password });
+
