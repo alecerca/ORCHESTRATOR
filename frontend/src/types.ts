@@ -195,6 +195,17 @@ export interface SkillInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Server config
+// ---------------------------------------------------------------------------
+
+/** Remote OpenCode server configuration (stored in localStorage). */
+export interface ServerConfig {
+  baseUrl: string;
+  username?: string;
+  password?: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Files / diffs
 // ---------------------------------------------------------------------------
 

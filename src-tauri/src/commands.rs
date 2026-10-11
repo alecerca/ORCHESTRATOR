@@ -6,6 +6,7 @@
 //! their `Display` string, which the webview can surface verbatim.
 
 use orquestador_core::state::AppStateSnapshot;
+use orquestador_core::client::ClientConfig;
 use orquestador_core::types::{
     Agent, CommandBody, CreateSessionBody, FileContent, FileDiff, FileNode, FileStatus, Health,
     MessageBundle, PermissionResponse, PromptBody, Session, SessionStatus, Todo,
@@ -32,6 +33,80 @@ pub async fn get_state(bridge: State<'_, AppBridge>) -> Result<AppStateSnapshot,
 #[tauri::command]
 pub async fn get_health(bridge: State<'_, AppBridge>) -> Result<Health, String> {
     bridge.client().health().await.map_err(stringify)
+}
+
+/// Probe an arbitrary server configuration without touching the running
+/// connection. Returns the health payload so the frontend can show the version.
+#[tauri::command]
+pub async fn test_connection(
+    base_url: String,
+    username: Option<String>,
+    password: Option<String>,
+) -> Result<Health, String> {
+    let config = crate::server_config::to_client_config(&crate::server_config::ServerConfigFile {
+        base_url: Some(base_url),
+        username,
+        password,
+    });
+    // Probe fast; a wrong host should fail quickly instead of hanging 30s.
+    let config = ClientConfig {
+        request_timeout: std::time::Duration::from_secs(5),
+        ..config
+    };
+    let client = orquestador_core::OpenCodeClient::new(config).map_err(stringify)?;
+    client.health().await.map_err(stringify)
+}
+
+/// Server settings as exposed to the webview.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerConfigDto {
+    pub base_url: String,
+    pub username: String,
+    pub password: Option<String>,
+}
+
+impl ServerConfigDto {
+    fn from_client_config(cfg: &ClientConfig) -> Self {
+        Self {
+            base_url: cfg.base_url.clone(),
+            username: cfg.username.clone(),
+            password: cfg.password.clone(),
+        }
+    }
+}
+
+/// Current effective server settings (persisted file when present, else the
+/// environment / built-in defaults).
+#[tauri::command]
+pub async fn get_server_config(app: tauri::AppHandle) -> Result<ServerConfigDto, String> {
+    let dir = app.path().app_config_dir().map_err(stringify)?;
+    let cfg = crate::server_config::load_from_dir(&dir)
+        .unwrap_or_else(ClientConfig::from_env_or_default);
+    Ok(ServerConfigDto::from_client_config(&cfg))
+}
+
+/// Persist new server settings and reconnect the live client to them.
+#[tauri::command]
+pub async fn set_server_config(
+    app: tauri::AppHandle,
+    bridge: State<'_, AppBridge>,
+    base_url: String,
+    username: Option<String>,
+    password: Option<String>,
+) -> Result<ServerConfigDto, String> {
+    let file = crate::server_config::ServerConfigFile {
+        base_url: Some(crate::server_config::normalize_base_url(&base_url)),
+        username,
+        password,
+    };
+    let dir = app.path().app_config_dir().map_err(stringify)?;
+    crate::server_config::save_to_dir(&dir, &file).map_err(stringify)?;
+
+    let cfg = crate::server_config::to_client_config(&file);
+    let dto = ServerConfigDto::from_client_config(&cfg);
+    bridge.reconnect(cfg).await.map_err(stringify)?;
+    Ok(dto)
 }
 
 #[tauri::command]
