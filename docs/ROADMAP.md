@@ -118,7 +118,9 @@ having them installed and authenticated; do not bundle them. OpenCode is OSS.
 2. **`AgentBackend` trait** (Track 3) → multi-model, and it forces the client
    seam to be clean.
 3. **Role-enforcing proxy + TLS** (Track 2, hard half) → real cowork with
-   read-only.
+   read-only. → **v0 implemented** (`crates/orquestador-proxy`: viewer/editor
+   role gate over HTTP Basic, SSE passthrough, audit log). TLS termination is
+   still a follow-up; v0 assumes a private network / tunnel.
 4. **Build matrix + signing** (Track 1) → ship the three platforms.
 
 ## Out of scope / open questions
