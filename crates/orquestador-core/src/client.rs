@@ -27,6 +27,12 @@ pub const DEFAULT_BASE_URL: &str = "http://127.0.0.1:4096";
 pub const DEFAULT_USERNAME: &str = "opencode";
 /// Title given to the session the composer drives when none exists yet.
 pub const DEFAULT_ROOT_TITLE: &str = "Orchestrator";
+/// Request header that scopes a request to a project directory.
+///
+/// One `opencode serve` can serve several projects; sending this header on
+/// **every** request (and on the SSE stream) is how the app selects which one to
+/// work on without restarting the server.
+pub const DIRECTORY_HEADER: &str = "x-opencode-directory";
 
 /// Configuration for [`OpenCodeClient`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +40,9 @@ pub struct ClientConfig {
     pub base_url: String,
     pub username: String,
     pub password: Option<String>,
+    /// Absolute path of the project to scope every request to. `None` uses the
+    /// server's own cwd project.
+    pub directory: Option<String>,
     pub request_timeout: Duration,
 }
 
@@ -43,6 +52,7 @@ impl Default for ClientConfig {
             base_url: DEFAULT_BASE_URL.to_string(),
             username: DEFAULT_USERNAME.to_string(),
             password: None,
+            directory: None,
             request_timeout: Duration::from_secs(30),
         }
     }
@@ -94,6 +104,8 @@ pub struct OpenCodeClient {
     base_url: String,
     username: String,
     password: Option<String>,
+    /// Project scope sent as [`DIRECTORY_HEADER`] on every request.
+    directory: Option<String>,
 }
 
 impl OpenCodeClient {
@@ -122,6 +134,7 @@ impl OpenCodeClient {
             base_url,
             username: config.username,
             password: config.password,
+            directory: config.directory,
         })
     }
 
@@ -154,6 +167,9 @@ impl OpenCodeClient {
         let mut req = self.http.request(method, self.url(path));
         if let Some(password) = &self.password {
             req = req.basic_auth(self.username.as_str(), Some(password));
+        }
+        if let Some(directory) = &self.directory {
+            req = req.header(DIRECTORY_HEADER, directory.as_str());
         }
         req
     }
@@ -449,38 +465,16 @@ impl OpenCodeClient {
     /// ("Missing key at [path]") when it is absent, so we always send it, even
     /// for the project root (empty value).
     pub async fn file_tree(&self, path: Option<&str>) -> Result<Vec<FileNode>, CoreError> {
-        let url = format!(
-            "{}/file?path={}",
-            self.base_url,
-            urlencoding_lite(path.unwrap_or(""))
-        );
-        let mut req = self.http.get(&url);
-        if let Some(password) = &self.password {
-            req = req.basic_auth(self.username.as_str(), Some(password));
-        }
-        let res = req.send().await?;
-        if !res.status().is_success() {
-            return Err(CoreError::from_response(res).await);
-        }
-        Ok(res.json::<Vec<FileNode>>().await?)
+        // Routed through `request()` so basic auth and the project scope header
+        // are applied here exactly as on every other endpoint.
+        let path = format!("/file?path={}", urlencoding_lite(path.unwrap_or("")));
+        self.get_json(&path).await
     }
 
     /// `GET /file/content?path=` → `FileContent`
     pub async fn file_content(&self, path: &str) -> Result<FileContent, CoreError> {
-        let url = format!(
-            "{}/file/content?path={}",
-            self.base_url,
-            urlencoding_lite(path)
-        );
-        let mut req = self.http.get(&url);
-        if let Some(password) = &self.password {
-            req = req.basic_auth(self.username.as_str(), Some(password));
-        }
-        let res = req.send().await?;
-        if !res.status().is_success() {
-            return Err(CoreError::from_response(res).await);
-        }
-        Ok(res.json::<FileContent>().await?)
+        let path = format!("/file/content?path={}", urlencoding_lite(path));
+        self.get_json(&path).await
     }
 
     /// `GET /file/status` → tracked-file status.
@@ -529,6 +523,9 @@ impl OpenCodeClient {
             .header(reqwest::header::ACCEPT, "text/event-stream");
         if let Some(password) = &self.password {
             req = req.basic_auth(self.username.as_str(), Some(password));
+        }
+        if let Some(directory) = &self.directory {
+            req = req.header(DIRECTORY_HEADER, directory.as_str());
         }
         let res = req.send().await?;
         if !res.status().is_success() {
@@ -620,6 +617,14 @@ impl AgentBackend for OpenCodeClient {
 
     async fn agents(&self) -> Result<Vec<Agent>, CoreError> {
         OpenCodeClient::agents(self).await
+    }
+
+    async fn projects(&self) -> Result<Vec<Project>, CoreError> {
+        OpenCodeClient::projects(self).await
+    }
+
+    async fn current_project(&self) -> Result<Project, CoreError> {
+        OpenCodeClient::current_project(self).await
     }
 
     async fn list_sessions(&self) -> Result<Vec<Session>, CoreError> {
@@ -869,6 +874,61 @@ mod tests {
         assert!(
             req.to_lowercase().contains("authorization: basic "),
             "expected basic auth, got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn directory_header_is_sent_when_a_directory_is_configured() {
+        let server = MockServer::start("200 OK", r#"[]"#).await;
+        let client = OpenCodeClient::new(ClientConfig {
+            base_url: server.base_url.clone(),
+            directory: Some("/home/dev/proj".to_string()),
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        let sessions: Vec<Session> = client.list_sessions().await.unwrap();
+        assert!(sessions.is_empty());
+
+        let req = server.request_text().await;
+        assert!(
+            req.to_lowercase()
+                .contains("x-opencode-directory: /home/dev/proj"),
+            "expected the project scope header, got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn directory_header_is_absent_when_no_directory_is_configured() {
+        let server = MockServer::start("200 OK", r#"[]"#).await;
+        let client = server.client(None).await; // directory defaults to None
+        let _ = client.list_sessions().await.unwrap();
+
+        let req = server.request_text().await;
+        assert!(
+            !req.to_lowercase().contains("x-opencode-directory"),
+            "no scope header expected, got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn directory_header_is_sent_on_the_event_stream() {
+        // The SSE stream is scoped the same way, so a project switch re-subscribes
+        // a fresh stream that already targets the new directory.
+        let server = MockServer::start("200 OK", "").await;
+        let client = OpenCodeClient::new(ClientConfig {
+            base_url: server.base_url.clone(),
+            directory: Some("/home/dev/proj".to_string()),
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        let _ = client.event_stream().await.unwrap();
+
+        let req = server.request_text().await;
+        assert!(req.starts_with("GET /event HTTP/1.1"), "got: {req}");
+        assert!(
+            req.to_lowercase()
+                .contains("x-opencode-directory: /home/dev/proj"),
+            "the SSE request must carry the project scope, got: {req}"
         );
     }
 

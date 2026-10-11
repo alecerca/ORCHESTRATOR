@@ -10,7 +10,7 @@ use orquestador_core::state::Effect;
 use orquestador_core::client::ClientConfig;
 use orquestador_core::types::{
     Agent, CommandBody, CreateSessionBody, FileContent, FileDiff, FileNode, FileStatus, Health,
-    MessageBundle, PermissionResponse, PromptBody, Session, SessionStatus, Todo,
+    MessageBundle, PermissionResponse, Project, PromptBody, Session, SessionStatus, Todo,
 };
 use orquestador_core::skills::merge_skills;
 use orquestador_core::{build_preamble, slugify, CoreError, SkillInfo};
@@ -71,6 +71,7 @@ pub async fn test_connection(
         base_url: Some(base_url),
         username,
         password,
+        directory: None,
     });
     // Probe fast; a wrong host should fail quickly instead of hanging 30s.
     let config = ClientConfig {
@@ -88,6 +89,8 @@ pub struct ServerConfigDto {
     pub base_url: String,
     pub username: String,
     pub password: Option<String>,
+    /// Active project directory, or `None` for the server's own cwd project.
+    pub directory: Option<String>,
 }
 
 impl ServerConfigDto {
@@ -96,6 +99,7 @@ impl ServerConfigDto {
             base_url: cfg.base_url.clone(),
             username: cfg.username.clone(),
             password: cfg.password.clone(),
+            directory: cfg.directory.clone(),
         }
     }
 }
@@ -111,6 +115,9 @@ pub async fn get_server_config(app: tauri::AppHandle) -> Result<ServerConfigDto,
 }
 
 /// Persist new server settings and reconnect the live client to them.
+///
+/// The active project directory is preserved: this command never touches the
+/// scoping choice, so changing the base URL does not silently reset the project.
 #[tauri::command]
 pub async fn set_server_config(
     app: tauri::AppHandle,
@@ -119,12 +126,48 @@ pub async fn set_server_config(
     username: Option<String>,
     password: Option<String>,
 ) -> Result<ServerConfigDto, String> {
-    let file = crate::server_config::ServerConfigFile {
-        base_url: Some(crate::server_config::normalize_base_url(&base_url)),
-        username,
-        password,
-    };
     let dir = app.path().app_config_dir().map_err(stringify)?;
+    let mut file = crate::server_config::effective_file(&dir);
+    file.base_url = Some(crate::server_config::normalize_base_url(&base_url));
+    file.username = username;
+    file.password = password;
+    crate::server_config::save_to_dir(&dir, &file).map_err(stringify)?;
+
+    let cfg = crate::server_config::to_client_config(&file);
+    let dto = ServerConfigDto::from_client_config(&cfg);
+    bridge.reconnect(cfg).await.map_err(stringify)?;
+    Ok(dto)
+}
+
+// -- projects ----------------------------------------------------------------
+
+/// Every project the running server knows about (`GET /project`).
+#[tauri::command]
+pub async fn list_projects(bridge: State<'_, AppBridge>) -> Result<Vec<Project>, String> {
+    bridge.client().projects().await.map_err(stringify)
+}
+
+/// The project the current client is scoped to (`GET /project/current`).
+#[tauri::command]
+pub async fn current_project(bridge: State<'_, AppBridge>) -> Result<Project, String> {
+    bridge.client().current_project().await.map_err(stringify)
+}
+
+/// Scope the app to a project directory and persist the choice.
+///
+/// `directory` is an absolute path; `None` clears the choice so the server's own
+/// cwd project is used. The switch rebuilds the client through the existing
+/// reconnect path and re-runs bootstrap, so sessions/files reflect the new
+/// project without restarting the server.
+#[tauri::command]
+pub async fn set_project_directory(
+    app: tauri::AppHandle,
+    bridge: State<'_, AppBridge>,
+    directory: Option<String>,
+) -> Result<ServerConfigDto, String> {
+    let dir = app.path().app_config_dir().map_err(stringify)?;
+    let mut file = crate::server_config::effective_file(&dir);
+    file.directory = crate::server_config::normalize_directory(directory);
     crate::server_config::save_to_dir(&dir, &file).map_err(stringify)?;
 
     let cfg = crate::server_config::to_client_config(&file);

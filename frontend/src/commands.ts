@@ -15,6 +15,7 @@ import type {
   Health,
   MessageBundle,
   PermissionResponse,
+  Project,
   ServerConfig,
   Session,
   SessionStatus,
@@ -110,4 +111,17 @@ export const testConnection = (baseUrl: string, username?: string, password?: st
 export const getServerConfig = () => invoke<ServerConfig>("get_server_config");
 export const setServerConfig = (baseUrl: string, username?: string, password?: string) =>
   invoke<ServerConfig>("set_server_config", { baseUrl, username, password });
+
+// -- projects -----------------------------------------------------------------
+/** Every project the running server knows about. */
+export const listProjects = () => invoke<Project[]>("list_projects");
+/** The project the app is currently scoped to. */
+export const currentProject = () => invoke<Project>("current_project");
+/**
+ * Scope the app to a project directory (absolute path) and persist the choice.
+ * Pass `null` to fall back to the server's own cwd project. Returns the updated
+ * server config; the client reconnects and re-bootstraps on the new project.
+ */
+export const setProjectDirectory = (directory: string | null) =>
+  invoke<ServerConfig>("set_project_directory", { directory });
 
