@@ -353,6 +353,7 @@ button {
 
 .agent-panel {
   width: 270px;
+  min-width: 160px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   background: var(--surface);
@@ -727,6 +728,24 @@ button {
 .split-divider--horizontal {
   height: 5px;
   cursor: row-resize;
+}
+
+/* -- panel resizer (draggable side panels) ---------------------------------- */
+
+.panel-resizer {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+  width: 5px;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background 0.12s ease;
+}
+
+.panel-resizer:hover,
+.panel-resizer:focus-visible {
+  background: var(--brand);
+  outline: none;
 }
 
 /* -- group content + drop target -------------------------------------------- */
@@ -1441,7 +1460,7 @@ html[data-theme="light"] .drop-indicator {
 
 .editor-panel {
   width: 420px;
-  max-width: 45vw;
+  min-width: 240px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
