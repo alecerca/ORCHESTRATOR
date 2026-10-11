@@ -28,3 +28,7 @@ futures-util = "0.3"
 # SSE framing (byte stream -> parsed events)
 eventsource-stream = "0.2"
 thiserror = "2"
+# `async fn` in traits for the `AgentBackend` seam. Edition 2021 traits are not
+# dyn-compatible with native `async fn`, so the trait is desugared to boxed
+# futures (acceptable for a control-tower app: no hot loop).
+async-trait = "0.1"
