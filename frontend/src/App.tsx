@@ -13,6 +13,7 @@ import { describeError } from "./utils";
 import { TopBar } from "./components/TopBar";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentPanel } from "./components/AgentPanel";
+import { PanelResizer } from "./components/PanelResizer";
 import { PaneGrid } from "./components/PaneGrid";
 import { Composer } from "./components/Composer";
 import { ApprovalDialog } from "./components/ApprovalDialog";
@@ -49,7 +50,28 @@ type Theme = "dark" | "light";
 const THEME_KEY = "orquestador.theme";
 const DISMISSED_KEY = "orquestador.dismissed";
 const ROOT_PICK_KEY = "orquestador.rootPick";
+const AGENT_PANEL_KEY = "orquestador.agentPanelWidth";
+const EDITOR_PANEL_KEY = "orquestador.editorPanelWidth";
+const AGENT_PANEL_MIN = 180;
+const AGENT_PANEL_MAX = 560;
+const AGENT_PANEL_DEFAULT = 270;
+const EDITOR_PANEL_MIN = 280;
+const EDITOR_PANEL_MAX = 720;
+const EDITOR_PANEL_DEFAULT = 420;
 const EFFECT_LIMIT = 20;
+
+/** Restore a persisted panel width, clamped to its bounds; fall back when unset/invalid. */
+function loadWidth(key: string, fallback: number, min: number, max: number): number {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(Math.max(parsed, min), max);
+  } catch {
+    return fallback;
+  }
+}
 
 function initialTheme(): Theme {
   try {
@@ -125,7 +147,13 @@ export default function App() {
   const [storeReady, setStoreReady] = useState(false);
   const [effects, setEffects] = useState<Effect[]>([]);
   const [agentPanelOpen, setAgentPanelOpen] = useState(true);
+  const [agentPanelWidth, setAgentPanelWidth] = useState(() =>
+    loadWidth(AGENT_PANEL_KEY, AGENT_PANEL_DEFAULT, AGENT_PANEL_MIN, AGENT_PANEL_MAX),
+  );
   const [editorOpen, setEditorOpen] = useState(true);
+  const [editorPanelWidth, setEditorPanelWidth] = useState(() =>
+    loadWidth(EDITOR_PANEL_KEY, EDITOR_PANEL_DEFAULT, EDITOR_PANEL_MIN, EDITOR_PANEL_MAX),
+  );
   const [composerOpen, setComposerOpen] = useState(true);
   const [banner, setBanner] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(loadDismissed);
@@ -172,6 +200,24 @@ export default function App() {
       // ignore
     }
   }, [rootPick]);
+
+  // Persist the agents panel width.
+  useEffect(() => {
+    try {
+      localStorage.setItem(AGENT_PANEL_KEY, String(agentPanelWidth));
+    } catch {
+      // ignore
+    }
+  }, [agentPanelWidth]);
+
+  // Persist the editor panel width.
+  useEffect(() => {
+    try {
+      localStorage.setItem(EDITOR_PANEL_KEY, String(editorPanelWidth));
+    } catch {
+      // ignore
+    }
+  }, [editorPanelWidth]);
 
   // Persist the tab layout once the core has been reached. Writing before the
   // first snapshot could clobber a restored layout with an empty pre-bootstrap
@@ -416,17 +462,28 @@ export default function App() {
           onToggleTheme={toggleTheme}
         />
         {agentPanelOpen && (
-          <AgentPanel
-            openPanes={openSessionIds}
-            effectiveRootId={effectiveRootId}
-            parentless={rootOptions}
-            dismissed={dismissed}
-            onTogglePane={togglePane}
-            onAbort={handleAbort}
-            onDismiss={dismiss}
-            onPickRoot={pickRoot}
-            onDelete={deleteSession}
-          />
+          <>
+            <AgentPanel
+              width={agentPanelWidth}
+              openPanes={openSessionIds}
+              effectiveRootId={effectiveRootId}
+              parentless={rootOptions}
+              dismissed={dismissed}
+              onTogglePane={togglePane}
+              onAbort={handleAbort}
+              onDismiss={dismiss}
+              onPickRoot={pickRoot}
+              onDelete={deleteSession}
+            />
+            <PanelResizer
+              width={agentPanelWidth}
+              min={AGENT_PANEL_MIN}
+              max={AGENT_PANEL_MAX}
+              grow={1}
+              onWidth={setAgentPanelWidth}
+              label="Resize agents panel"
+            />
+          </>
         )}
         <main className="workspace">
           {banner && (
@@ -468,12 +525,23 @@ export default function App() {
           />
         </main>
         {editorOpen && (
-          <EditorPanel
-            theme={theme}
-            rootSessionId={effectiveRootId}
-            activePath={activePath}
-            onOpenFile={(path) => setLayout((current) => openFileTab(current, path))}
-          />
+          <>
+            <PanelResizer
+              width={editorPanelWidth}
+              min={EDITOR_PANEL_MIN}
+              max={EDITOR_PANEL_MAX}
+              grow={-1}
+              onWidth={setEditorPanelWidth}
+              label="Resize editor panel"
+            />
+            <EditorPanel
+              width={editorPanelWidth}
+              theme={theme}
+              rootSessionId={effectiveRootId}
+              activePath={activePath}
+              onOpenFile={(path) => setLayout((current) => openFileTab(current, path))}
+            />
+          </>
         )}
       </div>
       {composerOpen && <Composer sessionId={effectiveRootId} />}

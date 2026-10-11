@@ -6,6 +6,8 @@ import { describeError, shortId } from "../utils";
 import { AgentCard } from "./AgentCard";
 
 interface Props {
+  /** Panel width in pixels, owned by the parent (drag/keyboard resizable). */
+  width: number;
   /** Session ids that currently have a tab anywhere in the workspace. */
   openPanes: string[];
   /** Effective orchestrator root (persisted pick, else `root_session_id`). */
@@ -44,6 +46,7 @@ function rootOptionLabel(snapshot: SessionSnapshot): string {
  * sessions needs to be able to remove them.
  */
 export function AgentPanel({
+  width,
   openPanes,
   effectiveRootId,
   parentless,
@@ -92,7 +95,7 @@ export function AgentPanel({
   };
 
   return (
-    <aside className="agent-panel">
+    <aside className="agent-panel" style={{ width }}>
       <div className="panel-heading">
         <span>Orchestrator</span>
         <button

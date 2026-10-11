@@ -3,6 +3,8 @@ import { DiffViewer } from "./DiffViewer";
 import { FileTree } from "./FileTree";
 
 interface Props {
+  /** Panel width in pixels, owned by the parent (drag/keyboard resizable). */
+  width: number;
   theme: "dark" | "light";
   /** Effective orchestrator root (persisted pick, else `root_session_id`). */
   rootSessionId: string | null;
@@ -13,11 +15,11 @@ interface Props {
 }
 
 /** Right column: the file explorer (files open as workspace tabs), or the session diff. */
-export function EditorPanel({ theme, rootSessionId, activePath, onOpenFile }: Props) {
+export function EditorPanel({ width, theme, rootSessionId, activePath, onOpenFile }: Props) {
   const [tab, setTab] = useState<"files" | "diff">("files");
 
   return (
-    <aside className="editor-panel">
+    <aside className="editor-panel" style={{ width }}>
       <div className="editor-panel__tabs">
         <button
           type="button"
