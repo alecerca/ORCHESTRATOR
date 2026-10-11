@@ -251,7 +251,13 @@ The app is anchored to the server's cwd project. The user wants to run one
   src-tauri/Cargo.toml` clean; `cargo check --manifest-path src-tauri/Cargo.toml
   --tests` clean; src-tauri lib tests 5 passed / 0 failed; `npx tsc --noEmit`
   clean; `npx vite build` OK (pre-existing >500 kB chunk warning only). Commit id:
-  pending (owned by the parent).
+  `e4a785a`.
+- 2026-10-11: Orchestrator spot-check (parent): `cargo test -p orquestador-core
+  --lib` → 86 passed / 0 failed (3 new `directory_header` tests); `npx tsc
+  --noEmit` → exit 0. RDD assess (`--base-ref db6951d --committed-only`) → risk
+  medium, `review_due=true` (`slice_budget_reached`, 14 paths / 623 lines).
+  Review consent cannot be rendered in this runtime (no native `question` UI);
+  user elected to skip. Feature delivered.
   **Open item (SSE scoping):** the directory header is now sent on `/event`, but
   whether this server actually scopes the SSE stream by it is unverified (no live
   server here). This is low-risk by construction: a switch goes through
