@@ -12,11 +12,13 @@
 //! * [`events`] — SSE subscription, typed event models, reconnect/backoff.
 //! * [`state`]  — session tree, per-agent status derivation, permission registry.
 //! * [`skills`] — app-owned markdown skills: name slugging + prompt preamble.
+//! * [`git`]    — read-only git helpers (branch of a session's directory).
 
 pub mod backend;
 pub mod client;
 pub mod error;
 pub mod events;
+pub mod git;
 pub mod skills;
 pub mod state;
 pub mod types;
