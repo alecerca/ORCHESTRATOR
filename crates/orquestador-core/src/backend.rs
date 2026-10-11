@@ -52,6 +52,10 @@ pub trait AgentBackend: Send + Sync {
     async fn health(&self) -> Result<Health, CoreError>;
     async fn agents(&self) -> Result<Vec<Agent>, CoreError>;
 
+    // projects (one server can serve several; the client scopes each request)
+    async fn projects(&self) -> Result<Vec<Project>, CoreError>;
+    async fn current_project(&self) -> Result<Project, CoreError>;
+
     // sessions
     async fn list_sessions(&self) -> Result<Vec<Session>, CoreError>;
     async fn create_session(&self, body: &CreateSessionBody) -> Result<Session, CoreError>;

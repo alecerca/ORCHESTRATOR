@@ -1079,6 +1079,14 @@ mod tests {
             Ok(Vec::new())
         }
 
+        async fn projects(&self) -> Result<Vec<crate::types::Project>, CoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn current_project(&self) -> Result<crate::types::Project, CoreError> {
+            unimplemented!("FakeBackend::current_project")
+        }
+
         async fn list_sessions(&self) -> Result<Vec<Session>, CoreError> {
             Ok(Vec::new())
         }

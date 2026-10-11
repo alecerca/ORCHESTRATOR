@@ -7,9 +7,11 @@ import {
   type AppStateSnapshot,
   type CoreMessage,
   type Effect,
+  type ServerConfig,
   type SessionSnapshot,
 } from "./types";
 import { describeError } from "./utils";
+import { setDirectory } from "./serverConfig";
 import { TopBar } from "./components/TopBar";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentPanel } from "./components/AgentPanel";
@@ -283,6 +285,24 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Seed the local project-scope mirror from the shell's effective config, so
+  // the picker shows the right project even when it was set via env or a
+  // previous run (localStorage alone can be stale or empty).
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .getServerConfig()
+      .then((cfg) => {
+        if (!cancelled) setDirectory(cfg.directory ?? null);
+      })
+      .catch(() => {
+        /* the picker falls back to the local mirror */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Live traffic from the Rust shell.
   useEffect(() => {
     const unlistenPromise = listen<CoreMessage>(CORE_EVENT, (event) => {
@@ -421,6 +441,28 @@ export default function App() {
 
   const pickRoot = useCallback((sessionId: string) => setRootPick(sessionId), []);
 
+  /**
+   * A project switch rebuilt the client on the new directory. Drop every
+   * project-scoped UI trace (dismissed rows, layout, effects, root pick) and
+   * re-adopt a fresh snapshot so no session or tab from the old project lingers.
+   * The shell already reconnected and re-bootstrapped by the time this runs.
+   */
+  const handleProjectChanged = useCallback(async (_config: ServerConfig) => {
+    setDismissed(new Set());
+    setRootPick(null);
+    setEffects([]);
+    setLayout(EMPTY_LAYOUT);
+    try {
+      const snapshot = await api.getState();
+      store.setState(snapshot);
+      setStoreReady(true);
+      const rootId = resolveEffectiveRoot(snapshot, null);
+      if (rootId) setLayout(openSessionTab(EMPTY_LAYOUT, rootId));
+    } catch (cause) {
+      setBanner(`Could not load the project: ${describeError(cause)}`);
+    }
+  }, []);
+
   // Delete is destructive and server-side: only after the call resolves do we
   // drop the UI-local traces. Closing the pane drops its stream, and a persisted
   // root pick that pointed at the deleted session is cleared so
@@ -449,6 +491,7 @@ export default function App() {
         rootSessionId={effectiveRootId}
         onOpenSkill={(name) => setLayout((current) => openSkillTab(current, name))}
         onOpenSettings={() => setSettingsOpen(true)}
+        onProjectChanged={(config) => void handleProjectChanged(config)}
       />
       <ConnectionBanner ready={storeReady} />
       <div className="app__body">
