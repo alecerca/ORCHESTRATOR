@@ -1,11 +1,33 @@
 # Orquestador
 
-Desktop control tower for [OpenCode](https://opencode.ai) sub-agents: a
-composer for the orchestrator session, a live panel of sub-agents with status,
-split panes with each agent's message stream, interrupt / re-instruct, approval
-prompts with desktop notifications, and a Monaco editor with a diff viewer.
+**The desktop control tower for orchestrator sub-agents.**
 
-> **Status: implemented and audited.** The headless core is verified (39 unit
+You run [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) (or any
+OpenCode orchestrator) and suddenly five sub-agents are working at once. You
+can't see what each one is doing, and to fix a single one you have to interrupt
+everything.
+
+Orquestador gives you back control: **every sub-agent live in its own pane**, a
+message aimed at *just that one*, and a stop that leaves the rest running — plus
+a Monaco editor with a diff viewer and desktop approval notifications. A desktop
+GUI, not the terminal.
+
+> What a terminal sidebar can't do: live split panes, per-agent control, and a
+> real diff viewer.
+
+## Features
+
+- Live pane per sub-agent, with status and a timer.
+- Interrupt / re-instruct a single agent without touching the others.
+- Composer for the orchestrator session, with approval prompts and desktop
+  notifications.
+- Monaco editor with a diff viewer.
+- Backend-aware skills panel (reads the connected agent's skill roots).
+
+See [`docs/LAUNCH.md`](docs/LAUNCH.md) for the 90-second demo and where the
+project is shared.
+
+> **Status: implemented and audited.** The headless core is verified (77 unit
 > tests), the frontend is complete and building, and an independent audit passed
 > (`docs/AUDIT.md`). The Tauri shell is scaffolded and needs the system
 > dependencies below to compile. See `docs/PLAN.md` (master contract),
