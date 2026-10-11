@@ -11,13 +11,14 @@ import { getSnapshot, subscribe, toggle } from "../skills";
 import { useAppState } from "../store";
 import type { SkillInfo } from "../types";
 import { describeError, shortId } from "../utils";
-import { SettingsDialog } from "./SettingsDialog";
 
 interface Props {
   /** Effective orchestrator root (persisted pick, else `root_session_id`). */
   rootSessionId: string | null;
   /** Open or focus the skill editor tab for `name`; App owns the layout. */
   onOpenSkill?: (name: string) => void;
+  /** Open the server settings dialog; App owns the dialog instance. */
+  onOpenSettings?: () => void;
 }
 
 /**
@@ -51,7 +52,7 @@ function readText(file: File): Promise<string> {
  * Skills controls — a dropdown of saved skills (each a selection toggle) plus a
  * `+` menu to author a new skill or import a `.md`.
  */
-export function TopBar({ rootSessionId, onOpenSkill }: Props) {
+export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings }: Props) {
   const state = useAppState();
   const rootId = rootSessionId;
   const rootSnapshot = rootId
@@ -61,7 +62,6 @@ export function TopBar({ rootSessionId, onOpenSkill }: Props) {
     ? rootSnapshot.session.title || shortId(rootSnapshot.session.id)
     : null;
   const pending = state.permissions.length;
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Selected names live in the persisted skills store; the snapshot reference is
   // stable between mutations, so the highlighted toggles track it directly.
@@ -285,7 +285,7 @@ export function TopBar({ rootSessionId, onOpenSkill }: Props) {
           />
           <button
             className="btn btn--ghost btn--xs"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => onOpenSettings?.()}
             aria-label="Server settings"
             title="Server settings"
           >
@@ -293,7 +293,6 @@ export function TopBar({ rootSessionId, onOpenSkill }: Props) {
           </button>
         </div>
       </div>
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </header>
   );
 }

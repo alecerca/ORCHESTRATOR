@@ -8,6 +8,10 @@ interface Props {
   onClose: () => void;
 }
 
+/**
+ * Server connection settings. Rendered at the app root (like the approval and
+ * skill-save modals) so the fixed backdrop can cover the whole window.
+ */
 export function SettingsDialog({ open, onClose }: Props) {
   const [baseUrl, setBaseUrl] = useState("");
   const [username, setUsername] = useState("");
@@ -15,6 +19,7 @@ export function SettingsDialog({ open, onClose }: Props) {
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [isError, setIsError] = useState(false);
 
   // Seed the fields from the persisted backend config each time we open.
   useEffect(() => {
@@ -25,6 +30,7 @@ export function SettingsDialog({ open, onClose }: Props) {
     setUsername(fallback.username ?? "");
     setPassword(fallback.password ?? "");
     setResult(null);
+    setIsError(false);
     getServerConfig()
       .then((cfg) => {
         if (cancelled) return;
@@ -40,16 +46,29 @@ export function SettingsDialog({ open, onClose }: Props) {
     };
   }, [open]);
 
+  // Close on Escape while open.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   async function handleTest() {
     setTesting(true);
     setResult(null);
+    setIsError(false);
     try {
       const health = await testConnection(baseUrl, username, password);
       setResult(`Connection OK — ${health.version}`);
+      setIsError(false);
     } catch (e) {
       setResult(`Connection failed: ${describeError(e)}`);
+      setIsError(true);
     } finally {
       setTesting(false);
     }
@@ -58,6 +77,7 @@ export function SettingsDialog({ open, onClose }: Props) {
   async function handleSave() {
     setSaving(true);
     setResult(null);
+    setIsError(false);
     try {
       const cfg = await setServerConfig(baseUrl, username, password);
       // Mirror the persisted config locally so the UI is consistent offline.
@@ -69,57 +89,68 @@ export function SettingsDialog({ open, onClose }: Props) {
       onClose();
     } catch (e) {
       setResult(`Could not save: ${describeError(e)}`);
+      setIsError(true);
     } finally {
       setSaving(false);
     }
   }
 
+  const busy = testing || saving;
+
   return (
-    <div className="modal" role="dialog" aria-modal="true">
-      <div className="dialog" style={{ minWidth: 420 }}>
-        <div className="dialog__header">
-          <h2>Server Settings</h2>
-        </div>
-        <div className="dialog__body" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <div
+      className="modal-backdrop"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="modal" role="dialog" aria-modal="true" aria-label="Server settings">
+        <h2 className="approval__title">Server Settings</h2>
+        <div className="settings-fields">
+          <label className="settings-field">
             <span>Base URL</span>
             <input
-              className="input"
+              className="settings-input"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder="http://127.0.0.1:4096"
+              autoFocus
             />
           </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label className="settings-field">
             <span>Username (optional)</span>
             <input
-              className="input"
+              className="settings-input"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="opencode"
             />
           </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label className="settings-field">
             <span>Password (optional)</span>
             <input
-              className="input"
+              className="settings-input"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button className="btn" disabled={testing || saving} onClick={() => void handleTest()}>
-              {testing ? "Testing..." : "Test connection"}
-            </button>
-            {result && <span>{result}</span>}
-          </div>
         </div>
-        <div className="dialog__actions">
-          <button className="btn btn--ghost" onClick={onClose}>
+        <div className="settings-test">
+          <button type="button" className="btn" disabled={busy} onClick={() => void handleTest()}>
+            {testing ? "Testing..." : "Test connection"}
+          </button>
+          {result && (
+            <span className={`settings-test__result${isError ? " settings-test__result--error" : ""}`}>
+              {result}
+            </span>
+          )}
+        </div>
+        <div className="approval__actions">
+          <button type="button" className="btn btn--ghost" disabled={busy} onClick={onClose}>
             Cancel
           </button>
-          <button className="btn btn--primary" disabled={saving} onClick={() => void handleSave()}>
+          <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void handleSave()}>
             {saving ? "Saving..." : "Save"}
           </button>
         </div>
