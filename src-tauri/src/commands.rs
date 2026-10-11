@@ -11,6 +11,7 @@ use orquestador_core::types::{
     Agent, CommandBody, CreateSessionBody, FileContent, FileDiff, FileNode, FileStatus, Health,
     MessageBundle, PermissionResponse, PromptBody, Session, SessionStatus, Todo,
 };
+use orquestador_core::skills::merge_skills;
 use orquestador_core::{build_preamble, slugify, SkillInfo};
 use std::collections::HashMap;
 use tauri::{Manager, State};
@@ -415,27 +416,164 @@ fn skills_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(dir)
 }
 
+/// The id of the currently connected agent backend (e.g. `"opencode"`). This is
+/// the source of truth for which native skills the panel surfaces; there is no
+/// separate config field.
+fn backend_id(app: &tauri::AppHandle) -> String {
+    app.state::<AppBridge>().client().id().to_string()
+}
+
+/// Native skill roots for the active backend, in shadowing order (earlier roots
+/// win). An unknown backend has no native roots.
+fn native_skill_roots(app: &tauri::AppHandle, backend_id: &str) -> Vec<std::path::PathBuf> {
+    let Ok(home) = app.path().home_dir() else {
+        return Vec::new();
+    };
+    match backend_id {
+        "opencode" => vec![
+            home.join(".config").join("opencode").join("skills"),
+            home.join(".agents").join("skills"),
+        ],
+        "claude" => vec![home.join(".claude").join("skills")],
+        "codex" => vec![home.join(".codex").join("skills")],
+        _ => Vec::new(),
+    }
+}
+
+/// Resolve one named skill inside a native `root`: `<root>/<name>/SKILL.md` (the
+/// directory layout) or, defensively, `<root>/<name>.md` (the file layout).
+/// Returns the readable markdown path or `None` when neither exists.
+fn native_skill_path(root: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    let nested = root.join(name).join("SKILL.md");
+    if nested.is_file() {
+        return Some(nested);
+    }
+    let file = root.join(format!("{name}.md"));
+    if file.is_file() {
+        return Some(file);
+    }
+    None
+}
+
+/// The app-owned skills: every `.md` file in the app skills dir.
+fn app_skill_list(app: &tauri::AppHandle) -> Result<Vec<SkillInfo>, String> {
+    let dir = skills_dir(app)?;
+    let entries = std::fs::read_dir(&dir).map_err(stringify)?;
+    let mut skills = Vec::new();
+    for entry in entries {
+        let path = entry.map_err(stringify)?.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("md") || !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        skills.push(SkillInfo {
+            name: name.to_string(),
+            path: path.to_string_lossy().into_owned(),
+            source: "app".to_string(),
+            editable: true,
+        });
+    }
+    Ok(skills)
+}
+
+/// The active backend's native skills, scanned root by root in order. A native
+/// skill is a directory containing `SKILL.md` (name = directory name) or,
+/// defensively, a `.md` file (name = file stem). Always read-only.
+fn native_skill_list(app: &tauri::AppHandle, backend_id: &str) -> Vec<SkillInfo> {
+    let mut skills = Vec::new();
+    for root in native_skill_roots(app, backend_id) {
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let markdown = path.join("SKILL.md");
+                let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+                if !markdown.is_file() {
+                    continue;
+                }
+                skills.push(SkillInfo {
+                    name: name.to_string(),
+                    path: markdown.to_string_lossy().into_owned(),
+                    source: backend_id.to_string(),
+                    editable: false,
+                });
+            } else if path.extension().and_then(|ext| ext.to_str()) == Some("md") && path.is_file() {
+                let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
+                    continue;
+                };
+                skills.push(SkillInfo {
+                    name: name.to_string(),
+                    path: path.to_string_lossy().into_owned(),
+                    source: backend_id.to_string(),
+                    editable: false,
+                });
+            }
+        }
+    }
+    skills
+}
+
+/// Resolve a selected name to a readable markdown file: the app store first
+/// (`<dir>/<slug>.md`), then each native root in order (`<name>/SKILL.md` or
+/// `<name>.md`). Returns `None` when nothing readable matches.
+fn resolve_skill_path(app: &tauri::AppHandle, name: &str) -> Option<std::path::PathBuf> {
+    let slug = slugify(name);
+    if !slug.is_empty() {
+        if let Ok(dir) = skills_dir(app) {
+            let app_path = dir.join(format!("{slug}.md"));
+            if app_path.is_file() {
+                return Some(app_path);
+            }
+        }
+    }
+    let backend = backend_id(app);
+    for root in native_skill_roots(app, &backend) {
+        if let Some(path) = native_skill_path(&root, name) {
+            return Some(path);
+        }
+        // Defensive: a native root may be keyed by the slugified name.
+        if slug.as_str() != name {
+            if let Some(path) = native_skill_path(&root, &slug) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
 /// Fold the selected skills into `body.system`.
 ///
-/// Each name is slugged and its `<dir>/<slug>.md` read; empty slugs and
-/// unreadable files are skipped so a bad or missing skill can never fail a send.
-/// The rendered `<skills>` preamble is appended to any existing system prompt.
+/// Each name resolves app-first, then against the active backend's native
+/// roots; empty names and unreadable/missing skills are skipped so a bad or
+/// stale selection can never fail a send. The rendered `<skills>` preamble is
+/// appended to any existing system prompt.
 fn apply_skills(app: &tauri::AppHandle, body: &mut PromptBody, skills: Option<Vec<String>>) {
     let Some(names) = skills else { return };
     if names.is_empty() {
         return;
     }
-    let Ok(dir) = skills_dir(app) else { return };
 
     let loaded: Vec<(String, String)> = names
         .iter()
         .filter_map(|name| {
+            let path = resolve_skill_path(app, name)?;
+            let content = std::fs::read_to_string(&path).ok()?;
             let slug = slugify(name);
-            if slug.is_empty() {
+            let label = if slug.is_empty() {
+                name.trim().to_string()
+            } else {
+                slug
+            };
+            if label.is_empty() {
                 return None;
             }
-            let content = std::fs::read_to_string(dir.join(format!("{slug}.md"))).ok()?;
-            Some((slug, content))
+            Some((label, content))
         })
         .collect();
 
@@ -452,38 +590,29 @@ fn apply_skills(app: &tauri::AppHandle, body: &mut PromptBody, skills: Option<Ve
     });
 }
 
-/// List every stored skill (`.md` files in the skills dir), sorted by name.
+/// List every available skill: the app store plus the connected backend's
+/// native skills, merged and deduped by name (app shadows native, earlier
+/// native root shadows later) and sorted by name.
 #[tauri::command]
 pub async fn list_skills(app: tauri::AppHandle) -> Result<Vec<SkillInfo>, String> {
-    let dir = skills_dir(&app)?;
-    let entries = std::fs::read_dir(&dir).map_err(stringify)?;
-    let mut skills = Vec::new();
-    for entry in entries {
-        let path = entry.map_err(stringify)?.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("md") || !path.is_file() {
-            continue;
-        }
-        let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
-            continue;
-        };
-        skills.push(SkillInfo {
-            name: name.to_string(),
-            path: path.to_string_lossy().into_owned(),
-        });
-    }
-    skills.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(skills)
+    let backend = backend_id(&app);
+    Ok(merge_skills(
+        app_skill_list(&app)?,
+        native_skill_list(&app, &backend),
+    ))
 }
 
-/// Read a skill's markdown by user-facing name (slugged to its file stem).
+/// Read a skill's markdown by name: the app store first, then the active
+/// backend's native roots.
 #[tauri::command]
 pub async fn read_skill(app: tauri::AppHandle, name: String) -> Result<String, String> {
-    let slug = slugify(&name);
-    if slug.is_empty() {
+    if name.trim().is_empty() {
         return Err(format!("invalid skill name: {name:?}"));
     }
-    let path = skills_dir(&app)?.join(format!("{slug}.md"));
-    std::fs::read_to_string(&path).map_err(stringify)
+    match resolve_skill_path(&app, &name) {
+        Some(path) => std::fs::read_to_string(&path).map_err(stringify),
+        None => Err(format!("skill not found: {name:?}")),
+    }
 }
 
 /// Write a skill's markdown, creating or overwriting `<dir>/<slug>.md`.
@@ -502,6 +631,8 @@ pub async fn save_skill(
     Ok(SkillInfo {
         name: slug,
         path: path.to_string_lossy().into_owned(),
+        source: "app".to_string(),
+        editable: true,
     })
 }
 

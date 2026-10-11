@@ -188,10 +188,17 @@ export interface MessageBundle {
 // Skills (Orquestador-owned markdown instruction files)
 // ---------------------------------------------------------------------------
 
-/** A stored skill as returned by the `list_skills` / `save_skill` commands. */
+/**
+ * One available skill as returned by the `list_skills` / `save_skill` commands.
+ * `source` is `"app"` for Orquestador-owned skills, otherwise the connected
+ * backend id (e.g. `"opencode"`); `editable` is true only for app-owned skills
+ * — native backend skills are read-only.
+ */
 export interface SkillInfo {
   name: string;
   path: string;
+  source: string;
+  editable: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -11,12 +11,38 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Metadata for one stored skill. `name` is the slug and the file stem; `path`
-/// is the absolute path of the backing `.md` file.
+/// Metadata for one available skill.
+///
+/// `name` is the identifier used for selection (the slug/file stem for
+/// app-owned skills, the directory name for native ones) and `path` is the
+/// absolute path of the backing markdown. `source` records where the skill came
+/// from — `"app"` for Orquestador-owned files, otherwise the active backend id
+/// (e.g. `"opencode"`) — and `editable` is true only for app-owned skills,
+/// because the app must never mutate another tool's configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SkillInfo {
     pub name: String,
     pub path: String,
+    pub source: String,
+    pub editable: bool,
+}
+
+/// Merge app-owned and native skills into the single list the panel shows.
+///
+/// `app` entries come first, then `native`; duplicates are removed by `name`
+/// keeping the first occurrence, so an app skill shadows a same-named native
+/// one and an earlier native root shadows a later one. The result is sorted by
+/// name for a stable display order.
+pub fn merge_skills(app: Vec<SkillInfo>, native: Vec<SkillInfo>) -> Vec<SkillInfo> {
+    let mut seen = std::collections::HashSet::new();
+    let mut merged: Vec<SkillInfo> = Vec::with_capacity(app.len() + native.len());
+    for skill in app.into_iter().chain(native) {
+        if seen.insert(skill.name.clone()) {
+            merged.push(skill);
+        }
+    }
+    merged.sort_by(|a, b| a.name.cmp(&b.name));
+    merged
 }
 
 /// Normalize a user-provided skill name into a filesystem-safe slug.
@@ -77,6 +103,62 @@ pub fn build_preamble(skills: &[(String, String)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Build a `SkillInfo` with minimal ceremony for the merge tests.
+    fn skill(name: &str, source: &str, editable: bool) -> SkillInfo {
+        SkillInfo {
+            name: name.to_string(),
+            path: format!("/{name}.md"),
+            source: source.to_string(),
+            editable,
+        }
+    }
+
+    #[test]
+    fn merge_skills_keeps_app_entry_when_names_collide() {
+        let app = vec![skill("shared", "app", true), skill("only-app", "app", true)];
+        let native = vec![
+            skill("shared", "opencode", false),
+            skill("only-native", "opencode", false),
+        ];
+        let merged = merge_skills(app, native);
+
+        assert_eq!(merged.len(), 3, "the colliding native entry must be dropped");
+        let shared = merged.iter().find(|s| s.name == "shared").unwrap();
+        assert_eq!(shared.source, "app", "app must shadow a same-named native skill");
+        assert!(shared.editable);
+    }
+
+    #[test]
+    fn merge_skills_preserves_distinct_names_from_both_sides() {
+        let app = vec![skill("alpha", "app", true)];
+        let native = vec![skill("beta", "opencode", false)];
+        let merged = merge_skills(app, native);
+
+        assert_eq!(merged.len(), 2);
+        assert!(merged.iter().any(|s| s.name == "alpha"));
+        assert!(merged.iter().any(|s| s.name == "beta"));
+    }
+
+    #[test]
+    fn merge_skills_sorts_output_by_name() {
+        let app = vec![skill("zeta", "app", true)];
+        let native = vec![skill("alpha", "opencode", false), skill("mid", "opencode", false)];
+        let merged = merge_skills(app, native);
+
+        let names: Vec<&str> = merged.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["alpha", "mid", "zeta"]);
+    }
+
+    #[test]
+    fn merge_skills_preserves_source_and_editable() {
+        let native = vec![skill("beta", "opencode", false)];
+        let merged = merge_skills(Vec::new(), native);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].source, "opencode");
+        assert!(!merged[0].editable);
+    }
 
     #[test]
     fn slugify_normalizes_to_kebab_case() {
