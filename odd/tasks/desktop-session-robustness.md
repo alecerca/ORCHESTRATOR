@@ -209,5 +209,7 @@ The app is anchored to the server's cwd project. The user wants to run one
   Verification: `cargo test --workspace` 118 passed / 0 failed (orquestador-core
   83, orquestador-proxy 30 + 5 integration); `cargo check --manifest-path
   src-tauri/Cargo.toml` clean; `npx tsc --noEmit` clean; `npx vite build` OK
-  (pre-existing >500 kB chunk warning only). Commit id: _pending — terminal git
-  action owned by the parent._
+  (pre-existing >500 kB chunk warning only). Commit id: `eaed1bb`.
+- 2026-10-11: Orchestrator spot-check (parent): `cargo test -p orquestador-core
+  --lib` → 83 passed / 0 failed; `npx tsc --noEmit` → exit 0. Slice A ready to
+  merge. Slice B (`feat/project-switching`) is next.
