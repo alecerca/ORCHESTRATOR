@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex, RwLock as StdRwLock};
 use orquestador_core::client::ClientConfig;
 use orquestador_core::events::{bootstrap, BootstrapOutcome, CoreMessage, EVENT_BUFFER};
 use orquestador_core::state::AppStateSnapshot;
+use orquestador_core::state::Effect;
 use orquestador_core::{AgentBackend, AppState, CoreError, EventHub, OpenCodeClient};
 use tokio::sync::{broadcast, watch, RwLock};
 
@@ -114,6 +115,15 @@ impl AppBridge {
     pub async fn push_snapshot(&self) {
         let snapshot = self.state.read().await.snapshot();
         let _ = self.tx.send(CoreMessage::StateSnapshot { snapshot });
+    }
+
+    /// Publish one [`Effect`] to every subscriber (webview + notifications).
+    ///
+    /// A command that fails for a reason the user must be told about — e.g. a
+    /// usage/rate limit on a send — uses this so the warning travels the same
+    /// path as the hub's own effects instead of only being a command error.
+    pub fn push_effect(&self, effect: Effect) {
+        let _ = self.tx.send(CoreMessage::Effect { effect });
     }
 
     /// One synchronous load (health + sessions + statuses + agents). Never

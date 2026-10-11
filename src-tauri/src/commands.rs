@@ -6,13 +6,14 @@
 //! their `Display` string, which the webview can surface verbatim.
 
 use orquestador_core::state::AppStateSnapshot;
+use orquestador_core::state::Effect;
 use orquestador_core::client::ClientConfig;
 use orquestador_core::types::{
     Agent, CommandBody, CreateSessionBody, FileContent, FileDiff, FileNode, FileStatus, Health,
     MessageBundle, PermissionResponse, PromptBody, Session, SessionStatus, Todo,
 };
 use orquestador_core::skills::merge_skills;
-use orquestador_core::{build_preamble, slugify, SkillInfo};
+use orquestador_core::{build_preamble, slugify, CoreError, SkillInfo};
 use std::collections::HashMap;
 use tauri::{Manager, State};
 
@@ -20,6 +21,28 @@ use crate::bridge::AppBridge;
 
 fn stringify<E: std::fmt::Display>(error: E) -> String {
     error.to_string()
+}
+
+/// When a send fails because of a usage/rate limit, publish a distinct
+/// [`Effect::UsageLimit`] so the webview shows a prominent warning and the
+/// desktop notification fires — not just a terse command error. Non-limit
+/// errors are left to the command error string (already shown by the caller).
+async fn report_send_error(bridge: &AppBridge, session_id: &str, error: &CoreError) {
+    if !error.is_usage_limit() {
+        return;
+    }
+    let title = bridge
+        .state()
+        .read()
+        .await
+        .session(session_id)
+        .map(|session| session.title.clone())
+        .unwrap_or_default();
+    bridge.push_effect(Effect::UsageLimit {
+        session_id: session_id.to_string(),
+        title,
+        message: error.to_string(),
+    });
 }
 
 // -- derived state -----------------------------------------------------------
@@ -198,11 +221,11 @@ pub async fn send_message(
     let mut body = PromptBody::text(text);
     body.agent = agent;
     apply_skills(&app, &mut body, skills);
-    bridge
-        .client()
-        .prompt(&session_id, &body)
-        .await
-        .map_err(stringify)
+    let result = bridge.client().prompt(&session_id, &body).await;
+    if let Err(error) = &result {
+        report_send_error(&bridge, &session_id, error).await;
+    }
+    result.map_err(stringify)
 }
 
 #[tauri::command]
@@ -217,11 +240,11 @@ pub async fn send_message_async(
     let mut body = PromptBody::text(text);
     body.agent = agent;
     apply_skills(&app, &mut body, skills);
-    bridge
-        .client()
-        .prompt_async(&session_id, &body)
-        .await
-        .map_err(stringify)
+    let result = bridge.client().prompt_async(&session_id, &body).await;
+    if let Err(error) = &result {
+        report_send_error(&bridge, &session_id, error).await;
+    }
+    result.map_err(stringify)
 }
 
 #[tauri::command]

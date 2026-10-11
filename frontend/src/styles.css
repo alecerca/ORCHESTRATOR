@@ -1255,6 +1255,31 @@ html[data-theme="light"] .drop-indicator {
   font-size: 13px;
 }
 
+/* -- connection banner ------------------------------------------------------ */
+
+.connection-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--warning);
+  color: var(--warning);
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.connection-banner__icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.connection-banner__text code {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
 /* -- approval modal --------------------------------------------------------- */
 
 .modal-backdrop {
@@ -1440,6 +1465,10 @@ html[data-theme="light"] .drop-indicator {
 }
 
 .notification--approval {
+  border-color: var(--warning);
+}
+
+.notification--usage_limit {
   border-color: var(--warning);
 }
 

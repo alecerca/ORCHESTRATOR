@@ -27,6 +27,7 @@ fn effect_kind(effect: &Effect) -> &'static str {
         Effect::Finished { .. } => "finished",
         Effect::Failed { .. } => "failed",
         Effect::Approval { .. } => "approval",
+        Effect::UsageLimit { .. } => "usage_limit",
     }
 }
 
@@ -44,6 +45,14 @@ pub fn handle_effect(effect: &Effect) {
         Effect::Approval { title, .. } => (
             "Approval required".to_string(),
             format!("{title} is waiting for your approval."),
+        ),
+        Effect::UsageLimit { title, message, .. } => (
+            "Usage limit reached".to_string(),
+            if title.trim().is_empty() {
+                format!("Waiting before retrying: {message}")
+            } else {
+                format!("{title}: waiting before retrying ({message}).")
+            },
         ),
     };
 

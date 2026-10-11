@@ -93,19 +93,36 @@ run is throttled/blocked by a usage limit; both leave the UI looking "running".
 
 ### Tasks
 
-- [ ] **A1 — Core: limit classification (TDD).** Add `is_usage_limit` +
-  tests in `crates/orquestador-core` (RED → GREEN). Wire it into the error/event
-  path so a limit produces a dedicated `Effect` (and, if applicable, clears the
-  running/pending state).
-- [ ] **A2 — Core: connection liveness.** Confirm `AppStateSnapshot.connected`
-  becomes `false` when the SSE stream drops/server dies; fix in `EventHub` if not.
-- [ ] **A3 — Shell + frontend surfacing.** Extend `Effect`/`CoreMessage`/
-  `frontend/src/types.ts`, emit to the webview (`src-tauri/src/notify.rs`), and
-  render: (a) a connection banner when disconnected, (b) a distinct limit warning,
-  (c) send-failure feedback. Keep `NotificationsDrawer` consistent.
-- [ ] **A4 — Verify.** `cargo test --workspace`, `cargo check --manifest-path
-  src-tauri/Cargo.toml`, `cd frontend && npx tsc --noEmit && npx vite build`.
-  Manual: kill `opencode serve` → banner; (limit path) as reproducible.
+- [x] **A1 — Core: limit classification (TDD).** `is_usage_limit(status, message)`,
+  `is_usage_limit_message(message)` and `CoreError::is_usage_limit()` in
+  `crates/orquestador-core/src/error.rs` (case-insensitive keyword table;
+  conservative 402/429). TDD RED → GREEN; table + `CoreError` tests added.
+  Wired into `state.rs`: a limit `session.error` and a limit `retry` status emit a
+  new `Effect::UsageLimit { session_id, title, message }` and clear the running
+  state (`active`/`finished` removed, `errored` set → UI status `Error`), with
+  dedup via `errored` so a burst does not spam. `apply_statuses_at` (
+  bootstrap/reconcile) classifies limit retries too, so a snapshot never shows a
+  blocked run as "running". Tests: limit error effect + clear, limit retry not
+  running + dedup, non-limit retry stays Running, limit retry in a status map.
+- [x] **A2 — Core: connection liveness.** Confirmed already correct:
+  `EventHub::run` calls `mark_disconnected()` → `set_connection(false, None)` and
+  publishes a snapshot when `connect_once` returns (covered by existing test
+  `hub_survives_a_server_that_dies_mid_stream`). No `events.rs` change needed.
+- [x] **A3 — Shell + frontend surfacing.** Added `Effect::UsageLimit` in
+  `state.rs`; `src-tauri/src/notify.rs` `effect_kind`/`handle_effect` arms;
+  `AppBridge::push_effect` (`bridge.rs`) so a send-time limit error travels the
+  effect path; `commands.rs` classifies `send_message`/`send_message_async`
+  errors and emits `Effect::UsageLimit` for limits. Frontend:
+  `types.ts` `Effect` union, `NotificationsDrawer` `usage_limit` case,
+  `.notification--usage_limit` style; new `components/ConnectionBanner.tsx`
+  (gated on `storeReady` to avoid a startup flash) rendered in `App.tsx` with a
+  `.connection-banner` style. Send failures were already surfaced by
+  `Composer`/`FollowUpInput`; limit failures now additionally raise the distinct
+  warning. **Deviation from doc:** banner copy is English, matching the existing
+  English UI (`NotificationsDrawer`, `TopBar`), not the Spanish quoted from the
+  user; the Spanish in this doc is the user's words, not the app's locale.
+- [x] **A4 — Verify.** All four commands green (see Progress). Manual
+  server-kill/limit checks remain for the reviewer.
 
 ## Slice B — Project switching (W3) — `feat/project-switching`
 
@@ -186,3 +203,11 @@ The app is anchored to the server's cwd project. The user wants to run one
 - 2026-10-11: Feature doc created. Live API validation done (`/project`,
   `?directory=`, `x-opencode-directory`). Slice A branched as
   `feat/session-warnings`; implementation delegated to a bounded writer.
+- 2026-10-11: Slice A implemented (A1–A4). Core: `is_usage_limit` +
+  `Effect::UsageLimit` + run-state clearing; shell: notify + `push_effect` +
+  send-error classification; frontend: connection banner + limit notification.
+  Verification: `cargo test --workspace` 118 passed / 0 failed (orquestador-core
+  83, orquestador-proxy 30 + 5 integration); `cargo check --manifest-path
+  src-tauri/Cargo.toml` clean; `npx tsc --noEmit` clean; `npx vite build` OK
+  (pre-existing >500 kB chunk warning only). Commit id: _pending — terminal git
+  action owned by the parent._
