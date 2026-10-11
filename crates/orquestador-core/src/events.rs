@@ -6,11 +6,11 @@
 //! Tauri shell can bridge it to the webview without this crate knowing
 //! anything about Tauri.
 
-use crate::client::{OpenCodeClient, DEFAULT_ROOT_TITLE};
+use crate::backend::AgentBackend;
+use crate::client::DEFAULT_ROOT_TITLE;
 use crate::error::CoreError;
 use crate::state::{AppState, AppStateSnapshot, Effect};
 use crate::types::{Agent, CreateSessionBody, Event, Session};
-use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use serde::Serialize;
 use serde_json::Value;
@@ -90,45 +90,6 @@ pub fn changes_state(event: &Event) -> bool {
     )
 }
 
-/// Decode one SSE `data` payload.
-///
-/// Handles the three shapes observed/expected from the server:
-/// 1. `{"type": "...", "properties": {...}}`          — plain event
-/// 2. `{"directory": "...", "payload": {...event...}}` — `/global/event` wrapper
-/// 3. bare JSON + an SSE `event:` line                 — fallback: synthesise `type`
-///
-/// Returns the typed event **and** the raw payload to forward to the webview.
-pub fn decode_payload(data: &str, event_name: Option<&str>) -> Option<(Event, Value)> {
-    let trimmed = data.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let mut value: Value = serde_json::from_str(trimmed).ok()?;
-
-    // Unwrap the /global/event envelope if present.
-    if value.get("payload").map(Value::is_object).unwrap_or(false)
-        && value.get("directory").is_some()
-    {
-        value = value.get("payload").cloned()?;
-    }
-
-    if !value.is_object() {
-        return None;
-    }
-
-    // No `type` on the payload but the SSE `event:` line names it → synthesise.
-    if value.get("type").is_none() {
-        let name = event_name.filter(|n| !n.is_empty())?;
-        let mut obj = serde_json::Map::new();
-        obj.insert("type".to_string(), Value::String(name.to_string()));
-        obj.insert("properties".to_string(), value);
-        value = Value::Object(obj);
-    }
-
-    let typed = serde_json::from_value::<Event>(value.clone()).unwrap_or(Event::Unknown);
-    Some((typed, value))
-}
-
 /// Pick the session the composer drives: the most recently updated parentless
 /// session. `None` means "there is nothing to reuse — create one".
 pub fn pick_root(sessions: &[Session]) -> Option<String> {
@@ -160,7 +121,7 @@ pub enum BootstrapOutcome {
 /// Never panics and never propagates transport errors: a stopped
 /// `opencode serve` must leave the app usable (it shows "disconnected" and the
 /// event hub keeps retrying).
-pub async fn bootstrap(client: &OpenCodeClient, state: &Arc<RwLock<AppState>>) -> BootstrapOutcome {
+pub async fn bootstrap(client: &dyn AgentBackend, state: &Arc<RwLock<AppState>>) -> BootstrapOutcome {
     let health = match client.health().await {
         Ok(h) => h,
         Err(e) => {
@@ -237,7 +198,7 @@ pub async fn bootstrap(client: &OpenCodeClient, state: &Arc<RwLock<AppState>>) -
 
 /// Owns the SSE connection and keeps `AppState` up to date forever.
 pub struct EventHub {
-    client: Arc<OpenCodeClient>,
+    client: Arc<dyn AgentBackend>,
     state: Arc<RwLock<AppState>>,
     tx: broadcast::Sender<CoreMessage>,
     shutdown: watch::Receiver<bool>,
@@ -247,7 +208,7 @@ pub struct EventHub {
 
 impl EventHub {
     pub fn new(
-        client: Arc<OpenCodeClient>,
+        client: Arc<dyn AgentBackend>,
         state: Arc<RwLock<AppState>>,
         tx: broadcast::Sender<CoreMessage>,
         shutdown: watch::Receiver<bool>,
@@ -315,13 +276,12 @@ impl EventHub {
     /// Returns `true` when the stream delivered `server.connected`.
     async fn connect_once(&mut self) -> Result<bool, CoreError> {
         let version = self.client.health().await.ok().map(|h| h.version);
-        let response = self.client.event_stream().await?;
+        let mut stream = self.client.stream_events().await?;
 
         self.state.write().await.set_connection(true, version);
         self.publish_snapshot().await;
         self.resync().await;
 
-        let mut stream = response.bytes_stream().eventsource();
         let mut saw_handshake = false;
 
         // Clones so the reconcile arm does not borrow `self` while
@@ -339,7 +299,7 @@ impl EventHub {
                 // while frames keep flowing, so it never fights the stream —
                 // `apply_pending_permissions` is add-only.
                 _ = tokio::time::sleep(reconcile_interval) => {
-                    reconcile_once(&reconcile_client, &reconcile_state, &reconcile_tx).await;
+                    reconcile_once(&*reconcile_client, &reconcile_state, &reconcile_tx).await;
                     continue;
                 }
                 // Half-open connection: no frame (not even a heartbeat) for the
@@ -354,17 +314,10 @@ impl EventHub {
                 }
                 _ = self.shutdown.changed() => break,
             };
-            let Some(frame) = next else { break }; // stream ended (server gone)
-            let frame = frame.map_err(|e| CoreError::Stream(e.to_string()))?;
-
-            let event_name = if frame.event.is_empty() {
-                None
-            } else {
-                Some(frame.event.as_str())
-            };
-            let Some((typed, raw)) = decode_payload(&frame.data, event_name) else {
-                continue;
-            };
+            let Some(item) = next else { break }; // stream ended (server gone)
+            let backend_event = item?;
+            let typed = backend_event.event;
+            let raw = backend_event.raw;
 
             if matches!(typed, Event::ServerConnected { .. }) {
                 saw_handshake = true;
@@ -435,7 +388,7 @@ impl EventHub {
 /// stream that died before it arrived) can never hide a blocked session
 /// forever. Errors are swallowed: a hiccup must not tear down the stream.
 async fn reconcile_once(
-    client: &OpenCodeClient,
+    client: &dyn AgentBackend,
     state: &Arc<RwLock<AppState>>,
     tx: &broadcast::Sender<CoreMessage>,
 ) {
@@ -464,7 +417,14 @@ async fn reconcile_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::{AgentBackend, BackendEvent, EventStream};
+    use crate::client::OpenCodeClient;
     use crate::types::SessionTime;
+    use crate::types::{
+        CommandBody, FileContent, FileDiff, FileNode, FileStatus, Health, MessageBundle,
+        PermissionRequest, PermissionResponse, PromptBody, SessionStatus, Todo,
+    };
+    use std::collections::HashMap;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
@@ -481,50 +441,16 @@ mod tests {
     }
 
     #[test]
-    fn decode_handles_the_three_wire_shapes() {
-        // 1. plain typed event
-        let (typed, raw) = decode_payload(
-            r#"{"type":"session.idle","properties":{"sessionID":"s"}}"#,
-            None,
-        )
-        .expect("decodes");
-        assert!(matches!(typed, Event::SessionIdle { .. }));
-        assert_eq!(raw["type"], "session.idle");
-
-        // 2. /global/event style envelope
-        let (typed, raw) = decode_payload(
-            r#"{"directory":"/proj","payload":{"type":"permission.updated","properties":{"id":"p","type":"edit","sessionID":"s","messageID":"m","title":"t","metadata":{},"time":{"created":1}}}}"#,
-            None,
-        )
-        .expect("decodes");
-        assert!(matches!(typed, Event::PermissionUpdated { .. }));
-        assert_eq!(raw["type"], "permission.updated");
-        assert!(raw.get("directory").is_none(), "envelope must be unwrapped");
-
-        // 3. bare payload + SSE event name
-        let (typed, raw) =
-            decode_payload(r#"{"sessionID":"s"}"#, Some("session.idle")).expect("decodes");
-        assert!(matches!(typed, Event::SessionIdle { .. }));
-        assert_eq!(raw["type"], "session.idle");
-
-        // Garbage and empty payloads are dropped, never panic.
-        assert!(decode_payload("", None).is_none());
-        assert!(decode_payload("{not json", None).is_none());
-        assert!(decode_payload("42", None).is_none());
-        assert!(decode_payload(r#"{"nope":1}"#, None).is_none());
-    }
-
-    #[test]
     fn only_state_changing_events_mark_the_snapshot_dirty() {
         assert!(!changes_state(&Event::Unknown));
         assert!(!changes_state(
-            &decode_payload(r#"{"type":"message.part.updated","properties":{"part":{"id":"p","sessionID":"s","messageID":"m","type":"text","text":"x"}}}"#, None).unwrap().0
+            &crate::client::decode_payload(r#"{"type":"message.part.updated","properties":{"part":{"id":"p","sessionID":"s","messageID":"m","type":"text","text":"x"}}}"#, None).unwrap().0
         ));
         assert!(changes_state(
-            &decode_payload(r#"{"type":"session.status","properties":{"sessionID":"s","status":{"type":"busy"}}}"#, None).unwrap().0
+            &crate::client::decode_payload(r#"{"type":"session.status","properties":{"sessionID":"s","status":{"type":"busy"}}}"#, None).unwrap().0
         ));
         assert!(changes_state(
-            &decode_payload(r#"{"type":"permission.updated","properties":{"id":"p","type":"edit","sessionID":"s","messageID":"m","title":"t","metadata":{},"time":{"created":1}}}"#, None).unwrap().0
+            &crate::client::decode_payload(r#"{"type":"permission.updated","properties":{"id":"p","type":"edit","sessionID":"s","messageID":"m","title":"t","metadata":{},"time":{"created":1}}}"#, None).unwrap().0
         ));
     }
 
@@ -1126,5 +1052,219 @@ mod tests {
             started.elapsed() >= idle,
             "must wait the whole idle window before giving up"
         );
+    }
+
+    // -- backend-agnostic seam ---------------------------------------------
+
+    /// A minimal non-OpenCode backend. If the hub/bootstrap depend only on the
+    /// `AgentBackend` trait, they run against this with no OpenCode client.
+    struct FakeBackend {
+        events: Vec<BackendEvent>,
+    }
+
+    #[async_trait::async_trait]
+    impl AgentBackend for FakeBackend {
+        fn id(&self) -> &'static str {
+            "fake"
+        }
+
+        async fn health(&self) -> Result<Health, CoreError> {
+            Ok(Health {
+                healthy: true,
+                version: "fake-1".to_string(),
+            })
+        }
+
+        async fn agents(&self) -> Result<Vec<Agent>, CoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn list_sessions(&self) -> Result<Vec<Session>, CoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn create_session(&self, body: &CreateSessionBody) -> Result<Session, CoreError> {
+            Ok(Session {
+                id: "fake-root".to_string(),
+                project_id: "p".to_string(),
+                directory: "/d".to_string(),
+                parent_id: body.parent_id.clone(),
+                title: body.title.clone().unwrap_or_default(),
+                version: "1".to_string(),
+                time: SessionTime {
+                    created: 1,
+                    updated: 1,
+                    compacting: None,
+                },
+                summary: None,
+            })
+        }
+
+        async fn session_statuses(&self) -> Result<HashMap<String, SessionStatus>, CoreError> {
+            Ok(HashMap::new())
+        }
+
+        async fn pending_permissions(&self) -> Result<Vec<PermissionRequest>, CoreError> {
+            Ok(Vec::new())
+        }
+
+        async fn stream_events(&self) -> Result<EventStream, CoreError> {
+            let items: Vec<Result<BackendEvent, CoreError>> = self
+                .events
+                .iter()
+                .map(|e| {
+                    Ok(BackendEvent {
+                        event: e.event.clone(),
+                        raw: e.raw.clone(),
+                    })
+                })
+                .collect();
+            Ok(Box::pin(futures_util::stream::iter(items)))
+        }
+
+        // The rest of the surface is not exercised by the hub/bootstrap path.
+        async fn session(&self, _id: &str) -> Result<Session, CoreError> {
+            unimplemented!("FakeBackend::session")
+        }
+        async fn session_children(&self, _id: &str) -> Result<Vec<Session>, CoreError> {
+            unimplemented!("FakeBackend::session_children")
+        }
+        async fn delete_session(&self, _id: &str) -> Result<bool, CoreError> {
+            unimplemented!("FakeBackend::delete_session")
+        }
+        async fn rename_session(&self, _id: &str, _title: &str) -> Result<Session, CoreError> {
+            unimplemented!("FakeBackend::rename_session")
+        }
+        async fn todos(&self, _id: &str) -> Result<Vec<Todo>, CoreError> {
+            unimplemented!("FakeBackend::todos")
+        }
+        async fn abort(&self, _id: &str) -> Result<bool, CoreError> {
+            unimplemented!("FakeBackend::abort")
+        }
+        async fn prompt(&self, _id: &str, _body: &PromptBody) -> Result<MessageBundle, CoreError> {
+            unimplemented!("FakeBackend::prompt")
+        }
+        async fn prompt_async(&self, _id: &str, _body: &PromptBody) -> Result<(), CoreError> {
+            unimplemented!("FakeBackend::prompt_async")
+        }
+        async fn messages(
+            &self,
+            _id: &str,
+            _limit: Option<u32>,
+        ) -> Result<Vec<MessageBundle>, CoreError> {
+            unimplemented!("FakeBackend::messages")
+        }
+        async fn message(&self, _id: &str, _message_id: &str) -> Result<MessageBundle, CoreError> {
+            unimplemented!("FakeBackend::message")
+        }
+        async fn command(
+            &self,
+            _id: &str,
+            _body: &CommandBody,
+        ) -> Result<MessageBundle, CoreError> {
+            unimplemented!("FakeBackend::command")
+        }
+        async fn reply_permission(
+            &self,
+            _request_id: &str,
+            _response: PermissionResponse,
+            _message: Option<&str>,
+        ) -> Result<bool, CoreError> {
+            unimplemented!("FakeBackend::reply_permission")
+        }
+        async fn respond_permission(
+            &self,
+            _id: &str,
+            _permission_id: &str,
+            _response: PermissionResponse,
+            _remember: Option<bool>,
+        ) -> Result<bool, CoreError> {
+            unimplemented!("FakeBackend::respond_permission")
+        }
+        async fn diff(
+            &self,
+            _id: &str,
+            _message_id: Option<&str>,
+        ) -> Result<Vec<FileDiff>, CoreError> {
+            unimplemented!("FakeBackend::diff")
+        }
+        async fn file_tree(&self, _path: Option<&str>) -> Result<Vec<FileNode>, CoreError> {
+            unimplemented!("FakeBackend::file_tree")
+        }
+        async fn file_content(&self, _path: &str) -> Result<FileContent, CoreError> {
+            unimplemented!("FakeBackend::file_content")
+        }
+        async fn file_status(&self) -> Result<Vec<FileStatus>, CoreError> {
+            unimplemented!("FakeBackend::file_status")
+        }
+        async fn find_files(
+            &self,
+            _query: &str,
+            _limit: Option<u32>,
+        ) -> Result<Vec<String>, CoreError> {
+            unimplemented!("FakeBackend::find_files")
+        }
+        async fn find_symbols(
+            &self,
+            _query: &str,
+        ) -> Result<Vec<serde_json::Value>, CoreError> {
+            unimplemented!("FakeBackend::find_symbols")
+        }
+        async fn find_by_pattern(&self, _pattern: &str) -> Result<Vec<String>, CoreError> {
+            unimplemented!("FakeBackend::find_by_pattern")
+        }
+    }
+
+    #[tokio::test]
+    async fn bootstrap_is_backend_agnostic() {
+        let backend = FakeBackend { events: Vec::new() };
+        let state = test_state();
+
+        let outcome = bootstrap(&backend, &state).await;
+        match outcome {
+            BootstrapOutcome::Connected {
+                version,
+                root_session_id,
+            } => {
+                assert_eq!(version, "fake-1");
+                assert_eq!(root_session_id.as_deref(), Some("fake-root"));
+            }
+            other => panic!("expected Connected, got {other:?}"),
+        }
+        assert!(state.read().await.snapshot().connected);
+    }
+
+    #[tokio::test]
+    async fn the_hub_consumes_a_non_opencode_backend_stream() {
+        let (event, raw) =
+            crate::client::decode_payload(r#"{"type":"server.connected","properties":{}}"#, None)
+                .expect("decodes");
+        let backend = Arc::new(FakeBackend {
+            events: vec![BackendEvent { event, raw }],
+        });
+        let state = test_state();
+        let (tx, mut rx) = broadcast::channel::<CoreMessage>(super::EVENT_BUFFER);
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let handle = tokio::spawn(EventHub::new(backend, state.clone(), tx, shutdown_rx).run());
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                match rx.recv().await {
+                    Ok(CoreMessage::StateSnapshot { snapshot }) if snapshot.connected => break,
+                    Ok(_) => continue,
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(e) => panic!("broadcast closed: {e}"),
+                }
+            }
+        })
+        .await
+        .expect("the hub never reported connected for the fake backend");
+
+        let _ = shutdown_tx.send(true);
+        tokio::time::timeout(Duration::from_secs(5), handle)
+            .await
+            .expect("hub task did not stop")
+            .expect("hub task panicked");
     }
 }
