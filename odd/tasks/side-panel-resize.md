@@ -122,4 +122,5 @@ Out of scope:
   (worker run, re-confirmed by the orchestrator as a spot check); `npx vite build`
   → `✓ 1133 modules transformed`, `✓ built in 21.00s` (worker run; pre-existing
   >500 kB chunk advisory only). Manual drag/keyboard/persistence check still owed
-  (no GUI in this environment). Implementation commit: _recorded on the branch._
+  (no GUI in this environment). Implementation commit `6fe3060`, merged to `main`
+  as `16228b7`.
