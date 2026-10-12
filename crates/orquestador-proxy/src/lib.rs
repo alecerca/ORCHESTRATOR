@@ -13,7 +13,8 @@
 //! * [`adduser`] — pure core for the `adduser` CLI: hash a password and append
 //!   a user to the config document.
 //! * [`proxy`]   — the axum server: auth, role gate, upstream forwarding (SSE
-//!   passthrough), audit logging, and the router/app-state wiring.
+//!   passthrough), audit logging, presence (`/orquestador/whoami`,
+//!   `/orquestador/present`), and the router/app-state wiring.
 //!
 //! See `README.md` for run instructions and the security model (v0 assumes a
 //! private network / tunnel; it does not terminate TLS).

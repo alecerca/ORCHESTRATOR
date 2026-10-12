@@ -5,7 +5,10 @@
 //! gate, the 401 paths, and that the inject upstream credentials — never the
 //! client's — reach upstream.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use axum::{
     extract::{Request, State},
@@ -14,8 +17,7 @@ use axum::{
     Router,
 };
 use orquestador_proxy::{
-    adduser,
-    auth,
+    adduser, auth,
     config::{Config, Role},
     proxy::{self, AppState},
 };
@@ -83,15 +85,21 @@ fn test_config(upstream: &str) -> Config {
 
 /// Spawn the proxy; returns its base URL.
 async fn spawn_proxy(upstream: &str) -> String {
+    spawn_proxy_with_state(upstream).await.0
+}
+
+/// Spawn the proxy and also hand back the shared state, for tests that need to
+/// reach into `AppState` (e.g. presence injection).
+async fn spawn_proxy_with_state(upstream: &str) -> (String, Arc<AppState>) {
     let config = test_config(upstream);
     let state = Arc::new(AppState::new(config, Some("upstream-secret".to_string())));
-    let app = proxy::router(state);
+    let app = proxy::router(state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
-    format!("http://{addr}")
+    (format!("http://{addr}"), state)
 }
 
 /// Spawn the proxy with a user whose credential is an Argon2id hash, built via
@@ -223,7 +231,10 @@ async fn viewer_reads_but_cannot_write_editor_can_write() {
     let expected = auth::encode_basic("opencode", "upstream-secret");
     assert!(!captured.authorizations.is_empty());
     for seen in &captured.authorizations {
-        assert_eq!(seen, &expected, "upstream must receive injected credentials");
+        assert_eq!(
+            seen, &expected,
+            "upstream must receive injected credentials"
+        );
     }
     let client_auth = auth::encode_basic("alice", "editor-token");
     assert!(
@@ -253,7 +264,10 @@ async fn viewer_event_stream_passes_through() {
         Some("text/event-stream"),
     );
     let body = response.text().await.unwrap();
-    assert!(body.contains("data: hello"), "SSE body not passed through: {body:?}");
+    assert!(
+        body.contains("data: hello"),
+        "SSE body not passed through: {body:?}"
+    );
 }
 
 #[tokio::test]
@@ -282,5 +296,224 @@ async fn hashed_user_authenticates_and_wrong_password_is_unauthorized() {
         captured.lock().unwrap().authorizations.len(),
         1,
         "only the correctly authenticated request should reach upstream"
+    );
+}
+
+#[tokio::test]
+async fn whoami_returns_caller_identity() {
+    let (upstream, _captured) = spawn_upstream().await;
+    let proxy = spawn_proxy(&upstream).await;
+    let client = reqwest::Client::new();
+
+    let editor = client
+        .get(format!("{proxy}/orquestador/whoami"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(editor.status(), StatusCode::OK);
+    let body: serde_json::Value = editor.json().await.unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({ "name": "alice", "role": "editor" })
+    );
+
+    let viewer = client
+        .get(format!("{proxy}/orquestador/whoami"))
+        .basic_auth("bob", Some("viewer-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(viewer.status(), StatusCode::OK);
+    let body: serde_json::Value = viewer.json().await.unwrap();
+    assert_eq!(body, serde_json::json!({ "name": "bob", "role": "viewer" }));
+}
+
+#[tokio::test]
+async fn whoami_without_credentials_is_unauthorized() {
+    let (upstream, captured) = spawn_upstream().await;
+    let proxy = spawn_proxy(&upstream).await;
+
+    let response = reqwest::get(format!("{proxy}/orquestador/whoami"))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(
+        captured.lock().unwrap().authorizations.is_empty(),
+        "unauthenticated /orquestador/ request must never reach upstream"
+    );
+}
+
+#[tokio::test]
+async fn present_lists_recent_caller_with_role_and_small_idle() {
+    let (upstream, captured) = spawn_upstream().await;
+    let proxy = spawn_proxy(&upstream).await;
+    let client = reqwest::Client::new();
+
+    // bob (a viewer) makes a proxied request, which records his presence.
+    let request = client
+        .get(format!("{proxy}/session"))
+        .basic_auth("bob", Some("viewer-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request.status(), StatusCode::OK);
+
+    // alice polls `/present` — the poll itself is her heartbeat.
+    let present = client
+        .get(format!("{proxy}/orquestador/present"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(present.status(), StatusCode::OK);
+    let body: serde_json::Value = present.json().await.unwrap();
+    let list = body.as_array().expect("present returns an array");
+
+    let by_name: std::collections::HashMap<&str, &serde_json::Value> = list
+        .iter()
+        .map(|entry| (entry["name"].as_str().unwrap(), entry))
+        .collect();
+
+    // A viewer who just acted is listed with a small idleMs.
+    let bob = by_name["bob"];
+    assert_eq!(bob["role"], serde_json::json!("viewer"));
+    let bob_idle = bob["idleMs"].as_u64().unwrap();
+    assert!(
+        bob_idle < 5_000,
+        "bob just made a request; idleMs too large: {bob_idle}"
+    );
+
+    // The caller appears too — her poll refreshed her own last-seen.
+    let alice = by_name["alice"];
+    assert_eq!(alice["role"], serde_json::json!("editor"));
+    let alice_idle = alice["idleMs"].as_u64().unwrap();
+    assert!(
+        alice_idle < 5_000,
+        "alice's own poll just ran; idleMs too large: {alice_idle}"
+    );
+
+    // Only bob's `/session` reached upstream; the reserved routes never did.
+    assert_eq!(
+        captured.lock().unwrap().methods.len(),
+        1,
+        "reserved routes must not be forwarded upstream"
+    );
+}
+
+#[tokio::test]
+async fn present_refreshes_caller_last_seen() {
+    let (upstream, _captured) = spawn_upstream().await;
+    let proxy = spawn_proxy(&upstream).await;
+    let client = reqwest::Client::new();
+
+    let first = client
+        .get(format!("{proxy}/orquestador/present"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+    let first_body: serde_json::Value = first.json().await.unwrap();
+    let first_idle = first_body[0]["idleMs"].as_u64().unwrap();
+    assert_eq!(first_body[0]["name"], serde_json::json!("alice"));
+
+    // Wait far longer than the request handling time, then poll again. The
+    // second poll is a heartbeat: it must refresh alice's last-seen instead of
+    // reporting the elapsed sleep as idle time.
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
+
+    let second = client
+        .get(format!("{proxy}/orquestador/present"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second.status(), StatusCode::OK);
+    let second_body: serde_json::Value = second.json().await.unwrap();
+    let second_idle = second_body[0]["idleMs"].as_u64().unwrap();
+    assert_eq!(second_body[0]["name"], serde_json::json!("alice"));
+
+    assert!(
+        second_idle < 500,
+        "a second poll must refresh the caller's last-seen: \
+         first idle {first_idle}ms, second idle {second_idle}ms"
+    );
+}
+
+#[tokio::test]
+async fn present_omits_users_older_than_presence_window() {
+    let (upstream, _captured) = spawn_upstream().await;
+    let (proxy, state) = spawn_proxy_with_state(&upstream).await;
+    let client = reqwest::Client::new();
+
+    // bob makes a request, then goes quiet: age his last-seen past the window.
+    let request = client
+        .get(format!("{proxy}/session"))
+        .basic_auth("bob", Some("viewer-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(request.status(), StatusCode::OK);
+    state.presence.lock().unwrap().insert(
+        "bob".to_string(),
+        std::time::Instant::now() - Duration::from_secs(60),
+    );
+
+    let present = client
+        .get(format!("{proxy}/orquestador/present"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(present.status(), StatusCode::OK);
+    let body: serde_json::Value = present.json().await.unwrap();
+    let list = body.as_array().unwrap();
+
+    assert!(
+        list.iter()
+            .all(|entry| entry["name"] != serde_json::json!("bob")),
+        "bob is outside the presence window and must be omitted: {list:?}"
+    );
+    // The caller's own poll keeps her inside the window.
+    assert!(
+        list.iter()
+            .any(|entry| entry["name"] == serde_json::json!("alice")),
+        "the polling caller must appear in her own present list: {list:?}"
+    );
+}
+
+#[tokio::test]
+async fn reserved_prefix_never_reaches_upstream() {
+    let (upstream, captured) = spawn_upstream().await;
+    let proxy = spawn_proxy(&upstream).await;
+    let client = reqwest::Client::new();
+
+    // Valid auth + unknown `/orquestador/` path -> 404, never forwarded.
+    let authed = client
+        .get(format!("{proxy}/orquestador/sessions"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(authed.status(), StatusCode::NOT_FOUND);
+
+    // The prefix guard runs *after* auth: no credentials -> 401, not 404.
+    let anonymous = reqwest::get(format!("{proxy}/orquestador/sessions"))
+        .await
+        .unwrap();
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+
+    let captured = captured.lock().unwrap();
+    assert!(
+        captured.methods.is_empty(),
+        "reserved paths must never reach upstream: {:?}",
+        captured.methods
+    );
+    assert!(
+        captured.authorizations.is_empty(),
+        "reserved paths must never reach upstream: {:?}",
+        captured.authorizations
     );
 }
