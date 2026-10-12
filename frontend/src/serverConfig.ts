@@ -69,6 +69,19 @@ export function getConfig(): ServerConfig {
   return config;
 }
 
+/**
+ * Whether a server config has ever been persisted to `localStorage`. The
+ * first-run Join workspace screen opens when this is false; any saved config
+ * (even one later edited) suppresses it.
+ */
+export function hasPersistedConfig(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function getSnapshot(): ServerConfig {
   ensureLoaded();
   return config;

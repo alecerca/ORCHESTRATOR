@@ -8,13 +8,15 @@ interface Props {
   onClose: () => void;
   /** Retarget the app to the Members dialog (App owns both, one at a time). */
   onManageMembers?: () => void;
+  /** Retarget the app to the Join workspace dialog (App owns both). */
+  onJoinWorkspace?: () => void;
 }
 
 /**
  * Server connection settings. Rendered at the app root (like the approval and
  * skill-save modals) so the fixed backdrop can cover the whole window.
  */
-export function SettingsDialog({ open, onClose, onManageMembers }: Props) {
+export function SettingsDialog({ open, onClose, onManageMembers, onJoinWorkspace }: Props) {
   const [baseUrl, setBaseUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -169,6 +171,20 @@ export function SettingsDialog({ open, onClose, onManageMembers }: Props) {
               placeholder="./proxy.json"
             />
           </label>
+        </div>
+        <div className="settings-manage">
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => onJoinWorkspace?.()}
+            title="Connect to a teammate's workspace with a username and password"
+          >
+            Join a workspace…
+          </button>
+          <span className="settings-manage__hint">
+            Use the username and password from the host.
+          </span>
         </div>
         <div className="settings-test">
           <button type="button" className="btn" disabled={busy} onClick={() => void handleTest()}>
