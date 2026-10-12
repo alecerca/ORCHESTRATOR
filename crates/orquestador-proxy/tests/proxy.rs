@@ -14,8 +14,9 @@ use axum::{
     Router,
 };
 use orquestador_proxy::{
+    adduser,
     auth,
-    config::Config,
+    config::{Config, Role},
     proxy::{self, AppState},
 };
 
@@ -83,6 +84,32 @@ fn test_config(upstream: &str) -> Config {
 /// Spawn the proxy; returns its base URL.
 async fn spawn_proxy(upstream: &str) -> String {
     let config = test_config(upstream);
+    let state = Arc::new(AppState::new(config, Some("upstream-secret".to_string())));
+    let app = proxy::router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    format!("http://{addr}")
+}
+
+/// Spawn the proxy with a user whose credential is an Argon2id hash, built via
+/// the `adduser` core so the write path and the auth path agree.
+async fn spawn_proxy_with_hashed_user(upstream: &str) -> String {
+    let base = format!(
+        r#"{{
+            "listen": "127.0.0.1:0",
+            "upstream": "{upstream}",
+            "upstream_username": "opencode",
+            "users": [
+                {{ "name": "alice", "token": "editor-token", "role": "editor" }}
+            ]
+        }}"#
+    );
+    let json = adduser::add_user_to_json(&base, "dave", Role::Viewer, "hunter2")
+        .expect("hashed user added");
+    let config = Config::from_json_str(&json).expect("hashed config is valid");
     let state = Arc::new(AppState::new(config, Some("upstream-secret".to_string())));
     let app = proxy::router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -227,4 +254,33 @@ async fn viewer_event_stream_passes_through() {
     );
     let body = response.text().await.unwrap();
     assert!(body.contains("data: hello"), "SSE body not passed through: {body:?}");
+}
+
+#[tokio::test]
+async fn hashed_user_authenticates_and_wrong_password_is_unauthorized() {
+    let (upstream, captured) = spawn_upstream().await;
+    let proxy = spawn_proxy_with_hashed_user(&upstream).await;
+    let client = reqwest::Client::new();
+
+    let ok = client
+        .get(format!("{proxy}/session"))
+        .basic_auth("dave", Some("hunter2"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ok.status(), StatusCode::OK);
+
+    let bad = client
+        .get(format!("{proxy}/session"))
+        .basic_auth("dave", Some("wrong"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), StatusCode::UNAUTHORIZED);
+
+    assert_eq!(
+        captured.lock().unwrap().authorizations.len(),
+        1,
+        "only the correctly authenticated request should reach upstream"
+    );
 }

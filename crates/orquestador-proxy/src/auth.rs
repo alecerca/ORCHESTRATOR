@@ -1,6 +1,9 @@
 //! HTTP Basic auth helpers: parsing the inbound header, constant-time token
 //! comparison, credential resolution, and encoding the outbound upstream header.
 
+use argon2::password_hash::phc::PasswordHash;
+use argon2::password_hash::PasswordVerifier;
+use argon2::Argon2;
 use base64::Engine as _;
 
 use crate::config::{Config, User};
@@ -55,21 +58,50 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
-/// Resolve a presented `(name, token)` to a configured [`User`], comparing the
-/// token in constant time. Returns `None` for an unknown name or wrong token.
-pub fn resolve_user<'a>(config: &'a Config, name: &str, token: &str) -> Option<&'a User> {
+/// Verify a presented secret against a stored Argon2id PHC string.
+///
+/// A malformed or unsupported hash yields `false` rather than an error, so an
+/// unusable stored credential simply fails closed.
+fn verify_password_hash(hash: &str, secret: &str) -> bool {
+    let Ok(parsed) = PasswordHash::new(hash) else {
+        return false;
+    };
+    Argon2::default()
+        .verify_password(secret.as_bytes(), &parsed)
+        .is_ok()
+}
+
+/// Resolve a presented `(name, secret)` to a configured [`User`].
+///
+/// When the user carries a `password_hash` it is verified with Argon2id;
+/// otherwise the legacy `token` is compared in constant time. Returns `None`
+/// for an unknown name or a wrong secret. Secrets are never logged or echoed.
+pub fn resolve_user<'a>(config: &'a Config, name: &str, secret: &str) -> Option<&'a User> {
     let user = config.lookup(name)?;
-    if constant_time_eq(user.token.as_bytes(), token.as_bytes()) {
-        Some(user)
-    } else {
-        None
+
+    if let Some(hash) = user.password_hash.as_deref() {
+        return verify_password_hash(hash, secret).then_some(user);
     }
+    if let Some(token) = user.token.as_deref() {
+        return constant_time_eq(token.as_bytes(), secret.as_bytes()).then_some(user);
+    }
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::Role;
+    use argon2::password_hash::PasswordHasher as _;
+
+    /// Hash a password independently of `resolve_user`, so verification is
+    /// exercised against a real Argon2id PHC string rather than a fixture.
+    fn hash(password: &str) -> String {
+        Argon2::default()
+            .hash_password(password.as_bytes())
+            .expect("hash")
+            .to_string()
+    }
 
     fn config() -> Config {
         Config::from_json_str(
@@ -176,6 +208,72 @@ mod tests {
     fn resolve_user_rejects_unknown_name() {
         let cfg = config();
         assert!(resolve_user(&cfg, "nobody", "s3cret-a").is_none());
+    }
+
+    #[test]
+    fn resolve_user_accepts_correct_password() {
+        let json = format!(
+            r#"{{
+                "listen": "0.0.0.0:4097",
+                "upstream": "http://127.0.0.1:4096",
+                "upstream_username": "opencode",
+                "users": [
+                    {{ "name": "dave", "password_hash": "{}", "role": "viewer" }}
+                ]
+            }}"#,
+            hash("hunter2")
+        );
+        let cfg = Config::from_json_str(&json).expect("valid config");
+        let user = resolve_user(&cfg, "dave", "hunter2").expect("correct password");
+        assert_eq!(user.role, Role::Viewer);
+    }
+
+    #[test]
+    fn resolve_user_rejects_wrong_password() {
+        let json = format!(
+            r#"{{
+                "listen": "0.0.0.0:4097",
+                "upstream": "http://127.0.0.1:4096",
+                "upstream_username": "opencode",
+                "users": [
+                    {{ "name": "dave", "password_hash": "{}", "role": "viewer" }}
+                ]
+            }}"#,
+            hash("hunter2")
+        );
+        let cfg = Config::from_json_str(&json).expect("valid config");
+        assert!(resolve_user(&cfg, "dave", "wrong").is_none());
+    }
+
+    #[test]
+    fn password_hash_takes_precedence_over_token() {
+        let json = format!(
+            r#"{{
+                "listen": "0.0.0.0:4097",
+                "upstream": "http://127.0.0.1:4096",
+                "upstream_username": "opencode",
+                "users": [
+                    {{ "name": "erin", "token": "legacy-token", "password_hash": "{}", "role": "editor" }}
+                ]
+            }}"#,
+            hash("real-password")
+        );
+        let cfg = Config::from_json_str(&json).expect("valid config");
+        assert!(resolve_user(&cfg, "erin", "real-password").is_some());
+        // The legacy token must not authenticate once a hash is present.
+        assert!(resolve_user(&cfg, "erin", "legacy-token").is_none());
+    }
+
+    #[test]
+    fn resolve_user_rejects_malformed_password_hash() {
+        let json = r#"{
+            "listen": "0.0.0.0:4097",
+            "upstream": "http://127.0.0.1:4096",
+            "upstream_username": "opencode",
+            "users": [ { "name": "dave", "password_hash": "not-a-phc-string", "role": "viewer" } ]
+        }"#;
+        let cfg = Config::from_json_str(json).expect("shape is valid");
+        assert!(resolve_user(&cfg, "dave", "hunter2").is_none());
     }
 
     #[test]
