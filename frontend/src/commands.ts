@@ -11,6 +11,7 @@ import type {
   FileContent,
   FileNode,
   FileStatus,
+  GitBranch,
   GitCommitFile,
   GitLog,
   Health,
@@ -144,4 +145,18 @@ export const gitLog = (limit?: number) =>
 /** The files changed by one commit, each with its status letter. Read-only. */
 export const gitCommitFiles = (hash: string) =>
   invoke<GitCommitFile[]>("git_commit_files", { hash });
+
+/**
+ * The active project's local branches, the current one marked and returned
+ * first. Read-only: the shell only runs `git for-each-ref`.
+ */
+export const gitBranches = () => invoke<GitBranch[]>("git_branches");
+
+/**
+ * Switch the active project to local branch `name`. This is the app's only
+ * mutating git operation; a dirty worktree that conflicts rejects with a
+ * readable message instead of losing work.
+ */
+export const gitCheckout = (name: string) =>
+  invoke<void>("git_checkout", { name });
 
