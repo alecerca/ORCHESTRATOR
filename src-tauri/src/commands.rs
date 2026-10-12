@@ -710,6 +710,58 @@ pub async fn delete_skill(app: tauri::AppHandle, name: String) -> Result<bool, S
     }
 }
 
+// -- proxy whitelist ---------------------------------------------------------
+//
+// The host console reads and edits the owner's whitelist `proxy.json` at a
+// caller-supplied path. The app never runs the proxy: the proxy crate stays the
+// trust boundary that enforces roles; these commands only manage its file. The
+// module mirrors the proxy's format (Argon2id `password_hash`) without
+// depending on it, so no axum/server code enters the desktop build.
+
+/// A whitelist member as exposed to the webview: identity and role only. The
+/// `password_hash` and any legacy `token` are deliberately not included.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxyMemberDto {
+    pub name: String,
+    pub role: String,
+}
+
+impl From<crate::proxy_config::ProxyMember> for ProxyMemberDto {
+    fn from(member: crate::proxy_config::ProxyMember) -> Self {
+        Self {
+            name: member.name,
+            role: member.role,
+        }
+    }
+}
+
+/// Whitelist members from the `proxy.json` at `path`.
+#[tauri::command]
+pub async fn get_proxy_members(path: String) -> Result<Vec<ProxyMemberDto>, String> {
+    crate::proxy_config::list_members(std::path::Path::new(&path))
+        .map(|members| members.into_iter().map(ProxyMemberDto::from).collect())
+}
+
+/// Add a whitelist member with an Argon2id-hashed password to the config at
+/// `path`. Rejects an empty name, an empty password, a duplicate name and an
+/// unknown role.
+#[tauri::command]
+pub async fn add_proxy_member(
+    path: String,
+    name: String,
+    role: String,
+    password: String,
+) -> Result<(), String> {
+    crate::proxy_config::add_member(std::path::Path::new(&path), &name, &role, &password)
+}
+
+/// Remove the whitelist member `name` from the config at `path`.
+#[tauri::command]
+pub async fn remove_proxy_member(path: String, name: String) -> Result<(), String> {
+    crate::proxy_config::remove_member(std::path::Path::new(&path), &name)
+}
+
 // -- git ---------------------------------------------------------------------
 //
 // The OpenCode API does not expose the git branch, so the UI derives it locally

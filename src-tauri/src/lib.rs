@@ -8,6 +8,7 @@
 mod bridge;
 mod commands;
 mod notify;
+mod proxy_config;
 mod server_config;
 
 use bridge::AppBridge;
@@ -124,6 +125,9 @@ pub fn run() {
             commands::git_commit_files,
             commands::git_branches,
             commands::git_checkout,
+            commands::get_proxy_members,
+            commands::add_proxy_member,
+            commands::remove_proxy_member,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Orquestador shell");
