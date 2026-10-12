@@ -231,16 +231,33 @@ export interface ServerConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Files / diffs
+// Git (read-only history / changed files)
 // ---------------------------------------------------------------------------
 
-export interface FileDiff {
-  file: string;
-  before: string;
-  after: string;
-  additions: number;
-  deletions: number;
+/** One commit as returned by the `git_log` command (newest first). */
+export interface GitCommit {
+  hash: string;
+  short: string;
+  subject: string;
+  author: string;
+  date: string;
 }
+
+/** One path changed by a commit, with its status letter (`A`/`M`/`D`/`R`/…). */
+export interface GitCommitFile {
+  path: string;
+  status: string;
+}
+
+/** The active project's current branch and its commits. */
+export interface GitLog {
+  branch: string | null;
+  commits: GitCommit[];
+}
+
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
 
 export type FileNodeKind = "file" | "directory";
 

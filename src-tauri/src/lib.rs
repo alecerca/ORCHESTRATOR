@@ -110,7 +110,6 @@ pub fn run() {
             commands::get_messages,
             commands::get_message,
             commands::respond_permission,
-            commands::get_diff,
             commands::list_files,
             commands::read_file,
             commands::file_status,
@@ -121,6 +120,8 @@ pub fn run() {
             commands::save_skill,
             commands::delete_skill,
             commands::git_branch,
+            commands::git_log,
+            commands::git_commit_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Orquestador shell");

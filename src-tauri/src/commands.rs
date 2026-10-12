@@ -9,7 +9,7 @@ use orquestador_core::state::AppStateSnapshot;
 use orquestador_core::state::Effect;
 use orquestador_core::client::ClientConfig;
 use orquestador_core::types::{
-    Agent, CommandBody, CreateSessionBody, FileContent, FileDiff, FileNode, FileStatus, Health,
+    Agent, CommandBody, CreateSessionBody, FileContent, FileNode, FileStatus, Health,
     MessageBundle, PermissionResponse, Project, PromptBody, Session, SessionStatus, Todo,
 };
 use orquestador_core::skills::merge_skills;
@@ -392,20 +392,7 @@ pub async fn respond_permission(
     }
 }
 
-// -- diffs / files -----------------------------------------------------------
-
-#[tauri::command]
-pub async fn get_diff(
-    bridge: State<'_, AppBridge>,
-    session_id: String,
-    message_id: Option<String>,
-) -> Result<Vec<FileDiff>, String> {
-    bridge
-        .client()
-        .diff(&session_id, message_id.as_deref())
-        .await
-        .map_err(stringify)
-}
+// -- files -------------------------------------------------------------------
 
 #[tauri::command]
 pub async fn list_files(
@@ -738,4 +725,45 @@ pub async fn git_branch(directory: String) -> Option<String> {
     .await
     .ok()
     .flatten()
+}
+
+/// The active project directory (the persisted `x-opencode-directory` choice),
+/// or a clear error when no project has been picked yet. Reads the same
+/// `server.json` the Settings dialog writes; no server round-trip.
+fn active_directory(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().app_config_dir().map_err(stringify)?;
+    let config = crate::server_config::to_client_config(&crate::server_config::effective_file(&dir));
+    config
+        .directory
+        .map(std::path::PathBuf::from)
+        .ok_or_else(|| {
+            "No project directory selected — pick one to see its git history.".to_string()
+        })
+}
+
+/// The current branch and recent commits of the active project directory.
+/// Read-only: the core only runs `git log` / `git rev-parse`.
+#[tauri::command]
+pub async fn git_log(
+    app: tauri::AppHandle,
+    limit: Option<usize>,
+) -> Result<orquestador_core::git::RepoLog, String> {
+    let dir = active_directory(&app)?;
+    let limit = limit.unwrap_or(100);
+    tauri::async_runtime::spawn_blocking(move || orquestador_core::git::overview(&dir, limit))
+        .await
+        .map_err(stringify)?
+}
+
+/// The files changed by one commit of the active project directory. Read-only:
+/// the core only runs `git show`.
+#[tauri::command]
+pub async fn git_commit_files(
+    app: tauri::AppHandle,
+    hash: String,
+) -> Result<Vec<orquestador_core::git::CommitFile>, String> {
+    let dir = active_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || orquestador_core::git::commit_files(&dir, &hash))
+        .await
+        .map_err(stringify)?
 }
