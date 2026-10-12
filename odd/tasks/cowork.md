@@ -150,7 +150,7 @@ a later, additive step.
   `$argon2id$…` hash and that the proxy authenticates it; the Join screen
   persists the connection and the username shows up as the member identity.
 
-## Phase 4 — Presence (design)
+## Phase 4 — Presence (IMPLEMENTED)
 
 **Goal.** Show *who is currently connected* to the shared workspace. Presence
 here means "online" (identity + last-seen); "typing" is a follow-up (see Open
@@ -215,23 +215,151 @@ which whitelisted user is talking to the workspace. The app has no
 - Granularity: instance-wide vs per project (this design: instance-wide).
 - Showing known-but-offline members vs only online (this design: only online).
 
-### Design tasks (not scheduled)
+### Implementation tasks
 
-- **T8 [Rust/proxy]** `presence: Mutex<HashMap<String, Instant>>` on `AppState`;
-  record on `handle`; routes `/orquestador/whoami` and `/orquestador/present`.
-  Tests: caller identity, window expiry, viewer counted.
-- **T9 [Rust/core + tauri]** `AgentBackend::presence()` (default empty);
-  HTTP impl GETs the endpoint and degrades to empty on proxy-less setups;
-  bridge/command wiring.
-- **T10 [FE]** presence strip from `store.ts`; poll via the bridge; hidden when
-  empty.
+- **T8 [Rust/proxy] DONE** `ecdde5d` — `presence: Mutex<HashMap<String, Instant>>`
+  on `AppState`; recorded in `handle` after auth and before the role gate (a
+  read-only viewer counts as online); routes `/orquestador/whoami` and
+  `/orquestador/present` registered ahead of the fallback; the `present` poll
+  refreshes the caller (heartbeat); `PRESENCE_WINDOW` = 45 s; the
+  `/orquestador/` prefix is reserved and 404s instead of being forwarded
+  upstream. 6 new integration tests (identity, 401, viewer counted, heartbeat
+  refresh, window expiry, reserved-prefix never forwarded).
+- **T9 [Rust/core + tauri] DONE** `eb58b43` — `PresenceEntry`;
+  `AgentBackend::presence()` with a default `Ok(Vec::new())` (feature-detected,
+  never assumed); `OpenCodeClient::presence()` GETs the route and degrades to an
+  empty list on 404 / transport / decode failure; `get_presence` command wired
+  in `lib.rs`. 3 new core tests.
+- **T10 [FE] DONE** `fc6a7b3` — `PresenceStrip` polls `get_presence` every 15 s
+  (the poll is the heartbeat), renders dot + name + role badge with `(you)` on
+  the caller, returns `null` while the list is empty, keeps the last good list
+  on a failed poll, and guards against overlapping polls.
 
 ### Design verification
 
-- Prototype against a running `orquestador-proxy` + two clients with distinct
-  whitelist users: each sees the other with last-seen, the caller is marked
-  `(you)`, and a direct (proxy-less) connection shows no strip.
+- **Automated (below the UI):** `cargo test --workspace` green (core 106, proxy
+  48 lib + 12 integration); `cargo test --manifest-path src-tauri/Cargo.toml
+  --lib` 18 passed; `npm run typecheck` (from `frontend/`) exit 0.
+- **Still manual:** the two-client smoke pass below — the strip's polling,
+  `(you)` marker and hidden-when-empty behaviour are typecheck-only verified.
 - Keep the response shape additive so the FE can ship before the proxy route.
+
+## Phase 5 — Project scope containment (design)
+
+### The problem, as it stands today (verified in code)
+
+A whitelisted client can point the shared server at **any project directory on
+the host machine**:
+
+1. `ClientConfig.directory` is sent on every scoped request as
+   `X-Opencode-Directory` (`crates/orquestador-core/src/client.rs:35`, `:143`,
+   including the SSE event stream).
+2. `setProjectDirectory` only writes the caller's **own** `server.json` and
+   reconnects that client (`src-tauri/src/commands.rs:183-197`) — so it does not
+   mutate a shared server state. The problem is not contamination between
+   clients; it is that the header is the client's own choice.
+3. `ProjectPicker` offers every project from `GET /project` **and a free-text
+   absolute path** (`frontend/src/components/ProjectPicker.tsx:66-88`).
+4. The proxy forwards `X-Opencode-Directory` **verbatim**: `strip_request_header`
+   removes only `authorization`, `accept-encoding`, `content-length`, `host` and
+   hop-by-hop headers (`crates/orquestador-proxy/src/proxy.rs:157-167`).
+5. `GET /project` and `GET /project/current` are proxied too, so a whitelisted
+   client can **enumerate** every project the server knows
+   (`crates/orquestador-core/src/client.rs:244-251`).
+
+Net effect: the whitelist gates **who** may talk and the role gates **which HTTP
+methods** they may use, but nothing gates **which project directory** they may
+scope to. A whitelisted `editor` can select another project and read/modify its
+files through the agent.
+
+**Open question to verify before implementing:** whether `opencode serve` clamps
+`X-Opencode-Directory` to projects it already knows, or accepts an arbitrary
+path. Either way the leak is real — every *known* project stays reachable — so
+the fix does not depend on the answer.
+
+### Threat model — read this before trusting the fix
+
+Project scoping narrows **which directory is the working project**. It is not a
+sandbox. The agent runs with the host user's privileges and can execute shell
+commands, so a whitelisted `editor` can, in principle, ask it to touch anything
+that user can. If the machine holds projects that a coworker must not touch at
+all, the correct answer is **not a proxy rule**: use a separate OS user, a
+container or a VM per trust boundary, or grant `viewer` only. The proxy can make
+the *project switch* safe; it cannot make the *agent* harmless.
+
+### Where enforcement must live
+
+The proxy. It is the only component that (a) resolves the authenticated user per
+request and (b) can rewrite the header before it reaches upstream. A UI-only
+disable is not security: the header is one `curl` away.
+
+### Option A — per-user project scope (recommended)
+
+Extend `proxy.json` additively:
+
+```json
+{
+  "defaultProject": "/home/owner/projects/team-app",
+  "users": [
+    { "name": "ana", "role": "editor",
+      "projects": ["/home/owner/projects/team-app"] },
+    { "name": "bob", "role": "viewer",
+      "projects": ["/home/owner/projects/team-app", "/home/owner/projects/docs"] }
+  ]
+}
+```
+
+Enforcement in `handle`, **before** forwarding:
+
+- `projects` **absent** → today's behaviour (unrestricted). Keeps existing
+  deployments working; opt in per user.
+- `projects` **present** → the requested directory must match one entry exactly,
+  compared after `normalize_directory` + `std::fs::canonicalize` on both sides
+  (deny when a path cannot be canonicalized — fail closed; comparing raw strings
+  would let `../` and symlinks escape the allowlist).
+- Header **absent** for a scoped user → the proxy **injects** that user's first
+  allowed project, so the client never falls through to the server's own cwd
+  project by accident.
+- Not allowed → `403 project_not_allowed`, audited, never forwarded upstream.
+- `GET /project` for a scoped user → the proxy filters the response to that
+  user's allowlist, so the picker cannot enumerate the host's other projects.
+  (This is the one place the proxy must buffer a response body; it is a small
+  JSON document and the `/event` stream is untouched.)
+
+CLI: `orquestador-proxy adduser <name> --role <editor|viewer> --project <path>`
+(repeatable).
+
+### Option B — one pinned project for the whole shared instance (simplest)
+
+A top-level `projectDirectory` (or a `--directory` flag): the proxy **strips any
+client** `X-Opencode-Directory` and injects the pinned path. Every client, no
+matter what it sends, works on the same project. No per-user bookkeeping, no
+path comparison, no response filtering — safety by construction, and it matches
+the ordinary "cowork on one project" case.
+
+### Option C — disable the Project button for remote clients
+
+Rejected as a **security** control (the header is still forwarded; the UI is
+decoration). Worth doing as **UX** on top of A or B: `GET /orquestador/whoami`
+(already implemented in T8) can grow a `projects` field so the app knows its own
+scope, hides the free-text input, lists only allowed projects, and labels the
+picker as locked. The app must never be the enforcement point.
+
+### Recommendation
+
+Ship **B** first — it is a few lines in the proxy and closes the hole
+immediately — then **A** when someone genuinely needs more than one project.
+Both are additive config, so neither breaks a current deployment.
+
+### Acceptance criteria (T11+)
+
+- A scoped user requesting a non-allowlisted directory gets `403` and the stub
+  upstream sees **nothing**.
+- A scoped user sending no directory header lands on its allowed project, not on
+  the server's cwd.
+- `GET /project` returns only the caller's allowed projects.
+- An unrestricted user (no `projects` key) behaves exactly as today.
+- Path comparison fails closed on `..`, trailing slashes and symlinks.
 
 ## Out of scope
 
@@ -303,6 +431,28 @@ which whitelisted user is talking to the workspace. The app has no
   proxy-owned in-memory last-seen + two reserved proxy-native routes
   (`/orquestador/whoami`, `/orquestador/present`); the app polls and degrades to
   "no presence" on a proxy-less setup. No code — design only (T8–T10 pending).
+- 2026-10-12: **Phase 4 (presence) implemented** by bounded writers in three
+  work units on `feat/cowork`:
+  - **T8** `ecdde5d` — proxy presence: last-seen on `AppState`,
+    `/orquestador/whoami` + `/orquestador/present` ahead of the fallback,
+    reserved-prefix guard, 45 s window, poll refreshes the caller. 6 new
+    integration tests → `cargo test -p orquestador-proxy` 48 lib + 12
+    integration. Parent spot check reproduced.
+  - **T9** `eb58b43` — `PresenceEntry`; `AgentBackend::presence()` defaulting to
+    `Ok(vec![])`; `OpenCodeClient::presence()` degrading to empty on 404 /
+    transport / decode failure; `get_presence` command registered. Verified:
+    `cargo test --workspace` → core 106, proxy 48 + 12; `cargo test
+    --manifest-path src-tauri/Cargo.toml --lib` 18.
+  - **T10** `fc6a7b3` — `PresenceStrip` (15 s poll = the heartbeat, `(you)`
+    marker, `null` while empty, silent on failure, no overlapping polls) mounted
+    in `TopBar`. `npm run typecheck` (from `frontend/`) exit 0. **Not
+    automated:** the frontend has no test runner — the strip needs the
+    two-client manual smoke pass.
+- 2026-10-12: **Phase 5 (project scope containment) designed** (see above) after
+  verifying in code that `X-Opencode-Directory` is forwarded verbatim by the
+  proxy and that the picker accepts arbitrary absolute paths. Not implemented —
+  it waits for a decision between Option B (pin one project) and Option A
+  (per-user allowlist).
 
 ## Delivery / RDD
 
@@ -310,7 +460,10 @@ which whitelisted user is talking to the workspace. The app has no
 - Reviewed boundary: branch point `6b005bb` on `main` (nothing reviewed yet).
 - `gentle-ai review assess --base-ref 6b005bb --committed-only` over
   `6b005bb..HEAD` → **high** (`hot_path`: `crates/orquestador-proxy/src/auth.rs`),
-  31 paths / 2421 changed lines, `review_due: true` (`high_risk`).
+  35 paths / 3282 changed lines, `review_due: true` (`high_risk`).
+- Per-task RDD record (Phase 4): T8/T9/T10 each assessed on the branch range →
+  `high` / `review_due: true`; the review stays blocked by the consent envelope
+  below, so all three are recorded as **due, not reviewed**.
 - The preflight returned a `review.start` whose relay yields a
   `gentle-ai.review-integration.consent/v3` envelope. **Not started:** this
   runtime has no native `question` tool to present the prompt and the contract
