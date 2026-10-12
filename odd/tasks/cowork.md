@@ -40,7 +40,7 @@ work it is. Two people cannot tell "this is mine" from "this is my teammate's".
 | **L3 · Owner display** | "by <name>" chip on every agent/sub-agent | **Phase 1** |
 | **L4 · Room UX** | all sessions visible (tabs already exist) | ✅ exists |
 | **L5 · Presence** | who is online / typing | Phase 4 (design only) |
-| **L6 · Access (whitelist)** | owner-managed users + roles + join | Phase 2–3 (design below) |
+| **L6 · Access (whitelist)** | owner-managed users + roles + join | **Phase 2** (store + CLI); Phase 3 UX (design) |
 
 ## Phase 1 — Identity, attribution, owner chip (IMPLEMENT)
 
@@ -75,7 +75,7 @@ work it is. Two people cannot tell "this is mine" from "this is my teammate's".
   `[name]` prefix; every sub-agent under a session shows the same owner chip;
   branch chip still works.
 
-## Phase 2 — Whitelist user store (DESIGN)
+## Phase 2 — Whitelist user store (IMPLEMENTED)
 
 The role-enforcing proxy (`crates/orquestador-proxy`, `odd/tasks/role-proxy.md`)
 **already implements the whitelist**:
@@ -102,6 +102,15 @@ create users. Design:
   hand-editing JSON.
 - **Config validation**: reject duplicate names (already), empty password, and
   unknown roles (already).
+
+**Delivered** (commit `dba46ff`): `User` gained `password_hash` and its `token`
+became `Option<String>` (legacy configs still parse); `resolve_user` verifies the
+Argon2id hash first (fail-closed on a malformed PHC string) and otherwise falls
+back to the constant-time legacy token compare; new `adduser` module + the
+`orquestador-proxy adduser <name> --role <editor|viewer> [--config <path>]`
+subcommand reads the password from stdin and appends to the raw config JSON so
+existing users and unknown fields survive. The `argon2` crate is added to the
+proxy crate only.
 
 ## Phase 2/3 — Whitelist UX (design only; depends on Track 4 host mode)
 
@@ -168,9 +177,22 @@ SSE stream. Explicitly **out of scope** for now.
 - 2026-10-12: feature doc created; Option A confirmed by the user; whitelist
   found already implemented at the proxy layer (design recorded above).
   Phase 1 (identity/attribution/owner chip) routed to a bounded writer.
+- 2026-10-12: **Phase 1** implemented and committed `e241075` (branch
+  `feat/cowork`, base `6b005bb`). Verified: core 101 / proxy 30 / proxy
+  integration 5 / src-tauri lib 6, `npm run typecheck` exit 0.
+- 2026-10-12: **Phase 2** implemented by a bounded writer and committed
+  `dba46ff`. Verification: `cargo test -p orquestador-proxy` → 48 lib + 6
+  integration, 0 failed; `cargo build -p orquestador-proxy` clean;
+  `cargo test --workspace` green. Parent spot check reproduced 48 + 6.
 
 ## Delivery / RDD
 
-- Delivery strategy: `ask-on-risk` (default). Phase 1 is small; a single
-  work-unit commit when green.
-- RDD: assess the work-unit commit at delivery per the repo's switch.
+- Delivery strategy: `ask-on-risk` (default). Work-unit commits on `feat/cowork`.
+- Reviewed boundary: branch point `6b005bb` on `main`.
+- Pending candidate `e241075` (medium, 16 files / 433 lines): the RDD review
+  cannot advance — the START returns a `gentle-ai.review-integration.consent/v3`
+  envelope and this runtime has no native `question` tool to relay it. Per
+  contract: report the limitation and stop; resolve by running the review's
+  `granted` invocation out-of-band or by `gentle-ai review mode disable`.
+- Candidate `dba46ff` (Phase 2) committed after the blocked candidate; not yet
+  assessed.
