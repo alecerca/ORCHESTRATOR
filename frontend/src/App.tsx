@@ -11,7 +11,7 @@ import {
   type SessionSnapshot,
 } from "./types";
 import { describeError } from "./utils";
-import { setDirectory } from "./serverConfig";
+import { hasPersistedConfig, setDirectory } from "./serverConfig";
 import { TopBar } from "./components/TopBar";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentPanel } from "./components/AgentPanel";
@@ -26,6 +26,7 @@ import { invalidateGitBranches } from "./components/useGitBranch";
 import { SkillSavePrompt } from "./components/SkillSavePrompt";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { MembersDialog } from "./components/MembersDialog";
+import { JoinWorkspaceDialog } from "./components/JoinWorkspaceDialog";
 import {
   EMPTY_LAYOUT,
   LAYOUT_KEY,
@@ -177,6 +178,9 @@ export default function App() {
   const [saveSkillError, setSaveSkillError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  // First run: no persisted server config yet — offer the Join screen once on
+  // mount. Dismissible, so the app stays usable without joining.
+  const [joinOpen, setJoinOpen] = useState(() => !hasPersistedConfig());
 
   const hadPersistedLayout = useRef(persistedLayout !== null);
   const previousSessionIds = useRef<string[]>([]);
@@ -505,7 +509,11 @@ export default function App() {
       <TopBar
         rootSessionId={effectiveRootId}
         onOpenSkill={(name) => setLayout((current) => openSkillTab(current, name))}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => {
+          // One modal at a time: opening Settings dismisses the Join screen.
+          setJoinOpen(false);
+          setSettingsOpen(true);
+        }}
         onProjectChanged={(config) => void handleProjectChanged(config)}
       />
       <ConnectionBanner ready={storeReady} />
@@ -615,8 +623,13 @@ export default function App() {
           setSettingsOpen(false);
           setMembersOpen(true);
         }}
+        onJoinWorkspace={() => {
+          setSettingsOpen(false);
+          setJoinOpen(true);
+        }}
       />
       <MembersDialog open={membersOpen} onClose={() => setMembersOpen(false)} />
+      <JoinWorkspaceDialog open={joinOpen} onClose={() => setJoinOpen(false)} />
       {pendingSkillClose && (
         <SkillSavePrompt
           name={pendingSkillClose.name}

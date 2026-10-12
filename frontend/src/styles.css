@@ -1487,6 +1487,14 @@ html[data-theme="light"] .drop-indicator {
   font-family: var(--mono);
 }
 
+/* -- join workspace dialog -------------------------------------------------- */
+
+.join-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* -- members dialog --------------------------------------------------------- */
 
 .members-path {
