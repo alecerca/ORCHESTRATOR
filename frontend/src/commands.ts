@@ -9,9 +9,10 @@ import type {
   Agent,
   AppStateSnapshot,
   FileContent,
-  FileDiff,
   FileNode,
   FileStatus,
+  GitCommitFile,
+  GitLog,
   Health,
   MessageBundle,
   PermissionResponse,
@@ -85,9 +86,7 @@ export const respondPermission = (
     remember,
   });
 
-// -- diffs / files -----------------------------------------------------------
-export const getDiff = (sessionId: string, messageId?: string) =>
-  invoke<FileDiff[]>("get_diff", { sessionId, messageId });
+// -- files -------------------------------------------------------------------
 export const listFiles = (path?: string) =>
   invoke<FileNode[]>("list_files", { path });
 export const readFile = (path: string) =>
@@ -133,4 +132,16 @@ export const setProjectDirectory = (directory: string | null) =>
  */
 export const gitBranch = (directory: string) =>
   invoke<string | null>("git_branch", { directory });
+
+/**
+ * The active project's branch and recent commits (newest first). Read-only.
+ * Rejects with a message when no project directory has been selected, the
+ * directory is not a git repository, or it has no commits yet.
+ */
+export const gitLog = (limit?: number) =>
+  invoke<GitLog>("git_log", { limit });
+
+/** The files changed by one commit, each with its status letter. Read-only. */
+export const gitCommitFiles = (hash: string) =>
+  invoke<GitCommitFile[]>("git_commit_files", { hash });
 
