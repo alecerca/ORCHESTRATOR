@@ -22,11 +22,20 @@ impl Role {
     }
 }
 
-/// A configured client: who they are, the token they present, and their role.
+/// A configured client: who they are, the credential they present, and their role.
+///
+/// A user must carry at least one non-empty credential. `password_hash` is the
+/// preferred Argon2id PHC string; `token` is the legacy plaintext secret kept
+/// for back-compat with existing configs.
 #[derive(Debug, Clone, Deserialize)]
 pub struct User {
     pub name: String,
-    pub token: String,
+    /// Legacy plaintext token. Optional since hashed users may omit it.
+    #[serde(default)]
+    pub token: Option<String>,
+    /// Argon2id PHC string for the user's password.
+    #[serde(default)]
+    pub password_hash: Option<String>,
     pub role: Role,
 }
 
@@ -112,8 +121,16 @@ impl Config {
             if user.name.trim().is_empty() {
                 return invalid("every user needs a non-empty `name`".into());
             }
-            if user.token.is_empty() {
-                return invalid(format!("user `{}` has an empty `token`", user.name));
+            let has_token = user.token.as_deref().is_some_and(|token| !token.is_empty());
+            let has_hash = user
+                .password_hash
+                .as_deref()
+                .is_some_and(|hash| !hash.is_empty());
+            if !has_token && !has_hash {
+                return invalid(format!(
+                    "user `{}` needs a non-empty `token` or `password_hash`",
+                    user.name
+                ));
             }
         }
 
@@ -219,6 +236,65 @@ mod tests {
         let json = VALID.replace("change-me-1", "");
         let err = Config::from_json_str(&json).unwrap_err();
         assert!(matches!(err, ConfigError::Invalid(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn rejects_user_without_any_credential() {
+        let json = r#"{
+            "listen": "0.0.0.0:4097",
+            "upstream": "http://127.0.0.1:4096",
+            "upstream_username": "opencode",
+            "users": [ { "name": "alice", "role": "editor" } ]
+        }"#;
+        let err = Config::from_json_str(json).unwrap_err();
+        assert!(matches!(err, ConfigError::Invalid(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn parses_password_hash_without_token() {
+        let json = r#"{
+            "listen": "0.0.0.0:4097",
+            "upstream": "http://127.0.0.1:4096",
+            "upstream_username": "opencode",
+            "users": [
+                { "name": "alice",
+                  "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA",
+                  "role": "editor" }
+            ]
+        }"#;
+        let cfg = Config::from_json_str(json).expect("password_hash-only user is valid");
+        assert_eq!(cfg.users[0].name, "alice");
+        assert!(cfg.users[0].password_hash.is_some());
+        assert_eq!(cfg.users[0].token, None);
+    }
+
+    #[test]
+    fn rejects_empty_password_hash_without_token() {
+        let json = r#"{
+            "listen": "0.0.0.0:4097",
+            "upstream": "http://127.0.0.1:4096",
+            "upstream_username": "opencode",
+            "users": [ { "name": "alice", "password_hash": "", "role": "editor" } ]
+        }"#;
+        let err = Config::from_json_str(json).unwrap_err();
+        assert!(matches!(err, ConfigError::Invalid(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn accepts_token_and_password_hash_together() {
+        let json = r#"{
+            "listen": "0.0.0.0:4097",
+            "upstream": "http://127.0.0.1:4096",
+            "upstream_username": "opencode",
+            "users": [
+                { "name": "alice", "token": "legacy",
+                  "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA",
+                  "role": "editor" }
+            ]
+        }"#;
+        let cfg = Config::from_json_str(json).expect("both credentials are allowed");
+        assert_eq!(cfg.users[0].token.as_deref(), Some("legacy"));
+        assert!(cfg.users[0].password_hash.is_some());
     }
 
     #[test]
