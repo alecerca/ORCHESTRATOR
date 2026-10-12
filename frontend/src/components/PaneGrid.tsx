@@ -30,6 +30,8 @@ interface Props {
   layout: Layout;
   sessions: SessionSnapshot[];
   theme: "dark" | "light";
+  /** Bumped after a checkout so open file tabs re-read their content. */
+  filesVersion: number;
   onActivateTab: (groupId: string, tabId: string) => void;
   onActivateGroup: (groupId: string) => void;
   onCloseTab: (groupId: string, tabId: string) => void;
@@ -49,6 +51,7 @@ export function PaneGrid({
   layout,
   sessions,
   theme,
+  filesVersion,
   onActivateTab,
   onActivateGroup,
   onCloseTab,
@@ -76,6 +79,7 @@ export function PaneGrid({
           node={layout.root}
           sessions={sessions}
           theme={theme}
+          filesVersion={filesVersion}
           onActivateTab={onActivateTab}
           onActivateGroup={onActivateGroup}
           onCloseTab={onCloseTab}
@@ -92,6 +96,8 @@ export function PaneGrid({
 interface SharedProps {
   sessions: SessionSnapshot[];
   theme: "dark" | "light";
+  /** Bumped after a checkout so open file tabs re-read their content. */
+  filesVersion: number;
   onActivateTab: (groupId: string, tabId: string) => void;
   onActivateGroup: (groupId: string) => void;
   onCloseTab: (groupId: string, tabId: string) => void;
@@ -180,6 +186,7 @@ function GroupView({
   group,
   sessions,
   theme,
+  filesVersion,
   onActivateTab,
   onActivateGroup,
   onCloseTab,
@@ -262,7 +269,9 @@ function GroupView({
             <AgentPane key={sessionId} sessionId={sessionId} />
           </>
         )}
-        {!sessionId && filePath && <FileViewer path={filePath} theme={theme} />}
+        {!sessionId && filePath && (
+          <FileViewer path={filePath} theme={theme} filesVersion={filesVersion} />
+        )}
         {skill && <SkillEditor key={skill.id} tabId={skill.id} name={skill.name} theme={theme} />}
         {dropSide && (
           <div className={`drop-indicator drop-indicator--${dropSide}`} aria-hidden="true" />

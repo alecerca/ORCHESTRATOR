@@ -7,6 +7,8 @@ import { MonacoEditor } from "./MonacoEditor";
 interface Props {
   path: string;
   theme: "dark" | "light";
+  /** Bumped after a checkout so an open tab re-reads the file on the new branch. */
+  filesVersion: number;
 }
 
 /**
@@ -15,13 +17,13 @@ interface Props {
  * states. No write API — the editor's in-memory `onChange` stays local to the
  * running window (the previous right-column viewer behaved the same way).
  */
-export function FileViewer({ path, theme }: Props) {
+export function FileViewer({ path, theme, filesVersion }: Props) {
   const [content, setContent] = useState<FileContent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Reload whenever the active file tab changes (the component instance is
-  // reused across tabs within a group).
+  // reused across tabs within a group) or a checkout switched the working tree.
   useEffect(() => {
     let cancelled = false;
     setContent(null);
@@ -40,7 +42,7 @@ export function FileViewer({ path, theme }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, filesVersion]);
 
   return (
     <div className="file-viewer">

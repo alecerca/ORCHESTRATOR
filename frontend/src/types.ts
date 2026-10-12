@@ -255,6 +255,12 @@ export interface GitLog {
   commits: GitCommit[];
 }
 
+/** One local branch as returned by the `git_branches` command. */
+export interface GitBranch {
+  name: string;
+  current: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Files
 // ---------------------------------------------------------------------------
