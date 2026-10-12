@@ -1471,6 +1471,124 @@ html[data-theme="light"] .drop-indicator {
   color: var(--error);
 }
 
+.settings-manage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.settings-manage__hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings-manage__hint code {
+  font-family: var(--mono);
+}
+
+/* -- members dialog --------------------------------------------------------- */
+
+.members-path {
+  margin: 0 0 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.members-hint,
+.members-status {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.members-hint code {
+  font-family: var(--mono);
+}
+
+.members-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.members-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.members-row__name {
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.members-role {
+  margin-left: auto;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.members-add {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.members-add__action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.members-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.members-invite__title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.members-invite__note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.members-copy {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.members-copy .settings-input {
+  flex: 1;
+}
+
 /* -- notifications ---------------------------------------------------------- */
 
 .notifications {

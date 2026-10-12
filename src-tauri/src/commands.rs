@@ -73,6 +73,7 @@ pub async fn test_connection(
         password,
         directory: None,
         member_name: None,
+        proxy_config_path: None,
     });
     // Probe fast; a wrong host should fail quickly instead of hanging 30s.
     let config = ClientConfig {
@@ -94,16 +95,23 @@ pub struct ServerConfigDto {
     pub directory: Option<String>,
     /// Optional display name used to attribute sessions this app creates.
     pub member_name: Option<String>,
+    /// Optional path to the host's whitelist `proxy.json` edited by the Members
+    /// dialog. UI-only; not a connection field.
+    pub proxy_config_path: Option<String>,
 }
 
 impl ServerConfigDto {
-    fn from_client_config(cfg: &ClientConfig) -> Self {
+    /// Build the DTO from the connection config plus the UI-only proxy path,
+    /// which lives on [`ServerConfigFile`](crate::server_config::ServerConfigFile)
+    /// rather than [`ClientConfig`].
+    fn from_client_config(cfg: &ClientConfig, proxy_config_path: Option<String>) -> Self {
         Self {
             base_url: cfg.base_url.clone(),
             username: cfg.username.clone(),
             password: cfg.password.clone(),
             directory: cfg.directory.clone(),
             member_name: cfg.member_name.clone(),
+            proxy_config_path,
         }
     }
 }
@@ -115,7 +123,11 @@ pub async fn get_server_config(app: tauri::AppHandle) -> Result<ServerConfigDto,
     let dir = app.path().app_config_dir().map_err(stringify)?;
     let cfg = crate::server_config::load_from_dir(&dir)
         .unwrap_or_else(ClientConfig::from_env_or_default);
-    Ok(ServerConfigDto::from_client_config(&cfg))
+    // The proxy config path is stored on the raw file (it is not a connection
+    // field), so read it back separately from the collapsed client config.
+    let proxy_config_path = crate::server_config::load_file(&dir)
+        .and_then(|file| crate::server_config::normalize_proxy_config_path(file.proxy_config_path));
+    Ok(ServerConfigDto::from_client_config(&cfg, proxy_config_path))
 }
 
 /// Persist new server settings and reconnect the live client to them.
@@ -130,6 +142,7 @@ pub async fn set_server_config(
     username: Option<String>,
     password: Option<String>,
     member_name: Option<String>,
+    proxy_config_path: Option<String>,
 ) -> Result<ServerConfigDto, String> {
     let dir = app.path().app_config_dir().map_err(stringify)?;
     let mut file = crate::server_config::effective_file(&dir);
@@ -137,10 +150,11 @@ pub async fn set_server_config(
     file.username = username;
     file.password = password;
     file.member_name = crate::server_config::normalize_member_name(member_name);
+    file.proxy_config_path = crate::server_config::normalize_proxy_config_path(proxy_config_path);
     crate::server_config::save_to_dir(&dir, &file).map_err(stringify)?;
 
     let cfg = crate::server_config::to_client_config(&file);
-    let dto = ServerConfigDto::from_client_config(&cfg);
+    let dto = ServerConfigDto::from_client_config(&cfg, file.proxy_config_path.clone());
     bridge.reconnect(cfg).await.map_err(stringify)?;
     Ok(dto)
 }
@@ -177,7 +191,7 @@ pub async fn set_project_directory(
     crate::server_config::save_to_dir(&dir, &file).map_err(stringify)?;
 
     let cfg = crate::server_config::to_client_config(&file);
-    let dto = ServerConfigDto::from_client_config(&cfg);
+    let dto = ServerConfigDto::from_client_config(&cfg, file.proxy_config_path.clone());
     bridge.reconnect(cfg).await.map_err(stringify)?;
     Ok(dto)
 }

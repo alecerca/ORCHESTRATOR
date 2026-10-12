@@ -29,6 +29,12 @@ pub struct ServerConfigFile {
     /// `#[serde(default)]` keeps them loadable.
     #[serde(default)]
     pub member_name: Option<String>,
+    /// Optional path to the host's whitelist `proxy.json` edited by the Members
+    /// dialog. UI-only: it never reaches the client (it is not a connection
+    /// field). Absent in files written before this existed; `#[serde(default)]`
+    /// keeps them loadable.
+    #[serde(default)]
+    pub proxy_config_path: Option<String>,
 }
 
 /// Trim and drop a trailing slash so `http://host:4096/` matches the client's
@@ -49,6 +55,12 @@ pub fn normalize_member_name(name: Option<String>) -> Option<String> {
     name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty())
 }
 
+/// Trim a proxy config path and treat a blank value as "not set" (the Members
+/// dialog then shows the "configure it in Settings" hint instead of reading).
+pub fn normalize_proxy_config_path(path: Option<String>) -> Option<String> {
+    path.map(|p| p.trim().to_string()).filter(|p| !p.is_empty())
+}
+
 /// The raw file to build a save on: the persisted one when present, otherwise
 /// the effective environment / default configuration materialized into a file.
 ///
@@ -65,6 +77,8 @@ pub fn effective_file(dir: &Path) -> ServerConfigFile {
         password: cfg.password,
         directory: cfg.directory,
         member_name: cfg.member_name,
+        // Not a connection field: a fresh file without one starts unset.
+        proxy_config_path: None,
     }
 }
 
@@ -131,6 +145,7 @@ mod tests {
             password: Some("".to_string()),
             directory: Some("   ".to_string()),
             member_name: Some("   ".to_string()),
+            proxy_config_path: Some("   ".to_string()),
         });
         assert_eq!(cfg.base_url, DEFAULT_BASE_URL);
         assert_eq!(cfg.username, DEFAULT_USERNAME);
@@ -150,6 +165,7 @@ mod tests {
             password: Some("secret".to_string()),
             directory: Some("  /home/dev/proj  ".to_string()),
             member_name: Some("  Alice  ".to_string()),
+            proxy_config_path: None,
         });
         assert_eq!(cfg.base_url, "http://host:4096");
         assert_eq!(cfg.username, "alice");
@@ -188,6 +204,7 @@ mod tests {
             password: Some("pw".to_string()),
             directory: Some("/home/dev/proj".to_string()),
             member_name: Some("Bob".to_string()),
+            proxy_config_path: Some("/home/dev/proxy.json".to_string()),
         };
         save_to_dir(&dir, &file).unwrap();
         let loaded = load_file(&dir).expect("file should load back");
@@ -196,6 +213,10 @@ mod tests {
         assert_eq!(loaded.password.as_deref(), Some("pw"));
         assert_eq!(loaded.directory.as_deref(), Some("/home/dev/proj"));
         assert_eq!(loaded.member_name.as_deref(), Some("Bob"));
+        assert_eq!(
+            loaded.proxy_config_path.as_deref(),
+            Some("/home/dev/proxy.json")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -207,7 +228,43 @@ mod tests {
             password: None,
             directory: None,
             member_name: Some("   ".to_string()),
+            proxy_config_path: None,
         });
         assert!(cfg.member_name.is_none());
+    }
+
+    #[test]
+    fn normalize_proxy_config_path_trims_and_blanks_to_none() {
+        assert_eq!(
+            normalize_proxy_config_path(Some("  /etc/proxy.json  ".to_string())).as_deref(),
+            Some("/etc/proxy.json")
+        );
+        assert_eq!(
+            normalize_proxy_config_path(Some("   ".to_string())),
+            None,
+            "a blank path is not set"
+        );
+        assert_eq!(normalize_proxy_config_path(None), None);
+    }
+
+    #[test]
+    fn old_server_json_without_proxy_config_path_loads_it_as_none() {
+        // Backward compatibility: a file written before the host whitelist UI
+        // has no `proxy_config_path` key; the raw file must still load.
+        let dir = std::env::temp_dir().join(format!("orq-cfg-oldproxy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(FILE_NAME),
+            r#"{"base_url":"http://old:1","username":"u","password":"p"}"#,
+        )
+        .unwrap();
+
+        let file = load_file(&dir).expect("old file must still load");
+        assert!(
+            file.proxy_config_path.is_none(),
+            "absent key means no proxy config path"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -18,6 +18,7 @@ import type {
   MessageBundle,
   PermissionResponse,
   Project,
+  ProxyMember,
   ServerConfig,
   Session,
   SessionStatus,
@@ -114,7 +115,30 @@ export const setServerConfig = (
   username?: string,
   password?: string,
   memberName?: string,
-) => invoke<ServerConfig>("set_server_config", { baseUrl, username, password, memberName });
+  proxyConfigPath?: string,
+) =>
+  invoke<ServerConfig>("set_server_config", {
+    baseUrl,
+    username,
+    password,
+    memberName,
+    proxyConfigPath,
+  });
+
+// -- proxy whitelist (host side) ---------------------------------------------
+//
+// The host console edits the owner's `proxy.json` at a caller-supplied path.
+// These only read/write that file; the proxy stays the enforcement boundary.
+export const getProxyMembers = (path: string) =>
+  invoke<ProxyMember[]>("get_proxy_members", { path });
+export const addProxyMember = (
+  path: string,
+  name: string,
+  role: string,
+  password: string,
+) => invoke<void>("add_proxy_member", { path, name, role, password });
+export const removeProxyMember = (path: string, name: string) =>
+  invoke<void>("remove_proxy_member", { path, name });
 
 // -- projects -----------------------------------------------------------------
 /** Every project the running server knows about. */

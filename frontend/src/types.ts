@@ -233,6 +233,21 @@ export interface ServerConfig {
    * (`[<member>] <title>`); falls back to `username`, then `"opencode"`.
    */
   memberName?: string;
+  /**
+   * Optional path to the host's whitelist `proxy.json`, edited by the Members
+   * dialog. UI-only: it is never sent to the OpenCode server.
+   */
+  proxyConfigPath?: string;
+}
+
+/**
+ * One whitelist member from `proxy.json`, as returned by `get_proxy_members`.
+ * Credentials (password hashes / legacy tokens) are deliberately omitted by the
+ * shell and must never be shown.
+ */
+export interface ProxyMember {
+  name: string;
+  role: string;
 }
 
 // ---------------------------------------------------------------------------
