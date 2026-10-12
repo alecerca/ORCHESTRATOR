@@ -8,7 +8,8 @@ This is **read-shared, write-independent**: everyone sees everyone's sessions,
 but each person owns and drives their own.
 
 Scope of this document: the **design** requested by the user, plus the
-implemented **identity + attribution** slice (Phase 1).
+implemented slices — Phases 1–3 (identity + attribution, hashed whitelist
+store, whitelist UX) are built; Phase 4 (presence) is design.
 
 ## Problem
 
@@ -39,8 +40,8 @@ work it is. Two people cannot tell "this is mine" from "this is my teammate's".
 | **L2 · Attribution** | creator name in the session title | **Phase 1** |
 | **L3 · Owner display** | "by <name>" chip on every agent/sub-agent | **Phase 1** |
 | **L4 · Room UX** | all sessions visible (tabs already exist) | ✅ exists |
-| **L5 · Presence** | who is online / typing | Phase 4 (design only) |
-| **L6 · Access (whitelist)** | owner-managed users + roles + join | **Phase 2** (store + CLI); Phase 3 UX (design) |
+| **L5 · Presence** | who is online / typing | Phase 4 (design) |
+| **L6 · Access (whitelist)** | owner-managed users + roles + join | **Phase 2** (store + CLI); **Phase 3** (UX) |
 
 ## Phase 1 — Identity, attribution, owner chip (IMPLEMENT)
 
@@ -149,11 +150,88 @@ a later, additive step.
   `$argon2id$…` hash and that the proxy authenticates it; the Join screen
   persists the connection and the username shows up as the member identity.
 
-## Phase 4 — Presence (design only)
+## Phase 4 — Presence (design)
 
-Who is online. Cheapest viable: an authenticated heartbeat endpoint on the proxy
-(`GET /whoami` + in-memory last-seen), or a client-side convention on top of the
-SSE stream. Explicitly **out of scope** for now.
+**Goal.** Show *who is currently connected* to the shared workspace. Presence
+here means "online" (identity + last-seen); "typing" is a follow-up (see Open
+questions).
+
+### Why the proxy owns it
+
+The proxy already sees *every* authenticated request per identity: `handle`
+resolves `(name, role)` from the inbound Basic header before forwarding
+(`crates/orquestador-proxy/src/proxy.rs`). It is the only component that knows
+which whitelisted user is talking to the workspace. The app has no
+"connected members" concept, and `opencode serve` has no member model at all.
+
+### Recommended approach — proxy heartbeat (cheapest viable)
+
+1. **Track last-seen in the proxy.** `AppState` gains
+   `presence: Mutex<HashMap<String, Instant>>` (name → monotonic last request).
+   `handle` records the authenticated user *after* auth and before the role
+   gate, so a read-only viewer is still "online".
+2. **Reserve two proxy-native routes** in `router`, ahead of the fallback:
+   - `GET /orquestador/whoami` → `{ name, role }` for the caller (also a clean
+     credential check).
+   - `GET /orquestador/present` → `[{ name, role, idleMs }]` for users seen
+     within the window.
+   Both require valid Basic auth (reuse `authenticate`) and are read-only. The
+   `/orquestador/` prefix is reserved and never forwarded upstream.
+3. **Heartbeat = the app's own poll.** Window `W` ≈ 3× poll interval `P`
+   (`W` ≈ 45s, `P` ≈ 15s): each poll refreshes the caller's last-seen, so no
+   separate heartbeat write is needed.
+
+### Wiring
+
+- **core** (`AgentBackend`): add an optional `presence()`; the HTTP backend
+  GETs `/orquestador/present`, and a 404 / transport failure (talking to
+  `opencode` directly, no proxy) returns an **empty list, not an error** —
+  presence is feature-detected, never assumed.
+- **src-tauri**: expose the list through the existing bridge/command pattern.
+- **frontend**: a compact presence strip (green dot + name + role, `(you)` on
+  the caller), reusing the `OwnerChip` / `BranchChip` / `StatusChip` look; hide
+  it entirely when the list is empty (feature off / no proxy).
+
+### Limits (documented, accepted)
+
+- Only clients **through the proxy** are visible; a direct `opencode` client is
+  invisible (and was never access-controlled).
+- Presence is **global to the instance**, not per project — consistent with
+  Option A ("everyone sees everything").
+- A user whose poll loop is alive is online even while idle.
+- In-memory: a proxy restart clears presence.
+
+### Alternatives considered
+
+- **Client-side convention on the SSE stream** (a heartbeat session each client
+  writes): rejected — needs write access (`viewer` cannot write) and pollutes
+  the shared session state.
+- **`opencode serve` awareness**: rejected — OpenCode has no member model, and
+  this would change how it authenticates.
+
+### Open questions
+
+- Typing indicator: deferred; needs a shared, low-latency channel.
+- Granularity: instance-wide vs per project (this design: instance-wide).
+- Showing known-but-offline members vs only online (this design: only online).
+
+### Design tasks (not scheduled)
+
+- **T8 [Rust/proxy]** `presence: Mutex<HashMap<String, Instant>>` on `AppState`;
+  record on `handle`; routes `/orquestador/whoami` and `/orquestador/present`.
+  Tests: caller identity, window expiry, viewer counted.
+- **T9 [Rust/core + tauri]** `AgentBackend::presence()` (default empty);
+  HTTP impl GETs the endpoint and degrades to empty on proxy-less setups;
+  bridge/command wiring.
+- **T10 [FE]** presence strip from `store.ts`; poll via the bridge; hidden when
+  empty.
+
+### Design verification
+
+- Prototype against a running `orquestador-proxy` + two clients with distinct
+  whitelist users: each sees the other with last-seen, the caller is marked
+  `(you)`, and a direct (proxy-less) connection shows no strip.
+- Keep the response shape additive so the FE can ship before the proxy route.
 
 ## Out of scope
 
@@ -220,6 +298,11 @@ SSE stream. Explicitly **out of scope** for now.
     `frontend/`) exit 0. Parent spot checks reproduced each.
   - **Not automated:** the Members/Join dialogs are typecheck-only verified —
     they need a manual smoke pass (see Verification (Phase 3)).
+- 2026-10-12: **Phase 4 (presence) design** written, grounded in the proxy's
+  `handle`/`router` (it already resolves `(name, role)` per request). Decision:
+  proxy-owned in-memory last-seen + two reserved proxy-native routes
+  (`/orquestador/whoami`, `/orquestador/present`); the app polls and degrades to
+  "no presence" on a proxy-less setup. No code — design only (T8–T10 pending).
 
 ## Delivery / RDD
 
