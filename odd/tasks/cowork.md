@@ -112,19 +112,42 @@ subcommand reads the password from stdin and appends to the raw config JSON so
 existing users and unknown fields survive. The `argon2` crate is added to the
 proxy crate only.
 
-## Phase 2/3 — Whitelist UX (design only; depends on Track 4 host mode)
+## Phase 3 — Whitelist UX (IMPLEMENT)
+
+**Host model (decided):** `odd/tasks/role-proxy.md` fixes the placement — *the
+host runs `orquestador-proxy` in front of `opencode serve`*. So the app does
+**not** run the proxy: it **edits a `proxy.json`** located at a path configured
+in Settings, and derives the invite from it. Adding app-managed proxy startup is
+a later, additive step.
 
 - **Host side — "Members" dialog**: lists users from `proxy.json`, add/remove,
-  pick role (editor/viewer), and shows an **invite** (proxy URL + username +
-  the password once). Writing requires the app to know the proxy's config path /
-  run the proxy — that is the **host mode** decision in Track 4, so it is not
-  built yet.
+  pick role (editor/viewer), and shows an **invite** (proxy address + username +
+  the password once).
 - **Joiner side — "Join workspace"**: promote the Settings `username`/`password`
   fields into a small first-run screen ("server address, user, password"). The
   joined `username` becomes the member identity, so attribution works with zero
   extra setup.
 - Enforcement stays **only** in the proxy (the trust boundary). The app never
-  re-implements auth.
+  re-implements auth; it only reads/writes the owner's whitelist file.
+
+### Tasks (Phase 3)
+
+- **T5 [Rust]** `src-tauri` proxy-config module + commands: `list_members`,
+  `add_member` (Argon2id, reject duplicate/empty), `remove_member`, reading and
+  writing the `proxy.json` at a caller-supplied path; unit tests with a temp dir.
+- **T6 [FE]** Settings "Proxy config path" field + the "Members" dialog
+  (list/add/remove + invite), wired to the T5 commands.
+- **T7 [FE]** "Join workspace" first-run screen writing the server config; the
+  joined username drives member identity via the existing fallback.
+
+### Verification (Phase 3)
+
+- `cargo test --manifest-path src-tauri/Cargo.toml --lib`
+- `cargo test --workspace` (proxy untouched; regression)
+- `npm run typecheck`
+- Manual: point at a `proxy.json`, add a user, confirm the file gains an
+  `$argon2id$…` hash and that the proxy authenticates it; the Join screen
+  persists the connection and the username shows up as the member identity.
 
 ## Phase 4 — Presence (design only)
 
@@ -184,15 +207,36 @@ SSE stream. Explicitly **out of scope** for now.
   `dba46ff`. Verification: `cargo test -p orquestador-proxy` → 48 lib + 6
   integration, 0 failed; `cargo build -p orquestador-proxy` clean;
   `cargo test --workspace` green. Parent spot check reproduced 48 + 6.
+- 2026-10-12: **Phase 3** (§ "Whitelist UX") implemented by bounded writers in
+  three work units on `feat/cowork`:
+  - **T5** `22c6076` — `src-tauri/src/proxy_config.rs` (list/add/remove, Argon2id,
+    unknown-field preserving; `argon2 0.6`, no axum) + three Tauri commands.
+  - **T6** `f1fb0a3` — persisted `proxyConfigPath` end to end (Rust config + DTO +
+    command, FE store/commands/Settings) + the Members dialog (+ invite).
+  - **T7** `bae0b84` — dismissible Join-workspace first-run screen (reopens from
+    Settings; persists via the same `setServerConfig` path).
+  - Verified per unit: `cargo test --manifest-path src-tauri/Cargo.toml --lib`
+    → 18 passed; `cargo test --workspace` green; `npm run typecheck` (from
+    `frontend/`) exit 0. Parent spot checks reproduced each.
+  - **Not automated:** the Members/Join dialogs are typecheck-only verified —
+    they need a manual smoke pass (see Verification (Phase 3)).
 
 ## Delivery / RDD
 
 - Delivery strategy: `ask-on-risk` (default). Work-unit commits on `feat/cowork`.
-- Reviewed boundary: branch point `6b005bb` on `main`.
-- Pending candidate `e241075` (medium, 16 files / 433 lines): the RDD review
-  cannot advance — the START returns a `gentle-ai.review-integration.consent/v3`
-  envelope and this runtime has no native `question` tool to relay it. Per
-  contract: report the limitation and stop; resolve by running the review's
-  `granted` invocation out-of-band or by `gentle-ai review mode disable`.
+- Reviewed boundary: branch point `6b005bb` on `main` (nothing reviewed yet).
+- `gentle-ai review assess --base-ref 6b005bb --committed-only` over
+  `6b005bb..HEAD` → **high** (`hot_path`: `crates/orquestador-proxy/src/auth.rs`),
+  31 paths / 2421 changed lines, `review_due: true` (`high_risk`).
+- The preflight returned a `review.start` whose relay yields a
+  `gentle-ai.review-integration.consent/v3` envelope. **Not started:** this
+  runtime has no native `question` tool to present the prompt and the contract
+  forbids a chat-token fallback, so the review is reported-and-stopped. Resolve
+  by running the review's `granted`/`declined` invocation in a runtime that can
+  present the prompt, or `gentle-ai review mode disable`.
+- Pending candidate `e241075` (medium): same blocker, reported earlier.
+- Delivery size: Phase 3 alone is ~1300 authored lines across 3 work-unit
+  commits, past the ~400-line heuristic → apply the delivery strategy (single
+  merge to `main` vs chained PRs) before any PR.
 - Candidate `dba46ff` (Phase 2) committed after the blocked candidate; not yet
   assessed.
