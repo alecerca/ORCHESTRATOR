@@ -12,6 +12,7 @@ import { useServerConfig } from "../serverConfig";
 import { useAppState } from "../store";
 import type { ServerConfig, SkillInfo } from "../types";
 import { describeError, shortId } from "../utils";
+import { PresenceStrip } from "./PresenceStrip";
 import { ProjectPicker } from "./ProjectPicker";
 
 interface Props {
@@ -196,6 +197,7 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings, onProjectCh
         <h1>Orquestador</h1>
       </div>
       <div className="topbar__right">
+        <PresenceStrip />
         <div className="topbar__actions" ref={actionsRef}>
           <ProjectPicker
             directory={serverConfig.directory ?? null}
