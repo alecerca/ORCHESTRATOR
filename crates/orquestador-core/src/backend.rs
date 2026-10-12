@@ -62,6 +62,16 @@ pub trait AgentBackend: Send + Sync {
     async fn projects(&self) -> Result<Vec<Project>, CoreError>;
     async fn current_project(&self) -> Result<Project, CoreError>;
 
+    /// Online members of the shared workspace (`GET /orquestador/present`).
+    ///
+    /// Presence is **feature-detected, never assumed**: only a backend behind
+    /// `orquestador-proxy` has anyone to report, while a plain CLI backend (or a
+    /// direct `opencode` connection) simply has nobody. The default is therefore
+    /// an empty list — an absent presence surface must never be an error.
+    async fn presence(&self) -> Result<Vec<PresenceEntry>, CoreError> {
+        Ok(Vec::new())
+    }
+
     // sessions
     async fn list_sessions(&self) -> Result<Vec<Session>, CoreError>;
     async fn create_session(&self, body: &CreateSessionBody) -> Result<Session, CoreError>;

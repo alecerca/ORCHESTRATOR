@@ -785,6 +785,18 @@ pub enum FileStatusKind {
     Modified,
 }
 
+/// `GET /orquestador/present` entry: one member of the shared workspace.
+///
+/// Presence is a proxy-native concept (see the cowork design): the app only
+/// receives this shape when it talks to the server through `orquestador-proxy`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PresenceEntry {
+    pub name: String,
+    pub role: String,
+    #[serde(rename = "idleMs")]
+    pub idle_ms: u64,
+}
+
 /// `GET /agent` → `Agent[]` (only the fields the UI needs).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Agent {

@@ -255,6 +255,28 @@ impl OpenCodeClient {
         self.get_json("/agent").await
     }
 
+    /// `GET /orquestador/present` → online members of the shared workspace.
+    ///
+    /// Presence is **feature-detected, never assumed**: the route exists only
+    /// behind `orquestador-proxy`, so talking to `opencode` directly answers
+    /// `404`. Any failure — a non-success status, a transport error, or a body
+    /// that does not decode — degrades to an empty list rather than an error, so
+    /// a proxy-less setup shows "no presence" instead of breaking the app.
+    pub async fn presence(&self) -> Result<Vec<PresenceEntry>, CoreError> {
+        let res = match self
+            .request(reqwest::Method::GET, "/orquestador/present")
+            .send()
+            .await
+        {
+            Ok(res) => res,
+            Err(_) => return Ok(Vec::new()),
+        };
+        if !res.status().is_success() {
+            return Ok(Vec::new());
+        }
+        Ok(res.json::<Vec<PresenceEntry>>().await.unwrap_or_default())
+    }
+
     // -----------------------------------------------------------------------
     // Sessions
     // -----------------------------------------------------------------------
@@ -638,6 +660,10 @@ impl AgentBackend for OpenCodeClient {
 
     async fn current_project(&self) -> Result<Project, CoreError> {
         OpenCodeClient::current_project(self).await
+    }
+
+    async fn presence(&self) -> Result<Vec<PresenceEntry>, CoreError> {
+        OpenCodeClient::presence(self).await
     }
 
     async fn list_sessions(&self) -> Result<Vec<Session>, CoreError> {
@@ -1286,5 +1312,65 @@ mod tests {
             .expect("second frame")
             .expect("no error");
         assert!(second.data.contains("server.heartbeat"));
+    }
+
+    #[tokio::test]
+    async fn presence_hits_the_proxy_route_and_parses_the_list() {
+        let body = r#"[{"name":"ana","role":"editor","idleMs":1200},
+            {"name":"bob","role":"viewer","idleMs":0}]"#;
+        let server = MockServer::start("200 OK", body).await;
+        let client = server.client(None).await;
+        let entries = client.presence().await.unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].name, "ana");
+        assert_eq!(entries[0].role, "editor");
+        assert_eq!(entries[0].idle_ms, 1200);
+        assert_eq!(entries[1].role, "viewer");
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("GET /orquestador/present HTTP/1.1"),
+            "got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn presence_degrades_to_empty_on_404_without_a_proxy() {
+        // A direct `opencode serve` has no `/orquestador/…` route.
+        let server = MockServer::start("404 Not Found", r#"{"message":"not found"}"#).await;
+        let client = server.client(None).await;
+        let entries = client.presence().await.expect("presence never errors");
+        assert!(entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn presence_degrades_to_empty_on_a_malformed_body() {
+        let server = MockServer::start("200 OK", "{not json").await;
+        let client = server.client(None).await;
+        let entries = client.presence().await.expect("presence never errors");
+        assert!(entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn presence_degrades_to_empty_on_a_server_error() {
+        let server = MockServer::start("500 Internal Server Error", r#"{"message":"boom"}"#).await;
+        let client = server.client(None).await;
+        let entries = client.presence().await.expect("presence never errors");
+        assert!(entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn presence_degrades_to_empty_when_the_connection_is_refused() {
+        // No server behind the URL at all: a transport error, not an HTTP status.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let client = OpenCodeClient::new(ClientConfig {
+            base_url: format!("http://{addr}"),
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        let entries = client.presence().await.expect("presence never errors");
+        assert!(entries.is_empty());
     }
 }

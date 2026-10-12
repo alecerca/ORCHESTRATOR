@@ -97,6 +97,7 @@ pub fn run() {
             commands::current_project,
             commands::set_project_directory,
             commands::get_agents,
+            commands::get_presence,
             commands::session_statuses,
             commands::list_sessions,
             commands::create_session,

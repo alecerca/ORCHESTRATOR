@@ -10,7 +10,8 @@ use orquestador_core::state::Effect;
 use orquestador_core::client::ClientConfig;
 use orquestador_core::types::{
     Agent, CommandBody, CreateSessionBody, FileContent, FileNode, FileStatus, Health,
-    MessageBundle, PermissionResponse, Project, PromptBody, Session, SessionStatus, Todo,
+    MessageBundle, PermissionResponse, PresenceEntry, Project, PromptBody, Session, SessionStatus,
+    Todo,
 };
 use orquestador_core::skills::merge_skills;
 use orquestador_core::{build_preamble, slugify, CoreError, SkillInfo};
@@ -199,6 +200,13 @@ pub async fn set_project_directory(
 #[tauri::command]
 pub async fn get_agents(bridge: State<'_, AppBridge>) -> Result<Vec<Agent>, String> {
     bridge.client().agents().await.map_err(stringify)
+}
+
+/// Online members of the shared workspace. Backends without presence (a direct
+/// `opencode` connection) answer with an empty list, never an error.
+#[tauri::command]
+pub async fn get_presence(bridge: State<'_, AppBridge>) -> Result<Vec<PresenceEntry>, String> {
+    bridge.client().presence().await.map_err(stringify)
 }
 
 #[tauri::command]
