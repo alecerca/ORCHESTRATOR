@@ -251,6 +251,22 @@ export interface ProxyMember {
 }
 
 // ---------------------------------------------------------------------------
+// Presence (who is currently connected through the proxy)
+// ---------------------------------------------------------------------------
+
+/**
+ * One currently-connected member from the `get_presence` command. Only clients
+ * talking through the proxy appear; a direct (proxy-less) connection yields an
+ * empty list — a normal "presence off" result, never an error.
+ */
+export interface PresenceEntry {
+  name: string;
+  role: "editor" | "viewer";
+  /** Milliseconds since this member's last request through the proxy. */
+  idleMs: number;
+}
+
+// ---------------------------------------------------------------------------
 // Git (read-only history / changed files)
 // ---------------------------------------------------------------------------
 

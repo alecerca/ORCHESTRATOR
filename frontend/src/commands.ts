@@ -17,6 +17,7 @@ import type {
   Health,
   MessageBundle,
   PermissionResponse,
+  PresenceEntry,
   Project,
   ProxyMember,
   ServerConfig,
@@ -139,6 +140,14 @@ export const addProxyMember = (
 ) => invoke<void>("add_proxy_member", { path, name, role, password });
 export const removeProxyMember = (path: string, name: string) =>
   invoke<void>("remove_proxy_member", { path, name });
+
+// -- presence ----------------------------------------------------------------
+/**
+ * The members currently connected through the proxy. Empty when presence is
+ * unavailable (a direct, proxy-less connection) — that is a normal feature-off
+ * result, never an error. Each poll also keeps this client visible to others.
+ */
+export const getPresence = () => invoke<PresenceEntry[]>("get_presence");
 
 // -- projects -----------------------------------------------------------------
 /** Every project the running server knows about. */

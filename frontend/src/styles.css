@@ -146,6 +146,59 @@ button {
   background: var(--error);
 }
 
+/* -- presence strip --------------------------------------------------------- */
+/* Compact "who is online" list. Mirrors the chip/owner look: a short green dot
+   plus a muted badge, so it reads as ambient status rather than an action. */
+
+.presence {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.presence__member {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.presence__dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.presence__name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.presence__you {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.presence__role {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+}
+
 /* -- topbar actions (skills) ------------------------------------------------ */
 
 .topbar__right {
