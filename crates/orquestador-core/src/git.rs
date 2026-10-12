@@ -1,9 +1,10 @@
-//! Git helpers — read-only repository introspection.
+//! Git helpers — repository introspection with one deliberate mutation.
 //!
 //! The OpenCode server API does not expose the git branch, so Orquestador
-//! derives it locally from a session's `directory`. This module is deliberately
-//! limited to **read-only** git commands: the UI is informational only and must
-//! never mutate a repository.
+//! derives it locally from a session's `directory`. Every operation here is
+//! **read-only** except [`checkout`], the single deliberate exception: it
+//! switches the repository to another local branch at the user's explicit
+//! request. Nothing else may mutate a repository.
 
 use serde::Serialize;
 use std::path::Path;
@@ -58,6 +59,15 @@ pub struct Commit {
 pub struct CommitFile {
     pub path: String,
     pub status: String,
+}
+
+/// One local branch of the repository, as listed by the Git panel's switcher.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Branch {
+    /// Short branch name (`%(refname:short)`).
+    pub name: String,
+    /// Whether this is the repository's current branch.
+    pub current: bool,
 }
 
 /// The current branch and its recent commits, as shown by the Git panel.
@@ -141,6 +151,71 @@ pub fn commit_files(dir: &Path, hash: &str) -> Result<Vec<CommitFile>, String> {
     Ok(files)
 }
 
+/// Every local branch of the repository containing `dir`, with the current
+/// branch marked and returned first; the remaining branches are sorted by name.
+/// Read-only (`git for-each-ref`). An empty repository yields an empty list.
+pub fn branches(dir: &Path) -> Result<Vec<Branch>, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["for-each-ref", "--format=%(refname:short)", "refs/heads"])
+        .output()
+        .map_err(|err| format!("failed to run git: {err}"))?;
+
+    if !output.status.success() {
+        return Err(friendly_git_error(&String::from_utf8_lossy(&output.stderr)));
+    }
+
+    let current = branch_for_dir(dir);
+    let mut branches: Vec<Branch> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| Branch {
+            name: name.to_string(),
+            current: current.as_deref() == Some(name),
+        })
+        .collect();
+    // Current branch first (a `true` sorts before `false`), then by name.
+    branches.sort_by(|a, b| b.current.cmp(&a.current).then_with(|| a.name.cmp(&b.name)));
+    Ok(branches)
+}
+
+/// Switch the repository containing `dir` to local branch `name`.
+///
+/// This is the module's **only mutating** git operation: a plain
+/// `git -C <dir> checkout <name>` with no force, discard-changes, `-B` or stash
+/// flags, so a dirty worktree that conflicts fails instead of losing work.
+/// `name` is validated before git is spawned and never becomes part of a shell
+/// string.
+pub fn checkout(dir: &Path, name: &str) -> Result<(), String> {
+    if is_invalid_branch_name(name) {
+        return Err("invalid branch name".to_string());
+    }
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["checkout", name])
+        .output()
+        .map_err(|err| format!("failed to run git: {err}"))?;
+
+    if !output.status.success() {
+        return Err(friendly_git_error(&String::from_utf8_lossy(&output.stderr)));
+    }
+
+    Ok(())
+}
+
+/// Whether `name` is unusable as a single checkout argument: empty or
+/// whitespace-only, starting with `-` (which git would read as a flag), or
+/// containing any whitespace or control character.
+fn is_invalid_branch_name(name: &str) -> bool {
+    name.trim().is_empty()
+        || name.starts_with('-')
+        || name.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
 /// Parse the `--pretty=format:` output of [`overview`]: records split on
 /// `\x1e`, fields on `\x1f`, in `%H %h %an %ad %s` order. Empty records (the
 /// trailing separator and git's inter-record newline) are skipped.
@@ -179,6 +254,8 @@ fn friendly_git_error(stderr: &str) -> String {
         "not a git repository".to_string()
     } else if lower.contains("does not have any commits") || lower.contains("unknown revision") {
         "no commits yet".to_string()
+    } else if lower.contains("would be overwritten by checkout") {
+        "local changes would be overwritten by checkout — commit or stash them first".to_string()
     } else {
         let trimmed = stderr.trim();
         if trimmed.is_empty() {
@@ -349,5 +426,92 @@ mod tests {
         let dir = TempDir::new("overview-empty");
         git(dir.path(), &["init", "-b", "main"]);
         assert!(overview(dir.path(), 10).is_err());
+    }
+
+    #[test]
+    fn branches_lists_local_branches_current_first() {
+        let dir = TempDir::new("branches");
+        git(dir.path(), &["init", "-b", "main"]);
+        git(dir.path(), &["commit", "--allow-empty", "-m", "initial"]);
+        git(dir.path(), &["branch", "feature"]);
+        git(dir.path(), &["branch", "alpha"]);
+
+        let branches = branches(dir.path()).expect("branches succeeds");
+
+        let current: Vec<_> = branches.iter().filter(|b| b.current).collect();
+        assert_eq!(current.len(), 1);
+        assert_eq!(current[0].name, "main");
+        // The current branch is first; the rest are sorted by name.
+        assert_eq!(branches[0].name, "main");
+        let rest: Vec<&str> = branches[1..].iter().map(|b| b.name.as_str()).collect();
+        assert_eq!(rest, vec!["alpha", "feature"]);
+    }
+
+    #[test]
+    fn branches_errors_outside_a_repo() {
+        let dir = TempDir::new("branches-not-a-repo");
+        assert!(branches(dir.path()).is_err());
+    }
+
+    #[test]
+    fn checkout_switches_to_an_existing_branch() {
+        let dir = TempDir::new("checkout");
+        git(dir.path(), &["init", "-b", "main"]);
+        git(dir.path(), &["commit", "--allow-empty", "-m", "initial"]);
+        git(dir.path(), &["branch", "feature"]);
+
+        checkout(dir.path(), "feature").expect("checkout succeeds");
+
+        assert_eq!(branch_for_dir(dir.path()), Some("feature".to_string()));
+    }
+
+    #[test]
+    fn checkout_rejects_invalid_names() {
+        let dir = TempDir::new("checkout-invalid");
+        git(dir.path(), &["init", "-b", "main"]);
+        git(dir.path(), &["commit", "--allow-empty", "-m", "initial"]);
+
+        for name in ["", "   ", "-x", "a b", "a\tb"] {
+            assert_eq!(
+                checkout(dir.path(), name),
+                Err("invalid branch name".to_string()),
+                "name {name:?} must be rejected before spawning git",
+            );
+        }
+        // A rejected call must never move HEAD (git was not spawned).
+        assert_eq!(branch_for_dir(dir.path()), Some("main".to_string()));
+    }
+
+    #[test]
+    fn checkout_keeps_branch_on_dirty_worktree_conflict() {
+        let dir = TempDir::new("checkout-dirty");
+        git(dir.path(), &["init", "-b", "main"]);
+        std::fs::write(dir.path().join("file.txt"), "base\n").expect("write");
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "base"]);
+        git(dir.path(), &["branch", "feature"]);
+        // A committed change on `feature` that conflicts with an uncommitted
+        // change on `main`.
+        git(dir.path(), &["checkout", "feature"]);
+        std::fs::write(dir.path().join("file.txt"), "feature\n").expect("write");
+        git(dir.path(), &["commit", "-am", "feature change"]);
+        git(dir.path(), &["checkout", "main"]);
+        std::fs::write(dir.path().join("file.txt"), "local change\n").expect("write");
+
+        let result = checkout(dir.path(), "feature");
+
+        assert!(result.is_err(), "a dirty checkout must fail");
+        // The rejected checkout left the working branch untouched.
+        assert_eq!(branch_for_dir(dir.path()), Some("main".to_string()));
+    }
+
+    #[test]
+    fn friendly_error_explains_an_overwritten_checkout() {
+        // The mapping is matched on git's (English) stderr; assert the case
+        // directly so the test does not depend on the host's git locale.
+        let message = friendly_git_error(
+            "error: Your local changes to the following files would be overwritten by checkout:\n\tfile.txt\n",
+        );
+        assert!(message.contains("commit or stash"), "unexpected: {message}");
     }
 }

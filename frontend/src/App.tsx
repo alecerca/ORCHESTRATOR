@@ -22,6 +22,7 @@ import { ApprovalDialog } from "./components/ApprovalDialog";
 import { NotificationsDrawer } from "./components/NotificationsDrawer";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { EditorPanel } from "./components/EditorPanel";
+import { invalidateGitBranches } from "./components/useGitBranch";
 import { SkillSavePrompt } from "./components/SkillSavePrompt";
 import { SettingsDialog } from "./components/SettingsDialog";
 import {
@@ -157,6 +158,9 @@ export default function App() {
   const [editorPanelWidth, setEditorPanelWidth] = useState(() =>
     loadWidth(EDITOR_PANEL_KEY, EDITOR_PANEL_DEFAULT, EDITOR_PANEL_MIN, EDITOR_PANEL_MAX),
   );
+  // Bumped after a checkout so the file explorer remounts and open file tabs
+  // re-read the working tree on the new branch.
+  const [filesVersion, setFilesVersion] = useState(0);
   const [composerOpen, setComposerOpen] = useState(true);
   const [banner, setBanner] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(loadDismissed);
@@ -346,6 +350,15 @@ export default function App() {
   }, []);
 
   const closeAllPanes = useCallback(() => setLayout(closeAllTabs()), []);
+
+  /**
+   * A checkout switched the working tree: remount the file explorer, drop the
+   * cached branches so session chips re-read, and let open file tabs re-read.
+   */
+  const handleBranchChanged = useCallback(() => {
+    setFilesVersion((version) => version + 1);
+    invalidateGitBranches();
+  }, []);
 
   /**
    * Close a tab, gating dirty skill tabs behind the save prompt. A clean skill
@@ -548,6 +561,7 @@ export default function App() {
             layout={layout}
             sessions={state.sessions}
             theme={theme}
+            filesVersion={filesVersion}
             onActivateTab={(groupId, tabId) =>
               setLayout((current) => activateTab(current, groupId, tabId))
             }
@@ -583,6 +597,8 @@ export default function App() {
               width={editorPanelWidth}
               activePath={activePath}
               onOpenFile={(path) => setLayout((current) => openFileTab(current, path))}
+              filesVersion={filesVersion}
+              onBranchChanged={handleBranchChanged}
             />
           </>
         )}

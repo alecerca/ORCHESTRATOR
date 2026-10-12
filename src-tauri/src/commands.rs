@@ -767,3 +767,27 @@ pub async fn git_commit_files(
         .await
         .map_err(stringify)?
 }
+
+/// Every local branch of the active project directory, the current one marked
+/// and returned first. Read-only: the core only runs `git for-each-ref`.
+#[tauri::command]
+pub async fn git_branches(
+    app: tauri::AppHandle,
+) -> Result<Vec<orquestador_core::git::Branch>, String> {
+    let dir = active_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || orquestador_core::git::branches(&dir))
+        .await
+        .map_err(stringify)?
+}
+
+/// Switch the active project directory to local branch `name`. This is the
+/// app's **only mutating** git operation: a plain `git checkout` with no force
+/// or stash flags, so a dirty worktree that conflicts fails cleanly. The core
+/// validates the name before spawning git.
+#[tauri::command]
+pub async fn git_checkout(app: tauri::AppHandle, name: String) -> Result<(), String> {
+    let dir = active_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || orquestador_core::git::checkout(&dir, &name))
+        .await
+        .map_err(stringify)?
+}

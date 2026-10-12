@@ -9,10 +9,20 @@ interface Props {
   activePath: string | null;
   /** Open a file as a workspace tab (never an inline viewer). */
   onOpenFile: (path: string) => void;
+  /** Bumped after a checkout so the file explorer remounts and re-reads the tree. */
+  filesVersion: number;
+  /** A branch switch happened; refresh the rest of the UI (tree, chips, tabs). */
+  onBranchChanged: () => void;
 }
 
 /** Right column: the file explorer (files open as workspace tabs), or the git history. */
-export function EditorPanel({ width, activePath, onOpenFile }: Props) {
+export function EditorPanel({
+  width,
+  activePath,
+  onOpenFile,
+  filesVersion,
+  onBranchChanged,
+}: Props) {
   const [tab, setTab] = useState<"files" | "git">("files");
 
   return (
@@ -36,11 +46,11 @@ export function EditorPanel({ width, activePath, onOpenFile }: Props) {
 
       {tab === "files" ? (
         <div className="editor-panel__browser">
-          <FileTree onOpenFile={onOpenFile} activePath={activePath} />
+          <FileTree key={filesVersion} onOpenFile={onOpenFile} activePath={activePath} />
         </div>
       ) : (
         <div className="editor-panel__git">
-          <GitViewer />
+          <GitViewer onBranchChanged={onBranchChanged} />
         </div>
       )}
     </aside>
