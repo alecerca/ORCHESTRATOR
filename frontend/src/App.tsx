@@ -581,8 +581,6 @@ export default function App() {
             />
             <EditorPanel
               width={editorPanelWidth}
-              theme={theme}
-              rootSessionId={effectiveRootId}
               activePath={activePath}
               onOpenFile={(path) => setLayout((current) => openFileTab(current, path))}
             />

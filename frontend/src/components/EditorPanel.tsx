@@ -1,22 +1,19 @@
 import { useState } from "react";
-import { DiffViewer } from "./DiffViewer";
 import { FileTree } from "./FileTree";
+import { GitViewer } from "./GitViewer";
 
 interface Props {
   /** Panel width in pixels, owned by the parent (drag/keyboard resizable). */
   width: number;
-  theme: "dark" | "light";
-  /** Effective orchestrator root (persisted pick, else `root_session_id`). */
-  rootSessionId: string | null;
   /** Path of the file tab currently active in the workspace, if any. */
   activePath: string | null;
   /** Open a file as a workspace tab (never an inline viewer). */
   onOpenFile: (path: string) => void;
 }
 
-/** Right column: the file explorer (files open as workspace tabs), or the session diff. */
-export function EditorPanel({ width, theme, rootSessionId, activePath, onOpenFile }: Props) {
-  const [tab, setTab] = useState<"files" | "diff">("files");
+/** Right column: the file explorer (files open as workspace tabs), or the git history. */
+export function EditorPanel({ width, activePath, onOpenFile }: Props) {
+  const [tab, setTab] = useState<"files" | "git">("files");
 
   return (
     <aside className="editor-panel" style={{ width }}>
@@ -30,10 +27,10 @@ export function EditorPanel({ width, theme, rootSessionId, activePath, onOpenFil
         </button>
         <button
           type="button"
-          className={`editor-panel__tab${tab === "diff" ? " is-active" : ""}`}
-          onClick={() => setTab("diff")}
+          className={`editor-panel__tab${tab === "git" ? " is-active" : ""}`}
+          onClick={() => setTab("git")}
         >
-          Diff
+          Git
         </button>
       </div>
 
@@ -42,8 +39,8 @@ export function EditorPanel({ width, theme, rootSessionId, activePath, onOpenFil
           <FileTree onOpenFile={onOpenFile} activePath={activePath} />
         </div>
       ) : (
-        <div className="editor-panel__diff">
-          <DiffViewer sessionId={rootSessionId} theme={theme} />
+        <div className="editor-panel__git">
+          <GitViewer />
         </div>
       )}
     </aside>
