@@ -66,6 +66,11 @@ app.
   `http://<host>:4096`.
 - Multiple clients attached to one server see the **same sessions** (shared SSE
   state) → that is already shared work on one project.
+- The **Settings screen is the cowork entry point, not a disposable stopgap.**
+  Pointing the app at a base URL + credentials is what lets a client connect to
+  an OpenCode server it does **not** host locally — someone else's machine, or a
+  cloud-hosted server. Track 4's backend selector is orthogonal and never
+  replaces this (see the ⚠ note in Track 4).
 
 **The real gap — read-only / roles:**
 
@@ -182,8 +187,8 @@ picks it up automatically.
   `OpenCodeClient::new` in `bridge.rs:86` with a pluggable factory, and add a
   short "how to add a backend" doc.
 - **Do not build the selector until there are ≥ 2 backends.** A dropdown with one
-  option is ceremony; the current Settings (base URL / user / password) is enough
-  today.
+  option is ceremony; the current Settings (base URL / user / password) **stays
+  as-is — it is the cowork foundation (Track 2), not a placeholder.**
 
 **Honesty note — the abstraction leaks today:** `AgentBackend`'s events are
 OpenCode-shaped. `backend.rs` states that a non-OpenCode backend "must synthesize
@@ -195,6 +200,23 @@ model — that is the real, deferred cost (not the trait itself).
 Rust/Tauri, so a new backend is a **compiled** adapter submitted as a PR, not a
 drop-in plugin. Frame the open-source invitation as "contributors can submit an
 adapter", not "users can plug in anything".
+
+**Future decisions (deferred — flagged here on purpose):**
+
+1. **Open the seam for contributors** — replace the hardcoded
+   `OpenCodeClient::new` in `bridge.rs:86` with a pluggable backend factory, and
+   document the "how to add a backend" contract.
+2. **Frame the invite correctly** — advertise "contributors can submit an
+   adapter (PR)", not "users can plug in any backend".
+3. **Normalize the core event model** — only if/when a real second backend lands;
+   until then `AgentBackend` events stay OpenCode-shaped.
+
+**⚠ Not to be confused with the Settings screen.** The current Settings (base URL
+/ user / password) is **not** a stopgap that the selector replaces — it is the
+**foundation of Track 2 (cowork)**: it is exactly what lets a user point at an
+OpenCode server they do **not** host locally (e.g. cloud-hosted) and work against
+it. The selector (Track 4) is **orthogonal**: it only chooses *which backend
+type*, it never replaces the Server connection model.
 
 ## Suggested delivery order
 
@@ -217,6 +239,10 @@ adapter", not "users can plug in anything".
 - Session ownership / who-owns-the-project model in shared mode.
 - Per-user model / API-key handling when one server serves many users.
 - Data at rest: messages/parts are not persisted today; collaboration may need it.
+- **Simultaneous live work is undefined.** Attaching several clients to one server
+  shows the same sessions, but the actual UX of two people *working at the same
+  time* (who owns the prompt, concurrent permissions, conflict handling) is not
+  designed yet — that is the open half of Track 2.
 
 ## Verification (per track, when it starts)
 
