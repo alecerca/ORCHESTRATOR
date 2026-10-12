@@ -122,6 +122,8 @@ pub fn run() {
             commands::git_branch,
             commands::git_log,
             commands::git_commit_files,
+            commands::git_branches,
+            commands::git_checkout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Orquestador shell");
