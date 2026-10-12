@@ -1,7 +1,10 @@
 import type { SessionSnapshot } from "../types";
 import { shortId } from "../utils";
+import { useAppState } from "../store";
+import { ownerOf } from "../identity";
 import { AgentTimer } from "./AgentTimer";
 import { BranchChip } from "./BranchChip";
+import { OwnerChip } from "./OwnerChip";
 import { StatusChip } from "./StatusChip";
 
 interface Props {
@@ -18,12 +21,16 @@ interface Props {
 export function GroupInfoBar({ sessionId, snapshot, onAbort }: Props) {
   const status = snapshot?.status ?? "idle";
   const canAbort = status === "running" || status === "waiting_approval";
+  // Resolve the session tree's owner from the full snapshot (root `[name]`
+  // prefix) so every tab under the same root shows the same chip.
+  const owner = ownerOf(sessionId, useAppState().sessions);
 
   return (
     <div className="group-infobar">
       <span className="group-infobar__title" title={sessionId}>
         {snapshot?.session.title || shortId(sessionId)}
       </span>
+      <OwnerChip owner={owner} />
       {snapshot && <BranchChip directory={snapshot.session.directory} />}
       <AgentTimer
         status={status}

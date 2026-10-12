@@ -521,6 +521,24 @@ button {
   color: var(--text);
 }
 
+/* Read-only owner attribution of the session tree (`[name]` root prefix).
+   Shared by the agent card and the group info bar, so it keeps the same
+   neutral, muted treatment as the branch chip. Rendered only when the root
+   session carries a `[name]` prefix. */
+.agent-card__owner {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.agent-card__owner strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
 /* Wraps instead of overflowing the fixed-width panel: Abort + Rename +
    Open/Close + Hide + Delete can be wider than the card, and a single
    non-wrapping row clipped the tail buttons against the tab strip. The auto

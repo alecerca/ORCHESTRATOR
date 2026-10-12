@@ -90,6 +90,17 @@ pub fn changes_state(event: &Event) -> bool {
     )
 }
 
+/// Session title with the creator's identity: `[<member>] <base>`.
+///
+/// A missing or blank member leaves the base title untouched (e.g. the identity
+/// is not configured yet, or a non-OpenCode backend has no member name).
+pub fn attributed_title(member: Option<&str>, base: &str) -> String {
+    match member.map(str::trim).filter(|m| !m.is_empty()) {
+        Some(member) => format!("[{member}] {base}"),
+        None => base.to_string(),
+    }
+}
+
 /// Pick the session the composer drives: the most recently updated parentless
 /// session. `None` means "there is nothing to reuse — create one".
 pub fn pick_root(sessions: &[Session]) -> Option<String> {
@@ -148,7 +159,7 @@ pub async fn bootstrap(client: &dyn AgentBackend, state: &Arc<RwLock<AppState>>)
         None => match client
             .create_session(&CreateSessionBody {
                 parent_id: None,
-                title: Some(DEFAULT_ROOT_TITLE.to_string()),
+                title: Some(attributed_title(client.member_name(), DEFAULT_ROOT_TITLE)),
             })
             .await
         {
@@ -1060,12 +1071,19 @@ mod tests {
     /// `AgentBackend` trait, they run against this with no OpenCode client.
     struct FakeBackend {
         events: Vec<BackendEvent>,
+        member_name: Option<String>,
+        /// Title of the last session bootstrap asked the backend to create.
+        created_title: std::sync::Mutex<Option<String>>,
     }
 
     #[async_trait::async_trait]
     impl AgentBackend for FakeBackend {
         fn id(&self) -> &'static str {
             "fake"
+        }
+
+        fn member_name(&self) -> Option<&str> {
+            self.member_name.as_deref()
         }
 
         async fn health(&self) -> Result<Health, CoreError> {
@@ -1092,6 +1110,7 @@ mod tests {
         }
 
         async fn create_session(&self, body: &CreateSessionBody) -> Result<Session, CoreError> {
+            *self.created_title.lock().unwrap() = body.title.clone();
             Ok(Session {
                 id: "fake-root".to_string(),
                 project_id: "p".to_string(),
@@ -1225,7 +1244,11 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_is_backend_agnostic() {
-        let backend = FakeBackend { events: Vec::new() };
+        let backend = FakeBackend {
+            events: Vec::new(),
+            member_name: Some("fake".to_string()),
+            created_title: std::sync::Mutex::new(None),
+        };
         let state = test_state();
 
         let outcome = bootstrap(&backend, &state).await;
@@ -1240,6 +1263,26 @@ mod tests {
             other => panic!("expected Connected, got {other:?}"),
         }
         assert!(state.read().await.snapshot().connected);
+        // The root session bootstrap creates carries the member attribution.
+        assert_eq!(
+            backend.created_title.lock().unwrap().as_deref(),
+            Some("[fake] Orchestrator")
+        );
+    }
+
+    #[test]
+    fn attributed_title_prefixes_only_when_member_is_present() {
+        assert_eq!(attributed_title(None, DEFAULT_ROOT_TITLE), "Orchestrator");
+        assert_eq!(attributed_title(Some(""), DEFAULT_ROOT_TITLE), "Orchestrator");
+        assert_eq!(attributed_title(Some("  "), DEFAULT_ROOT_TITLE), "Orchestrator");
+        assert_eq!(
+            attributed_title(Some("alice"), "New session"),
+            "[alice] New session"
+        );
+        assert_eq!(
+            attributed_title(Some(" alice "), DEFAULT_ROOT_TITLE),
+            "[alice] Orchestrator"
+        );
     }
 
     #[tokio::test]
@@ -1249,6 +1292,8 @@ mod tests {
                 .expect("decodes");
         let backend = Arc::new(FakeBackend {
             events: vec![BackendEvent { event, raw }],
+            member_name: None,
+            created_title: std::sync::Mutex::new(None),
         });
         let state = test_state();
         let (tx, mut rx) = broadcast::channel::<CoreMessage>(super::EVENT_BUFFER);

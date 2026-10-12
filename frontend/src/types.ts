@@ -228,6 +228,11 @@ export interface ServerConfig {
   password?: string | null;
   /** Active project directory (`x-opencode-directory`); unset = server cwd. */
   directory?: string | null;
+  /**
+   * Optional display name used to attribute sessions this app creates
+   * (`[<member>] <title>`); falls back to `username`, then `"opencode"`.
+   */
+  memberName?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -43,6 +43,9 @@ pub struct ClientConfig {
     /// Absolute path of the project to scope every request to. `None` uses the
     /// server's own cwd project.
     pub directory: Option<String>,
+    /// Optional display name used to attribute sessions this app creates
+    /// (`[<member>] <title>`). `None` leaves newly created titles unattributed.
+    pub member_name: Option<String>,
     pub request_timeout: Duration,
 }
 
@@ -53,6 +56,7 @@ impl Default for ClientConfig {
             username: DEFAULT_USERNAME.to_string(),
             password: None,
             directory: None,
+            member_name: None,
             request_timeout: Duration::from_secs(30),
         }
     }
@@ -106,6 +110,8 @@ pub struct OpenCodeClient {
     password: Option<String>,
     /// Project scope sent as [`DIRECTORY_HEADER`] on every request.
     directory: Option<String>,
+    /// Optional display name used to attribute sessions this app creates.
+    member_name: Option<String>,
 }
 
 impl OpenCodeClient {
@@ -135,6 +141,7 @@ impl OpenCodeClient {
             username: config.username,
             password: config.password,
             directory: config.directory,
+            member_name: config.member_name,
         })
     }
 
@@ -609,6 +616,12 @@ pub fn decode_payload(data: &str, event_name: Option<&str>) -> Option<(Event, Va
 impl AgentBackend for OpenCodeClient {
     fn id(&self) -> &'static str {
         BACKEND_OPENCODE
+    }
+
+    fn member_name(&self) -> Option<&str> {
+        // Same effective-member chain as the webview (`identity.ts`):
+        // explicit display name, else the configured username.
+        self.member_name.as_deref().or(Some(self.username.as_str()))
     }
 
     async fn health(&self) -> Result<Health, CoreError> {

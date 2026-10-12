@@ -72,6 +72,7 @@ pub async fn test_connection(
         username,
         password,
         directory: None,
+        member_name: None,
     });
     // Probe fast; a wrong host should fail quickly instead of hanging 30s.
     let config = ClientConfig {
@@ -91,6 +92,8 @@ pub struct ServerConfigDto {
     pub password: Option<String>,
     /// Active project directory, or `None` for the server's own cwd project.
     pub directory: Option<String>,
+    /// Optional display name used to attribute sessions this app creates.
+    pub member_name: Option<String>,
 }
 
 impl ServerConfigDto {
@@ -100,6 +103,7 @@ impl ServerConfigDto {
             username: cfg.username.clone(),
             password: cfg.password.clone(),
             directory: cfg.directory.clone(),
+            member_name: cfg.member_name.clone(),
         }
     }
 }
@@ -125,12 +129,14 @@ pub async fn set_server_config(
     base_url: String,
     username: Option<String>,
     password: Option<String>,
+    member_name: Option<String>,
 ) -> Result<ServerConfigDto, String> {
     let dir = app.path().app_config_dir().map_err(stringify)?;
     let mut file = crate::server_config::effective_file(&dir);
     file.base_url = Some(crate::server_config::normalize_base_url(&base_url));
     file.username = username;
     file.password = password;
+    file.member_name = crate::server_config::normalize_member_name(member_name);
     crate::server_config::save_to_dir(&dir, &file).map_err(stringify)?;
 
     let cfg = crate::server_config::to_client_config(&file);
