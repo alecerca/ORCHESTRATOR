@@ -13,6 +13,12 @@ const listeners = new Set<Listener>();
 let loaded = false;
 let config: ServerConfig = DEFAULT;
 
+/** Trim a member name; a blank value is "not set" (identity falls back). */
+function normalizeMemberName(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function load(): ServerConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -24,6 +30,7 @@ function load(): ServerConfig {
         username: parsed.username,
         password: parsed.password,
         directory: parsed.directory,
+        memberName: normalizeMemberName(parsed.memberName),
       };
     }
   } catch {
@@ -69,6 +76,7 @@ export function setConfig(c: Partial<ServerConfig>): void {
     // Preserve the current project scope unless the caller is changing it, so
     // saving credentials does not silently reset which project is active.
     directory: c.directory !== undefined ? c.directory : config.directory,
+    memberName: normalizeMemberName(c.memberName),
   };
   config = next;
   persist(next);

@@ -3,6 +3,8 @@ import * as api from "../commands";
 import { useAppState } from "../store";
 import type { SessionSnapshot } from "../types";
 import { describeError, shortId } from "../utils";
+import { attributedTitle, effectiveMember } from "../identity";
+import { getConfig } from "../serverConfig";
 import { AgentCard } from "./AgentCard";
 
 interface Props {
@@ -86,7 +88,8 @@ export function AgentPanel({
     setCreateError(null);
     void (async () => {
       try {
-        const session = await api.createSession(undefined, "New session");
+        const title = attributedTitle(effectiveMember(getConfig()), "New session");
+        const session = await api.createSession(undefined, title);
         onPickRoot(session.id);
       } catch (cause) {
         setCreateError(describeError(cause));

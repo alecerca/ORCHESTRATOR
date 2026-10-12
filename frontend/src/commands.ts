@@ -109,8 +109,12 @@ export const deleteSkill = (name: string) =>
 export const testConnection = (baseUrl: string, username?: string, password?: string) =>
   invoke<Health>("test_connection", { baseUrl, username, password });
 export const getServerConfig = () => invoke<ServerConfig>("get_server_config");
-export const setServerConfig = (baseUrl: string, username?: string, password?: string) =>
-  invoke<ServerConfig>("set_server_config", { baseUrl, username, password });
+export const setServerConfig = (
+  baseUrl: string,
+  username?: string,
+  password?: string,
+  memberName?: string,
+) => invoke<ServerConfig>("set_server_config", { baseUrl, username, password, memberName });
 
 // -- projects -----------------------------------------------------------------
 /** Every project the running server knows about. */

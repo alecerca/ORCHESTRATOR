@@ -2,8 +2,11 @@ import { useRef, useState } from "react";
 import * as api from "../commands";
 import type { AgentUiStatus, SessionSnapshot } from "../types";
 import { describeError, shortId } from "../utils";
+import { useAppState } from "../store";
+import { ownerOf } from "../identity";
 import { AgentTimer } from "./AgentTimer";
 import { BranchChip } from "./BranchChip";
+import { OwnerChip } from "./OwnerChip";
 import { StatusChip } from "./StatusChip";
 
 const FINISHED: ReadonlySet<AgentUiStatus> = new Set(["done", "idle", "error"]);
@@ -36,6 +39,10 @@ export function AgentCard({
   const { session, status, error, status_since, last_run_ms } = snapshot;
   const canAbort = status === "running" || status === "waiting_approval";
   const canDismiss = !isRoot && onDismiss !== undefined && FINISHED.has(status);
+
+  // Owner of the session's tree (root `[name]` prefix), resolved live from the
+  // full snapshot so every sub-agent shows the same chip as its root.
+  const owner = ownerOf(session.id, useAppState().sessions);
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -133,6 +140,7 @@ export function AgentCard({
       )}
       <div className="agent-card__meta">
         <span className="agent-card__id">{shortId(session.id)}</span>
+        <OwnerChip owner={owner} />
         <BranchChip directory={session.directory} />
         <div className="agent-card__actions">
           {canAbort && (

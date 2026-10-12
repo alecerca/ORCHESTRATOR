@@ -48,6 +48,12 @@ pub trait AgentBackend: Send + Sync {
     /// Stable backend id (e.g. [`BACKEND_OPENCODE`]).
     fn id(&self) -> &'static str;
 
+    /// Optional display name used to attribute sessions this app creates
+    /// (`[<member>] <title>`). `None` leaves newly created titles unattributed.
+    fn member_name(&self) -> Option<&str> {
+        None
+    }
+
     // health / discovery
     async fn health(&self) -> Result<Health, CoreError>;
     async fn agents(&self) -> Result<Vec<Agent>, CoreError>;

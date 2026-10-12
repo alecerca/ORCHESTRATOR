@@ -16,6 +16,7 @@ export function SettingsDialog({ open, onClose }: Props) {
   const [baseUrl, setBaseUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [memberName, setMemberName] = useState("");
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -29,6 +30,7 @@ export function SettingsDialog({ open, onClose }: Props) {
     setBaseUrl(fallback.baseUrl);
     setUsername(fallback.username ?? "");
     setPassword(fallback.password ?? "");
+    setMemberName(fallback.memberName ?? "");
     setResult(null);
     setIsError(false);
     getServerConfig()
@@ -37,6 +39,7 @@ export function SettingsDialog({ open, onClose }: Props) {
         setBaseUrl(cfg.baseUrl);
         setUsername(cfg.username ?? "");
         setPassword(cfg.password ?? "");
+        setMemberName(cfg.memberName ?? "");
       })
       .catch(() => {
         /* keep the local fallback already shown */
@@ -79,12 +82,13 @@ export function SettingsDialog({ open, onClose }: Props) {
     setResult(null);
     setIsError(false);
     try {
-      const cfg = await setServerConfig(baseUrl, username, password);
+      const cfg = await setServerConfig(baseUrl, username, password, memberName);
       // Mirror the persisted config locally so the UI is consistent offline.
       setConfig({
         baseUrl: cfg.baseUrl,
         username: cfg.username,
         password: cfg.password ?? undefined,
+        memberName: cfg.memberName,
       });
       onClose();
     } catch (e) {
@@ -124,6 +128,15 @@ export function SettingsDialog({ open, onClose }: Props) {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="opencode"
+            />
+          </label>
+          <label className="settings-field">
+            <span>Display name (shown on your sessions)</span>
+            <input
+              className="settings-input"
+              value={memberName}
+              onChange={(e) => setMemberName(e.target.value)}
+              placeholder="your username"
             />
           </label>
           <label className="settings-field">
