@@ -6,17 +6,20 @@ import { describeError } from "../utils";
 interface Props {
   open: boolean;
   onClose: () => void;
+  /** Retarget the app to the Members dialog (App owns both, one at a time). */
+  onManageMembers?: () => void;
 }
 
 /**
  * Server connection settings. Rendered at the app root (like the approval and
  * skill-save modals) so the fixed backdrop can cover the whole window.
  */
-export function SettingsDialog({ open, onClose }: Props) {
+export function SettingsDialog({ open, onClose, onManageMembers }: Props) {
   const [baseUrl, setBaseUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [memberName, setMemberName] = useState("");
+  const [proxyConfigPath, setProxyConfigPath] = useState("");
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -31,6 +34,7 @@ export function SettingsDialog({ open, onClose }: Props) {
     setUsername(fallback.username ?? "");
     setPassword(fallback.password ?? "");
     setMemberName(fallback.memberName ?? "");
+    setProxyConfigPath(fallback.proxyConfigPath ?? "");
     setResult(null);
     setIsError(false);
     getServerConfig()
@@ -40,6 +44,7 @@ export function SettingsDialog({ open, onClose }: Props) {
         setUsername(cfg.username ?? "");
         setPassword(cfg.password ?? "");
         setMemberName(cfg.memberName ?? "");
+        setProxyConfigPath(cfg.proxyConfigPath ?? "");
       })
       .catch(() => {
         /* keep the local fallback already shown */
@@ -82,13 +87,20 @@ export function SettingsDialog({ open, onClose }: Props) {
     setResult(null);
     setIsError(false);
     try {
-      const cfg = await setServerConfig(baseUrl, username, password, memberName);
+      const cfg = await setServerConfig(
+        baseUrl,
+        username,
+        password,
+        memberName,
+        proxyConfigPath,
+      );
       // Mirror the persisted config locally so the UI is consistent offline.
       setConfig({
         baseUrl: cfg.baseUrl,
         username: cfg.username,
         password: cfg.password ?? undefined,
         memberName: cfg.memberName,
+        proxyConfigPath: cfg.proxyConfigPath,
       });
       onClose();
     } catch (e) {
@@ -148,6 +160,15 @@ export function SettingsDialog({ open, onClose }: Props) {
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
+          <label className="settings-field">
+            <span>Proxy config path (optional — for hosts)</span>
+            <input
+              className="settings-input"
+              value={proxyConfigPath}
+              onChange={(e) => setProxyConfigPath(e.target.value)}
+              placeholder="./proxy.json"
+            />
+          </label>
         </div>
         <div className="settings-test">
           <button type="button" className="btn" disabled={busy} onClick={() => void handleTest()}>
@@ -158,6 +179,20 @@ export function SettingsDialog({ open, onClose }: Props) {
               {result}
             </span>
           )}
+        </div>
+        <div className="settings-manage">
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => onManageMembers?.()}
+            title="Edit the host's proxy.json whitelist"
+          >
+            Manage members…
+          </button>
+          <span className="settings-manage__hint">
+            Edit the host's <code>proxy.json</code> whitelist.
+          </span>
         </div>
         <div className="approval__actions">
           <button type="button" className="btn btn--ghost" disabled={busy} onClick={onClose}>

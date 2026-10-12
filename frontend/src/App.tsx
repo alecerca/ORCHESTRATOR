@@ -25,6 +25,7 @@ import { EditorPanel } from "./components/EditorPanel";
 import { invalidateGitBranches } from "./components/useGitBranch";
 import { SkillSavePrompt } from "./components/SkillSavePrompt";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { MembersDialog } from "./components/MembersDialog";
 import {
   EMPTY_LAYOUT,
   LAYOUT_KEY,
@@ -175,6 +176,7 @@ export default function App() {
   const [savingSkill, setSavingSkill] = useState(false);
   const [saveSkillError, setSaveSkillError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
 
   const hadPersistedLayout = useRef(persistedLayout !== null);
   const previousSessionIds = useRef<string[]>([]);
@@ -605,7 +607,16 @@ export default function App() {
       </div>
       {composerOpen && <Composer sessionId={effectiveRootId} />}
       <ApprovalDialog />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        // One modal at a time: closing Settings reveals the Members dialog.
+        onManageMembers={() => {
+          setSettingsOpen(false);
+          setMembersOpen(true);
+        }}
+      />
+      <MembersDialog open={membersOpen} onClose={() => setMembersOpen(false)} />
       {pendingSkillClose && (
         <SkillSavePrompt
           name={pendingSkillClose.name}

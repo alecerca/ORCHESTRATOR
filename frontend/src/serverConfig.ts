@@ -19,6 +19,12 @@ function normalizeMemberName(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+/** Trim a proxy config path; a blank value is "not set" (Members shows a hint). */
+function normalizeProxyConfigPath(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function load(): ServerConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -31,6 +37,7 @@ function load(): ServerConfig {
         password: parsed.password,
         directory: parsed.directory,
         memberName: normalizeMemberName(parsed.memberName),
+        proxyConfigPath: normalizeProxyConfigPath(parsed.proxyConfigPath),
       };
     }
   } catch {
@@ -77,6 +84,12 @@ export function setConfig(c: Partial<ServerConfig>): void {
     // saving credentials does not silently reset which project is active.
     directory: c.directory !== undefined ? c.directory : config.directory,
     memberName: normalizeMemberName(c.memberName),
+    // Same as `directory`: preserve the host's proxy path when a caller (e.g.
+    // saving credentials) does not explicitly change it.
+    proxyConfigPath:
+      c.proxyConfigPath !== undefined
+        ? normalizeProxyConfigPath(c.proxyConfigPath)
+        : config.proxyConfigPath,
   };
   config = next;
   persist(next);
