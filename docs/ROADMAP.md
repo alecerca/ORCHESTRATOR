@@ -13,7 +13,8 @@
 |---|---|---|
 | 1. Multi-platform desktop (Windows / macOS / Linux) | Feasible now (Tauri 2) | Per-OS build matrix + code signing; WebKitGTK / notification variance |
 | 2. Cowork — connect to a remote address; share a project; read-only role | Feasible, mostly wiring | OpenCode has no roles → need an owned role-enforcing proxy |
-| 3. Multi-backend (OpenCode / Claude Code / Codex) | Feasible | Needs an `AgentBackend` trait + per-backend event adapters |
+| 3. Multi-backend (OpenCode / Claude Code / Codex) | Feasible | Needs an `AgentBackend` trait + per-backend event adapters; protocol research done (Track 3 + Appendix A) |
+| 4. Onboarding + backend selector | Design-only for now | Connection model differs per backend (Server vs Process); ship OpenCode-only in v1 |
 
 ## Baseline (what exists today)
 
@@ -139,6 +140,62 @@ end-to-end.
 having them installed and authenticated; do not bundle them. OpenCode is OSS;
 ACP (`agent-client-protocol`) is Apache-2.0.
 
+**Connection settings:** the base-URL / user / password UI built for Track 2 is
+reusable, but the *transport* it drives is **OpenCode-specific**. See **Track 4**.
+
+## Track 4 — Onboarding + backend selector (connection model)
+
+**Verdict:** the pattern is right, but it should stay **design-only until a second
+backend actually exists**. Shipping v1 with OpenCode alone is the correct call.
+
+**The insight:** what changes per backend is not just the form fields — it is the
+**connection model**. "IP + port + user + password" is *not* a generic agent
+capability; it is **OpenCode-specific**, because OpenCode *is* an HTTP server. The
+others are **processes**.
+
+| Backend | What the user is asked | How the app connects |
+|---|---|---|
+| OpenCode | base URL + user + password | HTTP + SSE (exists today) |
+| Codex | path to the binary + auth | spawn the process, JSON-RPC over stdio |
+| Claude Code | binary + auth | spawn + stdio (or the Agent SDK) |
+| Gateway / shim | base URL (+ auth) | HTTP + SSE (OpenCode contract, translated underneath) |
+
+**Design (for when it is built):** a **backend registry** where each entry
+declares:
+
+- `id` + label;
+- **mode**: `Server` (url + auth) or `Process` (binary + args + auth);
+- a **field schema** the onboarding / Settings panel renders from;
+- a **test probe** (the existing "Test connection");
+- its `AgentBackend` implementation.
+
+The first-run onboarding and the later Settings screen would be the **same
+component**, driven by that schema: dropdown of backends → the selected backend's
+fields → test → save. Adding a future CLI agent = writing one adapter; the panel
+picks it up automatically.
+
+**Recommended strategy — ship OpenCode-only, keep the door open:**
+
+- **v1 ships with OpenCode only.** Do **not** build Codex/Claude adapters now
+  (YAGNI).
+- **Make the seam genuinely open** for contributors: replace the hardcoded
+  `OpenCodeClient::new` in `bridge.rs:86` with a pluggable factory, and add a
+  short "how to add a backend" doc.
+- **Do not build the selector until there are ≥ 2 backends.** A dropdown with one
+  option is ceremony; the current Settings (base URL / user / password) is enough
+  today.
+
+**Honesty note — the abstraction leaks today:** `AgentBackend`'s events are
+OpenCode-shaped. `backend.rs` states that a non-OpenCode backend "must synthesize
+a `raw` payload the UI understands", so a contributor must currently **fake
+OpenCode's event shape**. A truly pluggable backend needs a normalized core event
+model — that is the real, deferred cost (not the trait itself).
+
+**Second honesty note — "anyone can add a backend" has a floor:** Orquestador is
+Rust/Tauri, so a new backend is a **compiled** adapter submitted as a PR, not a
+drop-in plugin. Frame the open-source invitation as "contributors can submit an
+adapter", not "users can plug in anything".
+
 ## Suggested delivery order
 
 1. **Settings: `base_url` + `password`** (Track 2, easy half) → enables
@@ -150,6 +207,8 @@ ACP (`agent-client-protocol`) is Apache-2.0.
    role gate over HTTP Basic, SSE passthrough, audit log). TLS termination is
    still a follow-up; v0 assumes a private network / tunnel.
 4. **Build matrix + signing** (Track 1) → ship the three platforms.
+5. **Onboarding + backend selector** (Track 4) → **only after a second backend
+   exists**; until then ship OpenCode-only with the current Settings.
 
 ## Out of scope / open questions
 
@@ -166,6 +225,9 @@ ACP (`agent-client-protocol`) is Apache-2.0.
       viewer token is rejected on every write endpoint.
 - [ ] Track 3: the same UI flow drives OpenCode and one alternate backend with
       no UI-specific branching.
+- [ ] Track 4: a new backend is added by writing one adapter (PR) and registering
+      it, with the onboarding/Settings panel picking up its fields from the
+      schema — no UI changes.
 
 ---
 
