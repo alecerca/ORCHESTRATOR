@@ -1293,6 +1293,26 @@ html[data-theme="light"] .drop-indicator {
   color: var(--muted);
 }
 
+/* Long tool output folds: the summary line is all the transcript pays for. */
+.part__tool-details summary {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.part__tool-details summary:hover {
+  color: var(--text);
+}
+
+.part__tool-details[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
 .part__pre {
   margin: 0;
   padding: 10px 12px;
