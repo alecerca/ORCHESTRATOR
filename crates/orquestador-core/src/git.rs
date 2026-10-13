@@ -80,6 +80,40 @@ pub struct RepoLog {
     pub commits: Vec<Commit>,
 }
 
+/// How a working-tree path differs from `HEAD`, as classified by [`status`].
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ChangeKind {
+    Modified,
+    Added,
+    Deleted,
+    Untracked,
+}
+
+/// One path that differs from `HEAD` in the working tree, with its change kind.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Change {
+    pub path: String,
+    pub kind: ChangeKind,
+}
+
+/// How the `HEAD` revision of a path reads: UTF-8 text, or content the viewer
+/// cannot diff (binary), or a path that does not exist in `HEAD`.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum HeadFileKind {
+    Text,
+    Binary,
+    Missing,
+}
+
+/// The `HEAD` revision of one path: its kind and, for text, its content.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct HeadFile {
+    pub kind: HeadFileKind,
+    pub content: Option<String>,
+}
+
 /// The current branch and up to `limit` most recent commits of the repository
 /// containing `dir`. Read-only (`git log`).
 pub fn overview(dir: &Path, limit: usize) -> Result<RepoLog, String> {
@@ -140,7 +174,7 @@ pub fn commit_files(dir: &Path, hash: &str) -> Result<Vec<CommitFile>, String> {
         let Some(status) = fields.next().and_then(|field| field.chars().next()) else {
             continue;
         };
-        let Some(path) = fields.last().filter(|path| !path.is_empty()) else {
+        let Some(path) = fields.next_back().filter(|path| !path.is_empty()) else {
             continue;
         };
         files.push(CommitFile {
@@ -214,6 +248,123 @@ fn is_invalid_branch_name(name: &str) -> bool {
     name.trim().is_empty()
         || name.starts_with('-')
         || name.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+/// The working-tree paths that differ from `HEAD`, each classified by kind.
+/// Read-only (`git status --porcelain -z`).
+///
+/// The NUL-separated `-z` format is used so a path with spaces or unusual bytes
+/// parses unambiguously. Each entry is `XY <path>`; rename/copy entries carry a
+/// second NUL field, so `-z` emits the DESTINATION path first and the source
+/// path after it — the source field is skipped and the destination is kept.
+pub fn status(dir: &Path) -> Result<Vec<Change>, String> {
+    let output = Command::new("git")
+        .arg("-c")
+        .arg("core.quotepath=false")
+        .arg("-C")
+        .arg(dir)
+        .args(["status", "--porcelain", "-z"])
+        .output()
+        .map_err(|err| format!("failed to run git: {err}"))?;
+
+    if !output.status.success() {
+        return Err(friendly_git_error(&String::from_utf8_lossy(&output.stderr)));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut changes = Vec::new();
+    let mut fields = stdout.split('\0');
+    while let Some(entry) = fields.next() {
+        // Each record is `<X><Y> <path>`: two status bytes, a space, then the
+        // path. Empty trailing fields and short records are skipped.
+        let bytes = entry.as_bytes();
+        if bytes.len() < 3 || bytes[2] != b' ' {
+            continue;
+        }
+        let x = bytes[0] as char;
+        let y = bytes[1] as char;
+        let path = &entry[3..];
+        if path.is_empty() {
+            continue;
+        }
+        let renamed = x == 'R' || x == 'C';
+        let kind = match x {
+            '?' => ChangeKind::Untracked,
+            'A' => ChangeKind::Added,
+            'R' | 'C' => ChangeKind::Modified,
+            'D' => ChangeKind::Deleted,
+            _ if y == 'D' => ChangeKind::Deleted,
+            _ => ChangeKind::Modified,
+        };
+        if renamed {
+            // The following field is the rename/copy SOURCE; it has no `XY `
+            // prefix, so it is consumed here and never parsed as its own entry.
+            let _ = fields.next();
+        }
+        changes.push(Change {
+            path: path.to_string(),
+            kind,
+        });
+    }
+    Ok(changes)
+}
+
+/// The `HEAD` revision of `path`, for the "before" side of a diff. Read-only
+/// (`git cat-file -e`, then `git show HEAD:<path>`).
+///
+/// A path absent from `HEAD` (new/untracked, or an unborn `HEAD`) yields
+/// [`HeadFileKind::Missing`]; a `HEAD` blob that is not valid UTF-8 (or contains
+/// a NUL byte) yields [`HeadFileKind::Binary`] rather than lossy text.
+pub fn show(dir: &Path, path: &str) -> Result<HeadFile, String> {
+    let spec = format!("HEAD:{path}");
+
+    let exists = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["cat-file", "-e"])
+        .arg(&spec)
+        .output()
+        .map_err(|err| format!("failed to run git: {err}"))?;
+    if !exists.status.success() {
+        return Ok(HeadFile {
+            kind: HeadFileKind::Missing,
+            content: None,
+        });
+    }
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .arg("show")
+        .arg(&spec)
+        .output()
+        .map_err(|err| format!("failed to run git: {err}"))?;
+    if !output.status.success() {
+        // The path existed for `cat-file` but the blob is gone by `show` (a
+        // concurrent change); treat it as missing rather than failing the diff.
+        return Ok(HeadFile {
+            kind: HeadFileKind::Missing,
+            content: None,
+        });
+    }
+
+    let bytes = output.stdout;
+    if bytes.contains(&0) {
+        return Ok(HeadFile {
+            kind: HeadFileKind::Binary,
+            content: None,
+        });
+    }
+    match String::from_utf8(bytes) {
+        Ok(content) => Ok(HeadFile {
+            kind: HeadFileKind::Text,
+            content: Some(content),
+        }),
+        Err(_) => Ok(HeadFile {
+            kind: HeadFileKind::Binary,
+            content: None,
+        }),
+    }
 }
 
 /// Parse the `--pretty=format:` output of [`overview`]: records split on
@@ -513,5 +664,121 @@ mod tests {
             "error: Your local changes to the following files would be overwritten by checkout:\n\tfile.txt\n",
         );
         assert!(message.contains("commit or stash"), "unexpected: {message}");
+    }
+
+    #[test]
+    fn status_reports_modified_and_untracked() {
+        let dir = TempDir::new("status-modified");
+        git(dir.path(), &["init", "-b", "main"]);
+        std::fs::write(dir.path().join("a.txt"), "one\n").expect("write");
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "base"]);
+        std::fs::write(dir.path().join("a.txt"), "changed\n").expect("write");
+        std::fs::write(dir.path().join("new.txt"), "new\n").expect("write");
+
+        let changes = status(dir.path()).expect("status succeeds");
+        let kind = |path: &str| {
+            changes
+                .iter()
+                .find(|change| change.path == path)
+                .map(|change| change.kind.clone())
+        };
+        assert_eq!(kind("a.txt"), Some(ChangeKind::Modified));
+        assert_eq!(kind("new.txt"), Some(ChangeKind::Untracked));
+    }
+
+    #[test]
+    fn status_reports_staged_add_as_added() {
+        let dir = TempDir::new("status-added");
+        git(dir.path(), &["init", "-b", "main"]);
+        git(dir.path(), &["commit", "--allow-empty", "-m", "base"]);
+        std::fs::write(dir.path().join("b.txt"), "b\n").expect("write");
+        git(dir.path(), &["add", "b.txt"]);
+
+        let changes = status(dir.path()).expect("status succeeds");
+        assert_eq!(
+            changes,
+            vec![Change {
+                path: "b.txt".to_string(),
+                kind: ChangeKind::Added,
+            }]
+        );
+    }
+
+    #[test]
+    fn status_reports_deleted_file() {
+        let dir = TempDir::new("status-deleted");
+        git(dir.path(), &["init", "-b", "main"]);
+        std::fs::write(dir.path().join("a.txt"), "one\n").expect("write");
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "base"]);
+        std::fs::remove_file(dir.path().join("a.txt")).expect("remove");
+
+        let changes = status(dir.path()).expect("status succeeds");
+        let kind = changes
+            .iter()
+            .find(|change| change.path == "a.txt")
+            .map(|change| change.kind.clone());
+        assert_eq!(kind, Some(ChangeKind::Deleted));
+    }
+
+    #[test]
+    fn status_reports_rename_with_destination_path() {
+        let dir = TempDir::new("status-rename");
+        git(dir.path(), &["init", "-b", "main"]);
+        std::fs::write(dir.path().join("old.txt"), "content\n").expect("write");
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "base"]);
+        git(dir.path(), &["mv", "old.txt", "new.txt"]);
+
+        let changes = status(dir.path()).expect("status succeeds");
+        // The `-z` format emits the destination on the entry's own line and the
+        // source as the following NUL field; only the destination is kept.
+        assert_eq!(changes.len(), 1, "rename is one entry: {changes:?}");
+        assert_eq!(changes[0].path, "new.txt");
+        assert_eq!(changes[0].kind, ChangeKind::Modified);
+    }
+
+    #[test]
+    fn status_errors_outside_a_repo() {
+        let dir = TempDir::new("status-not-a-repo");
+        assert!(status(dir.path()).is_err());
+    }
+
+    #[test]
+    fn show_returns_text_for_a_tracked_file() {
+        let dir = TempDir::new("show-text");
+        git(dir.path(), &["init", "-b", "main"]);
+        std::fs::write(dir.path().join("a.txt"), "hello\n").expect("write");
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "base"]);
+
+        let head = show(dir.path(), "a.txt").expect("show succeeds");
+        assert_eq!(head.kind, HeadFileKind::Text);
+        assert_eq!(head.content.as_deref(), Some("hello\n"));
+    }
+
+    #[test]
+    fn show_returns_missing_for_an_unknown_path() {
+        let dir = TempDir::new("show-missing");
+        git(dir.path(), &["init", "-b", "main"]);
+        git(dir.path(), &["commit", "--allow-empty", "-m", "base"]);
+
+        let head = show(dir.path(), "nope.txt").expect("show succeeds");
+        assert_eq!(head.kind, HeadFileKind::Missing);
+        assert_eq!(head.content, None);
+    }
+
+    #[test]
+    fn show_returns_binary_for_nul_bytes() {
+        let dir = TempDir::new("show-binary");
+        git(dir.path(), &["init", "-b", "main"]);
+        std::fs::write(dir.path().join("bin.dat"), b"a\0b").expect("write");
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "base"]);
+
+        let head = show(dir.path(), "bin.dat").expect("show succeeds");
+        assert_eq!(head.kind, HeadFileKind::Binary);
+        assert_eq!(head.content, None);
     }
 }
