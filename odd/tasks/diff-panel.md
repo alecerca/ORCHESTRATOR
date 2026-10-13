@@ -130,6 +130,21 @@ changes **live** and opens a side-by-side diff of any changed file.
     Cancel), mirroring `pendingSkillClose` (save → write → close; discard →
     drop; cancel → keep). Esc closes = cancel.
   - `TabStrip`: dirty dot on file tabs while unsaved (VSCode-style bullet).
+- [ ] **D7 — Discard changes per file.** User request (2026-10-13, "una flecha
+  hacia atras que se llame discard changes" — last item before merge):
+  - Core `git.rs` `discard_file(dir, rel_path)`: relative-path guard; untracked
+    (`??`) → `fs::remove_file`; staged-added (`A `) → `git reset -q HEAD --` +
+    remove if present; modified/deleted → `git checkout HEAD -- <path>`.
+    In-repo tests (TempDir): modified, deleted, untracked, staged-added,
+    guard rejections.
+  - Shell `git_discard_file` command (active_directory + spawn_blocking),
+    registered.
+  - `DiffPanel` row becomes a flex container: main button opens the diff,
+    trailing discard button (undo-arrow icon, tooltip "Discard changes") opens
+    a modal (Discard / Cancel, danger confirm, error on failure) → invoke →
+    refresh. `commands.ts` `gitDiscardFile`; icon alongside `DiffIcon`; CSS.
+  - Knowned limitation: only affects the working tree / index; an open editor
+    draft for the same path is untouched (same as checkout).
 
 ## Checks (per task)
 
