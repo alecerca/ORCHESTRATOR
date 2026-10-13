@@ -51,23 +51,23 @@
 }
 
 html[data-theme="light"] {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --surface-alt: #eef1f5;
-  --surface-raised: #ffffff;
-  --border: #dce1e9;
-  --border-strong: #c2cad6;
-  --text: #0f131a;
-  --muted: #5a6474;
-  --brand: #0d8f52;
+  --bg: #e9ebef;
+  --surface: #f7f8fb;
+  --surface-alt: #eef0f5;
+  --surface-raised: #fcfdff;
+  --border: #d7dbe2;
+  --border-strong: #b9c0cb;
+  --text: #1b2129;
+  --muted: #5b6573;
+  --brand: #0b7d47;
   --brand-text: #ffffff;
-  --secondary: #1a6fd4;
-  --accent: #0e7490;
-  --warning: #8a5a00;
-  --error: #cc3340;
+  --secondary: #1565c0;
+  --accent: #0b6d86;
+  --warning: #7a5200;
+  --error: #c02b38;
 
-  --shadow-1: 0 1px 2px rgba(15, 19, 26, 0.08);
-  --shadow-2: 0 10px 30px rgba(15, 19, 26, 0.14);
+  --shadow-1: 0 1px 2px rgba(20, 26, 36, 0.09);
+  --shadow-2: 0 10px 30px rgba(20, 26, 36, 0.15);
 }
 
 * {
@@ -592,7 +592,7 @@ summary:focus-visible {
 }
 
 .agent-card__title {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -829,6 +829,7 @@ summary:focus-visible {
 }
 
 .empty-state__title {
+  font-weight: 700;
   margin: 0 0 6px;
   font-size: 18px;
   color: var(--text);
@@ -1143,7 +1144,7 @@ html[data-theme="light"] .drop-indicator {
 .group-infobar__title {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1187,6 +1188,7 @@ html[data-theme="light"] .drop-indicator {
 
 .msg__role {
   font-size: 12px;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1195,6 +1197,10 @@ html[data-theme="light"] .drop-indicator {
 
 .msg--user .msg__role {
   color: var(--secondary);
+}
+
+.msg--assistant .msg__role {
+  color: var(--accent);
 }
 
 .msg__body {
@@ -1530,6 +1536,7 @@ html[data-theme="light"] .drop-indicator {
 }
 
 .approval__title {
+  font-weight: 700;
   margin: 0 0 10px;
   font-size: 18px;
   line-height: 1.35;
@@ -1674,6 +1681,7 @@ html[data-theme="light"] .drop-indicator {
 }
 
 .welcome__title {
+  font-weight: 700;
   margin: 0 0 8px;
   font-size: 22px;
 }
@@ -1836,6 +1844,7 @@ html[data-theme="light"] .drop-indicator {
 }
 
 .members-invite__title {
+  font-weight: 600;
   margin: 0;
   font-size: 15px;
 }
