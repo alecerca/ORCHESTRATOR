@@ -2446,11 +2446,24 @@ html[data-theme="light"] .drop-indicator {
   font-size: 13px;
 }
 
+/* A row is a flex container: the open button takes the space, the discard
+   button sits at the far right. Hover on the container so the whole row —
+   including the discard affordance — highlights as one unit. */
 .diff-row {
   display: flex;
   align-items: center;
+}
+
+.diff-row:hover {
+  background: var(--surface);
+}
+
+.diff-row__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   gap: 8px;
-  width: 100%;
   background: none;
   border: none;
   color: var(--text);
@@ -2462,8 +2475,24 @@ html[data-theme="light"] .drop-indicator {
   cursor: pointer;
 }
 
-.diff-row:hover {
-  background: var(--surface);
+/* Compact icon button: quiet at rest, danger-red on hover, always visible
+   (the panel has few rows, so hiding it behind a hover only adds noise). */
+.diff-row__discard {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.diff-row__discard:hover {
+  color: var(--error);
+  background: var(--surface-alt);
 }
 
 .diff-row__path {

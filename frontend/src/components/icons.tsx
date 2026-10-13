@@ -296,3 +296,37 @@ export function DiffIcon({ size = 14 }: SizedProps) {
     </svg>
   );
 }
+
+/**
+ * A u-turn / undo arrow (curving left), used as the diff panel's per-row
+ * "discard changes" action. Inherits `currentColor` so the row can tint it
+ * muted at rest and danger-red on hover.
+ */
+export function DiscardIcon({ size = 14 }: SizedProps) {
+  return (
+    <svg
+      className="fileicon"
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden
+      focusable="false"
+    >
+      <path
+        d="M2.8 7.4h7.1a3.3 3.3 0 0 1 0 6.6H6.4"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5.1 4.2 2.1 7.4l3 3.2"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
