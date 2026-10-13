@@ -2,11 +2,13 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useSyncExternalStore,
   type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
   useState,
 } from "react";
+import { getVersion, isFileDirty, subscribe } from "../fileDrafts";
 import { tabSessionId, type GroupNode, type Tab } from "../tabs";
 import type { SessionSnapshot } from "../types";
 import { baseName, shortId } from "../utils";
@@ -55,6 +57,11 @@ export function TabStrip({ group, sessions, onActivateTab, onCloseTab, onSplit }
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+
+  // Re-render the strip whenever a file draft's dirtiness changes, so the dirty
+  // dot appears and clears without reopening the tab (the snapshot is the
+  // store's monotonic version counter).
+  useSyncExternalStore(subscribe, getVersion);
 
   // Show the scroll arrows only while the strip overflows in that direction.
   // The native horizontal scrollbar is hidden because the webview's overlay
@@ -188,6 +195,13 @@ export function TabStrip({ group, sessions, onActivateTab, onCloseTab, onSplit }
                 )}
               </span>
               <span className="tab__label">{title}</span>
+              {tab.kind === "file" && isFileDirty(tab.path) && (
+                <span
+                  className="tab__dirty"
+                  aria-label="Unsaved changes"
+                  title="Unsaved changes"
+                />
+              )}
               <button
                 type="button"
                 className="tab__close"

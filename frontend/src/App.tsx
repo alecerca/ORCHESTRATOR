@@ -58,6 +58,12 @@ import {
   type Layout,
 } from "./tabs";
 import { clearDraft, getDraft, isDirty, markSaved } from "./skillDrafts";
+import {
+  clearFileDraft,
+  getFileDraft,
+  isFileDirty,
+  markFileSaved,
+} from "./fileDrafts";
 
 type Theme = "dark" | "light";
 
@@ -197,6 +203,15 @@ export default function App() {
   } | null>(null);
   const [savingSkill, setSavingSkill] = useState(false);
   const [saveSkillError, setSaveSkillError] = useState<string | null>(null);
+  // Save-on-close gate for dirty file tabs, mirroring the skill prompt above:
+  // a file tab whose close was requested but not yet granted.
+  const [pendingFileClose, setPendingFileClose] = useState<{
+    groupId: string;
+    tabId: string;
+    path: string;
+  } | null>(null);
+  const [savingFile, setSavingFile] = useState(false);
+  const [saveFileError, setSaveFileError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   // First run: greet with the Welcome screen (not the cowork-only Join form).
@@ -393,10 +408,10 @@ export default function App() {
   }, []);
 
   /**
-   * Close a tab, gating dirty skill tabs behind the save prompt. A clean skill
-   * tab is closed straight away and its draft dropped; every other kind keeps
-   * today's behaviour. Both the TabStrip ✕ and its context-menu Close tab route
-   * through here.
+   * Close a tab, gating dirty skill and file tabs behind the save prompt. A
+   * clean tab is closed straight away and its draft dropped; every other kind
+   * keeps today's behaviour. Both the TabStrip ✕ and its context-menu Close tab
+   * route through here.
    */
   const requestCloseTab = useCallback(
     (groupId: string, tabId: string) => {
@@ -406,7 +421,13 @@ export default function App() {
         setPendingSkillClose({ groupId, tabId, name: tab.name });
         return;
       }
+      if (tab?.kind === "file" && isFileDirty(tab.path)) {
+        setSaveFileError(null);
+        setPendingFileClose({ groupId, tabId, path: tab.path });
+        return;
+      }
       if (tab?.kind === "skill") clearDraft(tab.id);
+      if (tab?.kind === "file") clearFileDraft(tab.path);
       setLayout((current) => closeTab(current, groupId, tabId));
     },
     [layout],
@@ -449,6 +470,55 @@ export default function App() {
     setPendingSkillClose(null);
     setSaveSkillError(null);
   }, []);
+
+  /** Save the pending file draft to disk, then close its tab. */
+  const savePendingFile = useCallback(async () => {
+    if (!pendingFileClose) return;
+    setSavingFile(true);
+    setSaveFileError(null);
+    try {
+      const draft = getFileDraft(pendingFileClose.path);
+      await api.writeFile(pendingFileClose.path, draft?.content ?? "");
+      markFileSaved(pendingFileClose.path);
+      clearFileDraft(pendingFileClose.path);
+      setLayout((current) =>
+        closeTab(current, pendingFileClose.groupId, pendingFileClose.tabId),
+      );
+      setPendingFileClose(null);
+    } catch (cause) {
+      // Keep the tab open and surface the failure so the content is not lost.
+      setSaveFileError(describeError(cause));
+    } finally {
+      setSavingFile(false);
+    }
+  }, [pendingFileClose]);
+
+  /** Close without saving; the draft is dropped. */
+  const discardPendingFile = useCallback(() => {
+    if (!pendingFileClose) return;
+    clearFileDraft(pendingFileClose.path);
+    setLayout((current) =>
+      closeTab(current, pendingFileClose.groupId, pendingFileClose.tabId),
+    );
+    setPendingFileClose(null);
+    setSaveFileError(null);
+  }, [pendingFileClose]);
+
+  const cancelPendingFile = useCallback(() => {
+    setPendingFileClose(null);
+    setSaveFileError(null);
+  }, []);
+
+  // Escape cancels the file save prompt (the tab stays open), matching the
+  // other modals.
+  useEffect(() => {
+    if (!pendingFileClose) return;
+    function onKey(event: KeyboardEvent): void {
+      if (event.key === "Escape") cancelPendingFile();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pendingFileClose, cancelPendingFile]);
 
   const handleAbort = useCallback((sessionId: string) => {
     void api.abortSession(sessionId).catch((cause) => {
@@ -720,6 +790,60 @@ export default function App() {
           onDiscard={discardPendingSkill}
           onCancel={cancelPendingSkill}
         />
+      )}
+      {pendingFileClose && (
+        <div className="modal-backdrop">
+          <div
+            className="modal approval"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="file-save-title"
+          >
+            <div className="approval__head">
+              <span className="chip chip--pending">file</span>
+              <span className="approval__type">unsaved changes</span>
+            </div>
+            <h2 className="approval__title" id="file-save-title">
+              Unsaved changes
+            </h2>
+            <p className="skill-prompt__body">
+              <span className="skill-prompt__name">{pendingFileClose.path}</span> has
+              unsaved changes.
+            </p>
+            {saveFileError && (
+              <p className="approval__error" role="alert">
+                {saveFileError}
+              </p>
+            )}
+            <div className="approval__actions">
+              <button
+                type="button"
+                className="btn btn--danger"
+                disabled={savingFile}
+                onClick={discardPendingFile}
+              >
+                Don&apos;t save
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={savingFile}
+                autoFocus
+                onClick={cancelPendingFile}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                disabled={savingFile}
+                onClick={() => void savePendingFile()}
+              >
+                {savingFile ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       <NotificationsDrawer
         effects={effects}

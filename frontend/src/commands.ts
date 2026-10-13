@@ -96,6 +96,9 @@ export const listFiles = (path?: string) =>
   invoke<FileNode[]>("list_files", { path });
 export const readFile = (path: string) =>
   invoke<FileContent>("read_file", { path });
+/** Write a text file back to the active project directory (editor save). */
+export const writeFile = (path: string, content: string) =>
+  invoke<void>("write_file", { path, content });
 export const fileStatus = () => invoke<FileStatus[]>("file_status");
 export const findFiles = (query: string, limit?: number) =>
   invoke<string[]>("find_files", { query, limit });
