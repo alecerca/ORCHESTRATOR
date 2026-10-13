@@ -51,8 +51,20 @@ export function MessageStream({ sessionId }: Props) {
   }
 
   return (
-    <div className="stream" ref={scrollRef} onScroll={onScroll}>
-      {error && <p className="stream__error">History failed: {error}</p>}
+    <div
+      className="stream"
+      ref={scrollRef}
+      onScroll={onScroll}
+      role="log"
+      aria-live="polite"
+      aria-relevant="additions text"
+      aria-label="Agent transcript"
+    >
+      {error && (
+        <p className="stream__error" role="alert">
+          History failed: {error}
+        </p>
+      )}
       {stream.length === 0 && !error && (
         <p className="stream__empty">No messages yet.</p>
       )}

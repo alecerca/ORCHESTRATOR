@@ -56,6 +56,18 @@ button {
   cursor: pointer;
 }
 
+/* Consistent, always-visible keyboard focus for the whole shell. */
+button:focus-visible,
+a:focus-visible,
+[role="tab"]:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--secondary);
+  outline-offset: 1px;
+}
+
 /* -- layout ---------------------------------------------------------------- */
 
 .app {
@@ -375,7 +387,7 @@ button {
   padding-top: 6px;
   border-top: 1px solid var(--border);
   font-size: 12px;
-  color: var(--muted-text);
+  color: var(--muted);
 }
 
 .skills-error {
@@ -426,6 +438,10 @@ button {
 
 .activitybar__btn.is-active {
   color: var(--brand);
+}
+
+.activitybar__btn svg {
+  display: block;
 }
 
 .activitybar__spacer {
@@ -757,6 +773,42 @@ button {
 .pane-grid__hint {
   margin: 4px 0 0;
   font-size: 13px;
+}
+
+/* Friendly first-use guide shown when no pane is open. */
+.empty-state {
+  max-width: 380px;
+  padding: 24px;
+  text-align: left;
+}
+
+.empty-state__logo {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 22px;
+  color: var(--brand);
+}
+
+.empty-state__title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.empty-state__lead {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.empty-state__steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 /* Groups sit side by side, each taking an equal flexible share. T3 turns this
@@ -1556,6 +1608,113 @@ html[data-theme="light"] .drop-indicator {
   color: var(--muted);
 }
 
+/* -- welcome dialog (first run) --------------------------------------------- */
+
+.welcome {
+  width: 520px;
+}
+
+.welcome__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.welcome__logo {
+  color: var(--brand);
+  font-size: 18px;
+}
+
+.welcome__wordmark {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.welcome__title {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.welcome__lead {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.welcome__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+}
+
+.welcome__status code {
+  font-family: var(--mono);
+}
+
+.welcome__status.is-down {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.welcome__steps {
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.welcome__step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 14px;
+}
+
+.welcome__step::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.welcome__step-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.welcome__step-body {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.welcome__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* -- members dialog --------------------------------------------------------- */
 
 .members-path {
@@ -1841,6 +2000,13 @@ html[data-theme="light"] .drop-indicator {
   margin: 0;
   padding: 8px 12px;
   color: var(--error);
+  font-size: 12px;
+}
+
+.filetree__muted {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--muted);
   font-size: 12px;
 }
 

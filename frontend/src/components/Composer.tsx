@@ -39,6 +39,7 @@ export function Composer({ sessionId }: Props) {
       <textarea
         className="composer__input"
         rows={2}
+        aria-label="Instruction to the orchestrator"
         value={text}
         disabled={!sessionId}
         placeholder={
@@ -62,7 +63,11 @@ export function Composer({ sessionId }: Props) {
       >
         {sending ? "Sending…" : "Send"}
       </button>
-      {error && <p className="composer__error">{error}</p>}
+      {error && (
+        <p className="composer__error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

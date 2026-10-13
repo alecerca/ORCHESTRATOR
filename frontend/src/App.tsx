@@ -11,7 +11,13 @@ import {
   type SessionSnapshot,
 } from "./types";
 import { describeError } from "./utils";
-import { hasPersistedConfig, setDirectory } from "./serverConfig";
+import {
+  getConfig,
+  hasPersistedConfig,
+  setConfig,
+  setDirectory,
+  useServerConfig,
+} from "./serverConfig";
 import { TopBar } from "./components/TopBar";
 import { ActivityBar } from "./components/ActivityBar";
 import { AgentPanel } from "./components/AgentPanel";
@@ -27,6 +33,7 @@ import { SkillSavePrompt } from "./components/SkillSavePrompt";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { MembersDialog } from "./components/MembersDialog";
 import { JoinWorkspaceDialog } from "./components/JoinWorkspaceDialog";
+import { WelcomeDialog } from "./components/WelcomeDialog";
 import {
   EMPTY_LAYOUT,
   LAYOUT_KEY,
@@ -56,6 +63,9 @@ type Theme = "dark" | "light";
 const THEME_KEY = "orquestador.theme";
 const DISMISSED_KEY = "orquestador.dismissed";
 const ROOT_PICK_KEY = "orquestador.rootPick";
+const WELCOME_SEEN_KEY = "orquestador.welcomeSeen";
+/** Local server default offered by the first-run Welcome screen. */
+const DEFAULT_BASE_URL = "http://127.0.0.1:4096";
 const AGENT_PANEL_KEY = "orquestador.agentPanelWidth";
 const EDITOR_PANEL_KEY = "orquestador.editorPanelWidth";
 const AGENT_PANEL_MIN = 180;
@@ -135,8 +145,18 @@ function loadRootPick(): string | null {
   }
 }
 
+/** True once the first-run Welcome has been dismissed or acted on. */
+function loadWelcomeSeen(): boolean {
+  try {
+    return localStorage.getItem(WELCOME_SEEN_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const state = useAppState();
+  const serverConfig = useServerConfig();
   const [theme, setTheme] = useState<Theme>(initialTheme);
   // Restore the persisted tab layout once; `null` means "no saved layout", which
   // lets the bootstrap open a tab for the effective root (today's behaviour).
@@ -178,9 +198,14 @@ export default function App() {
   const [saveSkillError, setSaveSkillError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
-  // First run: no persisted server config yet — offer the Join screen once on
-  // mount. Dismissible, so the app stays usable without joining.
-  const [joinOpen, setJoinOpen] = useState(() => !hasPersistedConfig());
+  // First run: greet with the Welcome screen (not the cowork-only Join form).
+  // Shown only while nothing has been configured and the Welcome was never
+  // seen; dismissing it (Skip / Escape / backdrop) marks it seen so it never
+  // nags again. `joinOpen` is now reserved for an explicit "Join a workspace".
+  const [welcomeOpen, setWelcomeOpen] = useState(
+    () => !hasPersistedConfig() && !loadWelcomeSeen(),
+  );
+  const [joinOpen, setJoinOpen] = useState(false);
 
   const hadPersistedLayout = useRef(persistedLayout !== null);
   const previousSessionIds = useRef<string[]>([]);
@@ -434,6 +459,52 @@ export default function App() {
     setTheme((current) => (current === "dark" ? "light" : "dark"));
   }, []);
 
+  // First-run Welcome: dismiss and record it as seen so it never reappears.
+  const closeWelcome = useCallback(() => {
+    setWelcomeOpen(false);
+    try {
+      localStorage.setItem(WELCOME_SEEN_KEY, "1");
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  /**
+   * Welcome primary action. Dismisses first (so the always-visible connection
+   * banner can report any problem) and, when not yet connected, persists the
+   * default local base URL through the same `set_server_config` path as
+   * Settings. The host's proxy config path is preserved, so connecting never
+   * clobbers it.
+   */
+  const handleWelcomePrimary = useCallback(async () => {
+    closeWelcome();
+    if (state.connected) return;
+    try {
+      const persisted = await api.getServerConfig().catch(() => getConfig());
+      const cfg = await api.setServerConfig(
+        DEFAULT_BASE_URL,
+        undefined,
+        undefined,
+        undefined,
+        persisted.proxyConfigPath ?? undefined,
+      );
+      setConfig({
+        baseUrl: cfg.baseUrl,
+        username: cfg.username,
+        password: cfg.password ?? undefined,
+        memberName: cfg.memberName,
+        proxyConfigPath: cfg.proxyConfigPath,
+      });
+    } catch (cause) {
+      setBanner(`Could not connect: ${describeError(cause)}`);
+    }
+  }, [state.connected, closeWelcome]);
+
+  const openJoinFromWelcome = useCallback(() => {
+    closeWelcome();
+    setJoinOpen(true);
+  }, [closeWelcome]);
+
   const rootOptions = useMemo(() => parentlessSessions(state), [state]);
   const effectiveRootId = useMemo(
     () => resolveEffectiveRoot(state, rootPick),
@@ -630,6 +701,14 @@ export default function App() {
       />
       <MembersDialog open={membersOpen} onClose={() => setMembersOpen(false)} />
       <JoinWorkspaceDialog open={joinOpen} onClose={() => setJoinOpen(false)} />
+      <WelcomeDialog
+        open={welcomeOpen}
+        connected={state.connected}
+        baseUrl={serverConfig.baseUrl}
+        onPrimary={() => void handleWelcomePrimary()}
+        onJoin={openJoinFromWelcome}
+        onClose={closeWelcome}
+      />
       {pendingSkillClose && (
         <SkillSavePrompt
           name={pendingSkillClose.name}

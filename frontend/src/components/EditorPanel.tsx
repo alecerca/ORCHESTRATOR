@@ -27,9 +27,14 @@ export function EditorPanel({
 
   return (
     <aside className="editor-panel" style={{ width }}>
-      <div className="editor-panel__tabs">
+      <div className="editor-panel__tabs" role="tablist" aria-label="Editor panels">
         <button
           type="button"
+          role="tab"
+          id="editor-tab-files"
+          aria-selected={tab === "files"}
+          aria-controls="editor-panel-files"
+          tabIndex={tab === "files" ? 0 : -1}
           className={`editor-panel__tab${tab === "files" ? " is-active" : ""}`}
           onClick={() => setTab("files")}
         >
@@ -37,6 +42,11 @@ export function EditorPanel({
         </button>
         <button
           type="button"
+          role="tab"
+          id="editor-tab-git"
+          aria-selected={tab === "git"}
+          aria-controls="editor-panel-git"
+          tabIndex={tab === "git" ? 0 : -1}
           className={`editor-panel__tab${tab === "git" ? " is-active" : ""}`}
           onClick={() => setTab("git")}
         >
@@ -45,11 +55,21 @@ export function EditorPanel({
       </div>
 
       {tab === "files" ? (
-        <div className="editor-panel__browser">
+        <div
+          className="editor-panel__browser"
+          role="tabpanel"
+          id="editor-panel-files"
+          aria-labelledby="editor-tab-files"
+        >
           <FileTree key={filesVersion} onOpenFile={onOpenFile} activePath={activePath} />
         </div>
       ) : (
-        <div className="editor-panel__git">
+        <div
+          className="editor-panel__git"
+          role="tabpanel"
+          id="editor-panel-git"
+          aria-labelledby="editor-tab-git"
+        >
           <GitViewer onBranchChanged={onBranchChanged} />
         </div>
       )}

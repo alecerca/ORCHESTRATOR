@@ -212,9 +212,21 @@ export function AgentCard({
           </button>
         </div>
       )}
-      {renameError && <p className="agent-card__error">{renameError}</p>}
-      {deleteError && <p className="agent-card__error">{deleteError}</p>}
-      {error && <p className="agent-card__error">{error}</p>}
+      {renameError && (
+        <p className="agent-card__error" role="alert">
+          {renameError}
+        </p>
+      )}
+      {deleteError && (
+        <p className="agent-card__error" role="alert">
+          {deleteError}
+        </p>
+      )}
+      {error && (
+        <p className="agent-card__error" role="alert">
+          {error}
+        </p>
+      )}
     </article>
   );
 }

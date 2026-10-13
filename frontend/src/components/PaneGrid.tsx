@@ -64,10 +64,20 @@ export function PaneGrid({
   if (groups.length === 0 || layout.root === null) {
     return (
       <div className="pane-grid pane-grid--empty">
-        <p>No panes open.</p>
-        <p className="pane-grid__hint">
-          Open an agent from the panel on the left to watch its live stream.
-        </p>
+        <div className="empty-state">
+          <span className="empty-state__logo" aria-hidden>
+            ◆
+          </span>
+          <h2 className="empty-state__title">Nothing open yet</h2>
+          <p className="empty-state__lead">
+            Open an agent from the panel on the left to watch its live stream here.
+          </p>
+          <ul className="empty-state__steps">
+            <li>Click an agent card to open its pane.</li>
+            <li>Type a goal in the composer below to spawn sub-agents.</li>
+            <li>Right-click a tab to split the workspace.</li>
+          </ul>
+        </div>
       </div>
     );
   }
