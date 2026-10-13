@@ -223,3 +223,12 @@ export const gitStatus = () => invoke<GitChange[]>("git_status");
 export const gitShowFile = (path: string) =>
   invoke<HeadFile>("git_show_file", { path });
 
+/**
+ * Discard the working-tree changes to one repository-relative path, restoring
+ * it to HEAD. Mutating: untracked files are removed, staged additions are
+ * unstaged and removed, and modified/deleted files are checked out from HEAD.
+ * Rejects for empty, absolute or `..`-containing paths.
+ */
+export const gitDiscardFile = (path: string) =>
+  invoke<void>("git_discard_file", { path });
+
