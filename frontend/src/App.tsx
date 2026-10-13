@@ -45,6 +45,7 @@ import {
   closeTab,
   getTab,
   hasSessionTab,
+  openDiffTab,
   openFileTab,
   openSessionTab,
   openSkillTab,
@@ -678,6 +679,7 @@ export default function App() {
               width={editorPanelWidth}
               activePath={activePath}
               onOpenFile={(path) => setLayout((current) => openFileTab(current, path))}
+              onOpenDiffFile={(path) => setLayout((current) => openDiffTab(current, path))}
               filesVersion={filesVersion}
               onBranchChanged={handleBranchChanged}
             />

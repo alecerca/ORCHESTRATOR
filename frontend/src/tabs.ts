@@ -34,8 +34,19 @@ export interface SkillTab {
   name: string;
 }
 
+/**
+ * A working-tree diff document: one path compared against its HEAD revision.
+ * `id` is derived from the path. Like file tabs, diff tabs are restored from a
+ * persisted layout (the content is re-read on open, never stored here).
+ */
+export interface DiffTab {
+  id: string;
+  kind: "diff";
+  path: string;
+}
+
 /** Discriminated union: agent histories, files and skills are all documents. */
-export type Tab = SessionTab | FileTab | SkillTab;
+export type Tab = SessionTab | FileTab | SkillTab | DiffTab;
 
 export interface GroupNode {
   id: string;
@@ -77,6 +88,11 @@ export function fileTabKey(path: string): string {
 /** Globally unique tab id for a skill document. */
 export function skillTabKey(name: string): string {
   return `skill:${name}`;
+}
+
+/** Globally unique tab id for a working-tree diff document. */
+export function diffTabKey(path: string): string {
+  return `diff:${path}`;
 }
 
 /** The session a tab points at, or `null` for non-session kinds. */
@@ -241,6 +257,21 @@ export function openSkillTab(layout: Layout, name: string): Layout {
     layout,
     { id: skillTabKey(name), kind: "skill", name },
     (tab) => tab.kind === "skill" && tab.name === name,
+  );
+}
+
+/**
+ * Open a working-tree diff tab or focus the existing one. Never duplicates: if
+ * the path already has a diff tab anywhere, that tab and its group become
+ * active. Otherwise the tab opens in the active group, creating the first group
+ * when none exists. A diff tab is a distinct document from a file tab for the
+ * same path, so both can be open at once.
+ */
+export function openDiffTab(layout: Layout, path: string): Layout {
+  return openTab(
+    layout,
+    { id: diffTabKey(path), kind: "diff", path },
+    (tab) => tab.kind === "diff" && tab.path === path,
   );
 }
 
@@ -716,6 +747,7 @@ function isTab(value: unknown): value is Tab {
   if (tab.kind === "session") return typeof tab.sessionId === "string";
   if (tab.kind === "file") return typeof tab.path === "string";
   if (tab.kind === "skill") return typeof tab.name === "string";
+  if (tab.kind === "diff") return typeof tab.path === "string";
   return false;
 }
 
@@ -768,6 +800,9 @@ function normalizeTab(tab: Tab): Tab {
   }
   if (tab.kind === "skill") {
     return { id: skillTabKey(tab.name), kind: "skill", name: tab.name };
+  }
+  if (tab.kind === "diff") {
+    return { id: diffTabKey(tab.path), kind: "diff", path: tab.path };
   }
   return { id: fileTabKey(tab.path), kind: "file", path: tab.path };
 }

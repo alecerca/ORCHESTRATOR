@@ -250,3 +250,49 @@ export function SkillIcon({ size = 14 }: SizedProps) {
     </svg>
   );
 }
+
+/**
+ * A split diff glyph (plus on one side, minus on the other), used to mark a
+ * working-tree diff tab.
+ */
+export function DiffIcon({ size = 14 }: SizedProps) {
+  return (
+    <svg
+      className="fileicon"
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden
+      focusable="false"
+    >
+      <rect
+        x="1.6"
+        y="2.6"
+        width="12.8"
+        height="10.8"
+        rx="2"
+        stroke="var(--secondary)"
+        strokeWidth="1.2"
+      />
+      <path
+        d="M8 2.6v10.8"
+        stroke="var(--secondary)"
+        strokeWidth="1.2"
+        opacity="0.7"
+      />
+      <path
+        d="M4.7 8.5h2.6"
+        stroke="var(--secondary)"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M11.3 7v3M9.8 8.5h3"
+        stroke="var(--secondary)"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
