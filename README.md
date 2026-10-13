@@ -1,96 +1,139 @@
 # Orquestador
 
-**The desktop control tower for orchestrator sub-agents.**
+**The desktop control tower for OpenCode and [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) orchestrator sub-agents.**
 
-You run [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) (or any
-OpenCode orchestrator) and suddenly five sub-agents are working at once. You
-can't see what each one is doing, and to fix a single one you have to interrupt
-everything.
+You run an OpenCode-based orchestrator and suddenly **five sub-agents are
+working at once**. In the terminal you cannot see what each one is doing, and
+to fix a single one you interrupt everything. Orquestador is a desktop GUI
+that puts **every sub-agent in its own live pane**: you watch all of them, fix
+just one, and the rest keep working.
 
-Orquestador gives you back control: **every sub-agent live in its own pane**, a
-message aimed at *just that one*, and a stop that leaves the rest running — plus
-a Monaco editor with a diff viewer and desktop approval notifications. A desktop
-GUI, not the terminal.
+![Orquestador — main window](docs/screenshots/main-window.png)
 
-> What a terminal sidebar can't do: live split panes, per-agent control, and a
-> real diff viewer.
+> What a terminal sidebar can't do: live split panes, per-agent control, a real
+> diff viewer, and a visual handle on the whole project.
+
+## Why
+
+Orquestador started as a personal convenience tool. Driving
+[gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) — OpenCode as
+the orchestrator — from the terminal is powerful but rustic: the output of five
+sub-agents scrolls past, there is no per-agent control, and even "which branch
+is this agent on?" means another command. So I built a **control tower**: a
+desktop window that shows the orchestrator session and every sub-agent, lets me
+stop one, re-point it, rename it, and see the branch it is working on — and
+that centralises the project (directory, files, git) in one place.
+
+Two things turned it from a personal tool into something shareable:
+
+- **Cowork** — shared orchestrator sessions for a small group: roles, a
+  whitelist, live presence, a pinned project. Docs: [`docs/COWORK.md`](docs/COWORK.md).
+- **Bring your own server** — the app connects to *your* OpenCode server. It
+  does not need to be a process the app started: it can be a box on your LAN or
+  a remote machine. Your agents, your machines, one control tower.
 
 ## Features
 
+**Agent orchestration**
+
 - Live pane per sub-agent, with status and a timer.
 - Interrupt / re-instruct a single agent without touching the others.
+- Rename an agent mid-flight; every agent shows the git branch it is working in.
 - Composer for the orchestrator session, with approval prompts and desktop
   notifications.
-- Monaco editor with a diff viewer.
-- Backend-aware skills panel (reads the connected agent's skill roots).
 
-See [`docs/LAUNCH.md`](docs/LAUNCH.md) for the 90-second demo and where the
-project is shared, and [`docs/COWORK.md`](docs/COWORK.md) to run the app for a
-group — roles, whitelist, presence and the pinned project.
+**Workspace**
 
-> **Status: implemented and audited.** The headless core is verified (77 unit
-> tests), the frontend is complete and building, and an independent audit passed
-> (`docs/AUDIT.md`). The Tauri shell is scaffolded and needs the system
-> dependencies below to compile. See `docs/PLAN.md` (master contract),
-> `docs/ARCHITECTURE.md`, `docs/ROADMAP.md` (future directions), `docs/AUDIT.md`,
-> `docs/RUNBOOK.md` (first run), `docs/COWORK.md` (shared project),
-> `docs/IMPLEMENTATION_NOTES.md`, and the canonical `SPEC.md`.
+- Built-in Monaco editor with a diff viewer: review the files your agents are
+  touching and edit them without leaving the app.
+- File tree and a git view (branches, checkout, commit staging, log) — the
+  project lives in the same window.
+- Tab system with splits: watch several agents at once, or an agent and a file
+  side by side.
 
-## Stack
+**Skills**
 
-- **Rust + Tauri 2** desktop shell (`src-tauri/`).
-- **Rust core** `crates/orquestador-core` — typed HTTP client + SSE event hub +
-  session/state model. **No Tauri dependency** so it compiles and tests headless.
-- **TypeScript + Vite + React** frontend (`frontend/`) with **Monaco** (editor +
-  diff) bundled locally.
+- Skills panel backed by the connected agent's skill roots: run your OpenCode
+  skills with a click, and create app-level skills from the UI.
 
-## Requirements
+**Cowork & remote**
 
-- Rust 1.99+, Node 24+, npm 11+.
-- A local OpenCode server: `opencode serve` (default `http://127.0.0.1:4096`).
-- **To run the GUI only**: the Tauri system dependencies. Print the exact
-  apt command with `scripts/setup-system-deps.sh` (run it as your user; an agent
-  will not use `sudo`). They are **not** needed to build/test the core.
+- Shared sessions with group roles, whitelist, presence and a pinned project.
+- Connect the app to any OpenCode server — local, LAN or remote — from the
+  server settings, no terminal needed.
 
-## Verify (headless — no system deps needed)
+## Screenshots
 
-```sh
-bash scripts/verify-headless.sh
-```
+Real captures are pending (this machine's display is not reachable from a shell;
+see [`docs/screenshots/README.md`](docs/screenshots/README.md) for the capture
+list). The README embeds them at:
 
-It runs: `cargo metadata` (workspace), `cargo fmt --check`, `cargo check -p
-orquestador-core`, `cargo test -p orquestador-core`, `cargo clippy
--p orquestador-core -- -D warnings`, then `npm install && npm run build` in
-`frontend/`, plus the `todo!`/`unimplemented!` audit.
+- `docs/screenshots/main-window.png` — the control tower.
+- `docs/screenshots/agent-panes.png` — per-agent panes with branch chips.
+- `docs/screenshots/workspace.png` — editor, diff and git view.
 
-### Individually
+## Installation
 
-```sh
-cargo test -p orquestador-core          # core unit tests (client, SSE, state)
-cargo clippy -p orquestador-core --all-targets -- -D warnings
-cd frontend && npm install && npm run build
-(cd src-tauri && cargo metadata --format-version 1 >/dev/null)   # manifest only
-```
+Orquestador is a desktop app for **Windows, macOS and Linux**.
 
-## Run the app (after installing system deps)
+**From a release** (once the first release is published): grab the installer
+for your platform —
 
-```sh
-bash scripts/setup-system-deps.sh     # prints the sudo apt-get command
-npx @tauri-apps/cli dev               # dev window + Vite on :1420
-```
+- **Windows** — `.msi` or `.exe` installer (WebView2 is built into
+  Windows 10/11).
+- **macOS** — `.dmg` (Intel and Apple Silicon).
+- **Linux** — `.deb` (Debian/Ubuntu), `.rpm` (Fedora/openSUSE) or the portable
+  `.AppImage`.
 
-Configuration via environment: `OPENCODE_SERVER_BASE_URL`,
-`OPENCODE_SERVER_PASSWORD` (optional HTTP basic auth, user `opencode`).
+**Build from source** — see [`docs/INSTALL.md`](docs/INSTALL.md) for the
+per-OS prerequisites and the exact commands.
 
-## Layout
+## Quick start
 
-```
-crates/orquestador-core/   # all logic (headless, tested)
-src-tauri/                 # Tauri shell (standalone workspace, needs webkit2gtk)
-frontend/                  # Vite + React + TS + Monaco
-scripts/                   # setup-system-deps.sh · install-deps.sh · verify-headless.sh
-docs/                      # PLAN.md · ARCHITECTURE.md · ROADMAP.md · IMPLEMENTATION_PLAN.md
-                           # IMPLEMENTATION_NOTES.md · AUDIT.md · RUNBOOK.md
-```
+1. Make sure an OpenCode server is reachable: `opencode serve` (default
+   `http://127.0.0.1:4096`). Point the app at your own server — local, LAN or
+   remote — via the in-app server settings, or the `OPENCODE_SERVER_BASE_URL`
+   and `OPENCODE_SERVER_PASSWORD` environment variables.
+2. Install the desktop system dependencies — on Linux,
+   `bash scripts/setup-system-deps.sh` prints the exact command; see
+   [`docs/INSTALL.md`](docs/INSTALL.md) for Windows and macOS.
+3. Run the app:
 
-New here? Follow **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)** for the first run.
+   ```sh
+   npx @tauri-apps/cli dev
+   ```
+
+## How it works
+
+- **`crates/orquestador-core`** — Rust core: typed HTTP client, SSE event hub,
+  session/state model. No Tauri dependency, so it compiles and tests headless
+  (77 unit tests).
+- **`src-tauri/`** — the Tauri 2 desktop shell (standalone workspace).
+- **`frontend/`** — Vite + React + TypeScript + Monaco (editor and diff),
+  bundled locally.
+
+Verify headless with `bash scripts/verify-headless.sh`. Full architecture:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Documentation
+
+| Doc | What it covers |
+| --- | --- |
+| [`docs/INSTALL.md`](docs/INSTALL.md) | Generic install for Windows / macOS / Linux |
+| [`docs/LAUNCH.md`](docs/LAUNCH.md) | 90-second demo and where the project is shared |
+| [`docs/COWORK.md`](docs/COWORK.md) | Shared sessions: roles, whitelist, presence |
+| [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | First run, day-to-day operations |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core, shell and frontend design |
+| [`docs/PLAN.md`](docs/PLAN.md) | Master contract and feature plan |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Future directions |
+| [`docs/AUDIT.md`](docs/AUDIT.md) | Independent audit results |
+| `SPEC.md` | Canonical specification |
+
+## Development
+
+See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md): feature branches,
+Conventional Commits with scopes, headless verification, and the review flow.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
