@@ -1,17 +1,49 @@
 /* Orquestador — control tower for OpenCode sub-agents. */
 
 :root {
-  --bg: #16151a;
-  --surface: #1e1d24;
-  --surface-alt: #23222a;
-  --border: #302e38;
-  --text: #ecebf0;
-  --muted: #9b98a8;
-  --brand: #3ba55d;
-  --brand-text: #ffffff;
-  --secondary: #4c9eeb;
-  --warning: #f5a524;
-  --error: #e5484d;
+  /* -- palette: "Night Console" ------------------------------------------- */
+  --bg: #0b0e13;
+  --surface: #12161e;
+  --surface-alt: #191e28;
+  --surface-raised: #202633;
+  --border: #242b38;
+  --border-strong: #333c4d;
+  --text: #e9edf5;
+  --muted: #93a0b6;
+  --brand: #34d07f;
+  --brand-text: #04150c;
+  --secondary: #6aa6ff;
+  --accent: #29d3c4;
+  --warning: #ffb02e;
+  --error: #ff5a5f;
+
+  /* -- type scale --------------------------------------------------------- */
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-base: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 22px;
+  --fs-2xl: 28px;
+
+  /* -- space scale -------------------------------------------------------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* -- radius ------------------------------------------------------------- */
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 14px;
+
+  /* -- elevation ---------------------------------------------------------- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.45);
+
   --mono: ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas,
     monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
@@ -19,17 +51,23 @@
 }
 
 html[data-theme="light"] {
-  --bg: #fafaf8;
+  --bg: #f6f7f9;
   --surface: #ffffff;
-  --surface-alt: #f3f2ee;
-  --border: #dfddd6;
-  --text: #1d1c19;
-  --muted: #5f5b52;
-  --brand: #148f61;
+  --surface-alt: #eef1f5;
+  --surface-raised: #ffffff;
+  --border: #dce1e9;
+  --border-strong: #c2cad6;
+  --text: #0f131a;
+  --muted: #5a6474;
+  --brand: #0d8f52;
   --brand-text: #ffffff;
-  --secondary: #1f7fc9;
-  --warning: #9a6700;
-  --error: #d6393f;
+  --secondary: #1a6fd4;
+  --accent: #0e7490;
+  --warning: #8a5a00;
+  --error: #cc3340;
+
+  --shadow-1: 0 1px 2px rgba(15, 19, 26, 0.08);
+  --shadow-2: 0 10px 30px rgba(15, 19, 26, 0.14);
 }
 
 * {
@@ -269,7 +307,7 @@ summary:focus-visible {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-2);
 }
 
 .skills-popover__empty {
@@ -339,7 +377,7 @@ summary:focus-visible {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-2);
 }
 
 .skills-menu button {
@@ -975,7 +1013,7 @@ html[data-theme="light"] .drop-indicator {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-1);
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -1468,7 +1506,7 @@ html[data-theme="light"] .drop-indicator {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 18px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-2);
 }
 
 .approval__head {
@@ -1833,7 +1871,7 @@ html[data-theme="light"] .drop-indicator {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-2);
 }
 
 .notifications__head {
@@ -2149,7 +2187,7 @@ html[data-theme="light"] .drop-indicator {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-2);
 }
 
 .gitviewer__menuitem {
