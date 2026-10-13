@@ -210,6 +210,11 @@ pub async fn get_presence(bridge: State<'_, AppBridge>) -> Result<Vec<PresenceEn
 }
 
 #[tauri::command]
+pub async fn get_workspace_scope(bridge: State<'_, AppBridge>) -> Result<Option<String>, String> {
+    bridge.client().workspace_scope().await.map_err(stringify)
+}
+
+#[tauri::command]
 pub async fn session_statuses(
     bridge: State<'_, AppBridge>,
 ) -> Result<HashMap<String, SessionStatus>, String> {

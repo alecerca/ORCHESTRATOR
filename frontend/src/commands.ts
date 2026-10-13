@@ -149,6 +149,14 @@ export const removeProxyMember = (path: string, name: string) =>
  */
 export const getPresence = () => invoke<PresenceEntry[]>("get_presence");
 
+/**
+ * The project the workspace is pinned to (absolute path), or `null` when the
+ * app decides. This value comes from the proxy (`GET /orquestador/whoami`) and
+ * never rejects; a transport error, 404, 401, malformed body, or `project: null`
+ * all return `null`.
+ */
+export const getWorkspaceScope = () => invoke<string | null>("get_workspace_scope");
+
 // -- projects -----------------------------------------------------------------
 /** Every project the running server knows about. */
 export const listProjects = () => invoke<Project[]>("list_projects");

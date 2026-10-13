@@ -72,6 +72,11 @@ pub trait AgentBackend: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// The project the workspace is pinned to, or `None` when the app decides.
+    async fn workspace_scope(&self) -> Result<Option<String>, CoreError> {
+        Ok(None)
+    }
+
     // sessions
     async fn list_sessions(&self) -> Result<Vec<Session>, CoreError>;
     async fn create_session(&self, body: &CreateSessionBody) -> Result<Session, CoreError>;

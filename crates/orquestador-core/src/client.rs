@@ -277,6 +277,34 @@ impl OpenCodeClient {
         Ok(res.json::<Vec<PresenceEntry>>().await.unwrap_or_default())
     }
 
+    /// `GET /orquestador/whoami` → proxy reports the pinned `project` (or `null`).
+    ///
+    /// The method must **never** return an error. On transport error, non-2xx
+    /// status, unparseable body, `null`, or a missing `project` field, degrade
+    /// to `Ok(None)`. A `404` means "no proxy in front"; `401` means "no credentials".
+    pub async fn workspace_scope(&self) -> Result<Option<String>, CoreError> {
+        let res = match self
+            .request(reqwest::Method::GET, "/orquestador/whoami")
+            .send()
+            .await
+        {
+            Ok(res) => res,
+            Err(_) => return Ok(None),
+        };
+        if !res.status().is_success() {
+            return Ok(None);
+        }
+        #[derive(serde::Deserialize)]
+        struct Whoami {
+            #[serde(default)]
+            project: Option<Option<String>>,
+        }
+        match res.json::<Whoami>().await {
+            Ok(w) => Ok(w.project.flatten()),
+            Err(_) => Ok(None),
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Sessions
     // -----------------------------------------------------------------------
@@ -1372,5 +1400,64 @@ mod tests {
         .unwrap();
         let entries = client.presence().await.expect("presence never errors");
         assert!(entries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn workspace_scope_parses_the_pin() {
+        let server = MockServer::start(
+            "200 OK",
+            r#"{"name":"alice","role":"editor","project":"/home/owner/team-app"}"#,
+        )
+        .await;
+        let client = server.client(None).await;
+        let scope = client.workspace_scope().await.expect("never errors");
+        assert_eq!(scope.as_deref(), Some("/home/owner/team-app"));
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("GET /orquestador/whoami HTTP/1.1"),
+            "got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn workspace_scope_is_none_on_404() {
+        let server = MockServer::start("404 Not Found", r#"{"message":"not found"}"#).await;
+        let client = server.client(None).await;
+        let scope = client.workspace_scope().await.expect("never errors");
+        assert!(scope.is_none());
+    }
+
+    #[tokio::test]
+    async fn workspace_scope_is_none_on_transport_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        let client = OpenCodeClient::new(ClientConfig {
+            base_url: format!("http://{addr}"),
+            ..ClientConfig::default()
+        })
+        .unwrap();
+        let scope = client.workspace_scope().await.expect("never errors");
+        assert!(scope.is_none());
+    }
+
+    #[tokio::test]
+    async fn workspace_scope_is_none_on_malformed_body() {
+        let server = MockServer::start("200 OK", "{not json").await;
+        let client = server.client(None).await;
+        let scope = client.workspace_scope().await.expect("never errors");
+        assert!(scope.is_none());
+    }
+
+    #[tokio::test]
+    async fn workspace_scope_is_none_when_project_is_null() {
+        let server = MockServer::start(
+            "200 OK",
+            r#"{"name":"alice","role":"editor","project":null}"#,
+        )
+        .await;
+        let client = server.client(None).await;
+        let scope = client.workspace_scope().await.expect("never errors");
+        assert!(scope.is_none());
     }
 }
