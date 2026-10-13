@@ -357,9 +357,10 @@ Without a pin, the request path is byte-identical to before.
   empty list — but can hide the project). Canonicalization belongs to Option A.
 - The app's own project label still comes from its local `server.json`, so it can
   show a stale name while every request is pinned; the app reads `project` from
-  `whoami` and shows the picker as locked (`0302753`). Still pending: the
-  Settings screen's server-directory field, and a manual smoke test of the
-  locked picker (the frontend has no test runner — only typecheck).
+  `whoami` and shows the picker as locked (`0302753`). The picker was the only
+  place the scope could be edited, so the app no longer offers a choice the proxy
+  would ignore. Still pending: a manual smoke test of the locked picker (the
+  frontend has no test runner — only typecheck), plus the host UI below.
 - There is no host UI to set the pin: edit `proxy.json` (the Members dialog
   preserves the key because it edits the raw document).
 
@@ -486,7 +487,9 @@ Both are additive config, so neither breaks a current deployment.
   `useWorkspaceScope` hook that locks the `ProjectPicker` label and popover when
   a pin is set. Verified: `cargo test --workspace` → core 111, proxy 56 + 18,
   0 failed; `src-tauri --lib` → 18; `npm run typecheck` → exit 0. Pending:
-  manual smoke of the locked picker; the Settings directory field is untouched.
+  manual smoke of the locked picker. The picker was the only scope editor in
+  the app (Settings and Join never exposed a directory), so no other surface
+  needs the lock.
 
 - 2026-10-12: **Phase 5 Option B implemented** `72e803d` (T11, proxy-only): the
   optional `project_directory` pin drops the client's directory header and
