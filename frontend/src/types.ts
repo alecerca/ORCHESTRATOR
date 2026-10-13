@@ -297,6 +297,24 @@ export interface GitBranch {
   current: boolean;
 }
 
+/** How a working-tree path differs from HEAD, as returned by `git_status`. */
+export type GitChangeKind = "modified" | "added" | "deleted" | "untracked";
+
+/** One working-tree path that differs from HEAD, with its change kind. */
+export interface GitChange {
+  path: string;
+  kind: GitChangeKind;
+}
+
+/** How the HEAD revision of a path reads, as returned by `git_show_file`. */
+export type HeadFileKind = "text" | "binary" | "missing";
+
+/** The HEAD revision of one path: its kind and, for text, its content. */
+export interface HeadFile {
+  kind: HeadFileKind;
+  content: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Files
 // ---------------------------------------------------------------------------

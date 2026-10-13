@@ -2018,6 +2018,12 @@ html[data-theme="light"] .drop-indicator {
   display: flex;
 }
 
+.editor-panel__diff {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 /* -- file viewer (a file tab inside a workspace group) ----------------------- */
 
 .file-viewer {
@@ -2368,4 +2374,124 @@ html[data-theme="light"] .drop-indicator {
   padding: 12px 16px;
   color: var(--error);
   font-size: 13px;
+}
+
+/* -- diff panel (working-tree changes) -------------------------------------- */
+
+.diff-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.diff-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.diff-panel__list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.diff-panel__muted {
+  margin: 0;
+  padding: 14px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* A quiet, idle error (e.g. "no project directory selected"), never a crash. */
+.diff-panel__error {
+  margin: 0;
+  padding: 12px 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.diff-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.diff-row:hover {
+  background: var(--surface);
+}
+
+.diff-row__path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-badge {
+  flex-shrink: 0;
+  min-width: 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: center;
+}
+
+.diff-badge--modified {
+  color: var(--warning);
+}
+
+.diff-badge--added {
+  color: var(--brand);
+}
+
+.diff-badge--deleted {
+  color: var(--error);
+}
+
+.diff-badge--untracked {
+  color: var(--muted);
+}
+
+/* -- diff viewer (working tree vs HEAD) ------------------------------------- */
+
+.diff-viewer {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.diff-viewer__editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.diff-viewer__muted {
+  margin: 0;
+  padding: 20px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.diff-viewer__error {
+  margin: 0;
+  padding: 10px 16px;
+  color: var(--error);
+  font-size: 14px;
 }

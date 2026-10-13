@@ -9,7 +9,7 @@ import {
 import { tabSessionId, type GroupNode, type Tab } from "../tabs";
 import type { SessionSnapshot } from "../types";
 import { baseName, shortId } from "../utils";
-import { FileIcon, SkillIcon, TerminalIcon } from "./icons";
+import { DiffIcon, FileIcon, SkillIcon, TerminalIcon } from "./icons";
 
 /** Custom MIME type carrying the dragged tab payload (see PaneGrid's drop targets). */
 export const TAB_DRAG_MIME = "application/x-orquestador-tab";
@@ -23,12 +23,14 @@ interface Props {
 }
 
 /**
- * Tab title: a file tab shows its basename, a skill tab its skill name, and a
- * session tab its title, falling back to its short id.
+ * Tab title: a file tab shows its basename, a skill tab its skill name, a diff
+ * tab its path's basename (like a file tab), and a session tab its title,
+ * falling back to its short id.
  */
 function tabTitle(tab: Tab, sessions: SessionSnapshot[]): string {
   if (tab.kind === "file") return baseName(tab.path);
   if (tab.kind === "skill") return tab.name;
+  if (tab.kind === "diff") return baseName(tab.path);
   const sessionId = tabSessionId(tab);
   if (!sessionId) return tab.id;
   const snapshot = sessions.find((entry) => entry.session.id === sessionId);
@@ -128,6 +130,8 @@ export function TabStrip({ group, sessions, onActivateTab, onCloseTab, onSplit }
                   <FileIcon name={tab.path} size={14} />
                 ) : tab.kind === "skill" ? (
                   <SkillIcon />
+                ) : tab.kind === "diff" ? (
+                  <DiffIcon />
                 ) : (
                   <TerminalIcon />
                 )}

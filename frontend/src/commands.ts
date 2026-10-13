@@ -12,8 +12,10 @@ import type {
   FileNode,
   FileStatus,
   GitBranch,
+  GitChange,
   GitCommitFile,
   GitLog,
+  HeadFile,
   Health,
   MessageBundle,
   PermissionResponse,
@@ -204,4 +206,17 @@ export const gitBranches = () => invoke<GitBranch[]>("git_branches");
  */
 export const gitCheckout = (name: string) =>
   invoke<void>("git_checkout", { name });
+
+/**
+ * The active project's working-tree changes: every path that differs from HEAD,
+ * each with its change kind. Read-only.
+ */
+export const gitStatus = () => invoke<GitChange[]>("git_status");
+
+/**
+ * The HEAD revision of one repository-relative path: its kind and, for text,
+ * its content. Read-only. Rejects for empty, absolute or `..`-containing paths.
+ */
+export const gitShowFile = (path: string) =>
+  invoke<HeadFile>("git_show_file", { path });
 

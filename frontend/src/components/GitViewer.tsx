@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { gitBranches, gitCheckout, gitCommitFiles, gitLog } from "../commands";
-import type { GitBranch, GitCommitFile, GitLog } from "../types";
+import { gitCheckout, gitCommitFiles, gitLog } from "../commands";
+import type { GitCommitFile, GitLog } from "../types";
 import { describeError } from "../utils";
+import { BranchSwitcher } from "./BranchSwitcher";
 import { SplitDivider } from "./SplitDivider";
 
 /** Format an ISO-8601 commit date for the compact commit row. */
@@ -36,15 +37,6 @@ export function GitViewer({ onBranchChanged }: { onBranchChanged?: () => void })
   // The commits/files split: session-only weights, commits on top.
   const panesRef = useRef<HTMLDivElement>(null);
   const [sizes, setSizes] = useState<number[]>([0.4, 0.6]);
-
-  // Branch switcher: the dropdown, its lazily-loaded branch list, and the
-  // in-flight/error state of a checkout.
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [branches, setBranches] = useState<GitBranch[]>([]);
-  const [branchesLoading, setBranchesLoading] = useState(false);
-  const [switching, setSwitching] = useState(false);
-  const [switchError, setSwitchError] = useState<string | null>(null);
 
   // Guards late async writes so a checkout that resolves after unmount never
   // updates state.
@@ -109,131 +101,27 @@ export function GitViewer({ onBranchChanged }: { onBranchChanged?: () => void })
     };
   }, [selected]);
 
-  // The local branch list is loaded lazily when the menu opens (and refreshed
-  // again after a successful checkout).
-  const loadBranches = useCallback(async () => {
-    setBranchesLoading(true);
-    try {
-      const result = await gitBranches();
-      if (!mounted.current) return;
-      setBranches(result);
-    } catch (cause) {
-      if (!mounted.current) return;
-      setBranches([]);
-      setSwitchError(describeError(cause));
-    } finally {
-      if (mounted.current) setBranchesLoading(false);
-    }
-  }, []);
-
-  // While the menu is open: Escape and outside pointerdown close it, and the
-  // branch list is fetched on first open.
-  useEffect(() => {
-    if (!menuOpen) return;
-    void loadBranches();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
-    };
-    const onPointerDown = (event: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("pointerdown", onPointerDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("pointerdown", onPointerDown);
-    };
-  }, [menuOpen, loadBranches]);
-
-  const currentBranch = log?.branch ?? null;
-  const branchLabel = !log
-    ? "—"
-    : !log.branch || log.branch === "HEAD"
-      ? "detached"
-      : log.branch;
-
+  // The current branch is carried by the shared BranchSwitcher, which also owns
+  // the branch list and the in-flight/error state of a checkout.
   const selectBranch = useCallback(
     async (name: string) => {
-      // Picking the branch already checked out is a no-op: just close.
-      if (name === currentBranch) {
-        setMenuOpen(false);
-        return;
-      }
-      setSwitching(true);
-      setSwitchError(null);
-      try {
-        await gitCheckout(name);
-        if (!mounted.current) return;
-        await loadLog();
-        if (!mounted.current) return;
-        await loadBranches();
-        if (!mounted.current) return;
-        setMenuOpen(false);
-        onBranchChanged?.();
-      } catch (cause) {
-        if (mounted.current) setSwitchError(describeError(cause));
-      } finally {
-        if (mounted.current) setSwitching(false);
-      }
+      await gitCheckout(name);
+      if (!mounted.current) return;
+      await loadLog();
+      if (!mounted.current) return;
+      onBranchChanged?.();
     },
-    [currentBranch, loadBranches, loadLog, onBranchChanged],
+    [loadLog, onBranchChanged],
   );
 
   return (
     <div className="gitviewer">
       <div className="gitviewer__header">
-        <div className="gitviewer__branchwrap" ref={menuRef}>
-          <button
-            type="button"
-            className="gitviewer__branch"
-            title={branchLabel}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
-            disabled={switching || !log}
-          >
-            <span className="gitviewer__branchname">{branchLabel}</span>
-            <span className="gitviewer__chevron" aria-hidden="true">
-              ▾
-            </span>
-          </button>
-          {menuOpen && (
-            <div className="gitviewer__menu" role="menu" aria-label="Switch branch">
-              {branchesLoading && branches.length === 0 ? (
-                <p className="gitviewer__muted">Loading branches…</p>
-              ) : branches.length === 0 ? (
-                <p className="gitviewer__muted">No local branches.</p>
-              ) : (
-                branches.map((branch) => (
-                  <button
-                    key={branch.name}
-                    type="button"
-                    role="menuitem"
-                    className={`gitviewer__menuitem${
-                      branch.current ? " is-current" : ""
-                    }`}
-                    aria-disabled={branch.current || switching}
-                    disabled={switching}
-                    onClick={() => void selectBranch(branch.name)}
-                    title={branch.name}
-                  >
-                    <span className="gitviewer__branchname">{branch.name}</span>
-                    {branch.current && (
-                      <span className="gitviewer__currentmark">current</span>
-                    )}
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-        {switchError && (
-          <span className="gitviewer__switch-error" role="alert">
-            {switchError}
-          </span>
-        )}
+        <BranchSwitcher
+          branch={log?.branch ?? null}
+          onSelect={selectBranch}
+          disabled={!log}
+        />
         <button
           type="button"
           className="gitviewer__refresh"

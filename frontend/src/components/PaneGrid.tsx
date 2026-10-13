@@ -17,6 +17,7 @@ import {
 } from "../tabs";
 import type { SessionSnapshot } from "../types";
 import { AgentPane } from "./AgentPane";
+import { DiffViewer } from "./DiffViewer";
 import { FileViewer } from "./FileViewer";
 import { GroupInfoBar } from "./GroupInfoBar";
 import { SkillEditor } from "./SkillEditor";
@@ -188,7 +189,8 @@ function dropZone(event: DragEvent<HTMLDivElement>): DropSide {
 /**
  * One split group: its tab strip, the thin info bar for the active tab, and the
  * active tab's document — an agent transcript for a `session` tab, the file
- * viewer for a `file` tab, or the skill editor for a `skill` tab. Clicking
+ * viewer for a `file` tab, the diff viewer for a `diff` tab, or the skill
+ * editor for a `skill` tab. Clicking
  * anywhere in the group makes it active (where the next opened tab lands). Its
  * content area is a drop target for tabs dragged from any group.
  */
@@ -208,6 +210,8 @@ function GroupView({
   const sessionId = activeTab ? tabSessionId(activeTab) : null;
   const filePath = activeTab ? tabPath(activeTab) : null;
   const skill = activeTab && activeTab.kind === "skill" ? activeTab : null;
+  const diffPath =
+    activeTab && activeTab.kind === "diff" ? activeTab.path : null;
   const snapshot = sessionId
     ? sessions.find((entry) => entry.session.id === sessionId)
     : undefined;
@@ -281,6 +285,9 @@ function GroupView({
         )}
         {!sessionId && filePath && (
           <FileViewer path={filePath} theme={theme} filesVersion={filesVersion} />
+        )}
+        {!sessionId && !filePath && diffPath && (
+          <DiffViewer key={diffPath} path={diffPath} theme={theme} />
         )}
         {skill && <SkillEditor key={skill.id} tabId={skill.id} name={skill.name} theme={theme} />}
         {dropSide && (
