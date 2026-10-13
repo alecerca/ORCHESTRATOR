@@ -25,14 +25,15 @@ GUI, not the terminal.
 - Backend-aware skills panel (reads the connected agent's skill roots).
 
 See [`docs/LAUNCH.md`](docs/LAUNCH.md) for the 90-second demo and where the
-project is shared.
+project is shared, and [`docs/COWORK.md`](docs/COWORK.md) to run the app for a
+group — roles, whitelist, presence and the pinned project.
 
 > **Status: implemented and audited.** The headless core is verified (77 unit
 > tests), the frontend is complete and building, and an independent audit passed
 > (`docs/AUDIT.md`). The Tauri shell is scaffolded and needs the system
 > dependencies below to compile. See `docs/PLAN.md` (master contract),
 > `docs/ARCHITECTURE.md`, `docs/ROADMAP.md` (future directions), `docs/AUDIT.md`,
-> `docs/RUNBOOK.md` (first run),
+> `docs/RUNBOOK.md` (first run), `docs/COWORK.md` (shared project),
 > `docs/IMPLEMENTATION_NOTES.md`, and the canonical `SPEC.md`.
 
 ## Stack

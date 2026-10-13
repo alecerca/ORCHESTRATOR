@@ -73,7 +73,7 @@ Config path resolution (first match wins):
   "upstream_password": "optional-fallback",
   "project_directory": "/home/owner/projects/team-app",
   "users": [
-    { "name": "alice", "token": "change-me-1", "role": "editor" },
+    { "name": "alice", "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$...", "role": "editor" },
     { "name": "bob",   "token": "change-me-2", "role": "viewer" }
   ]
 }
@@ -87,13 +87,14 @@ Config path resolution (first match wins):
 | `upstream_password` | no | Fallback upstream password. `ORQUESTADOR_UPSTREAM_PASSWORD` **wins** over this field. |
 | `project_directory` | no | Optional absolute path that pins the whole shared instance to one project directory (see below). Absent = unrestricted. |
 | `users[].name` | yes | Client username; must be unique. |
-| `users[].token` | yes | Client token (the password half of Basic auth). |
+| `users[].password_hash` | one of the two | Argon2id PHC string. Preferred; written by `adduser` or the app's Members dialog. |
+| `users[].token` | one of the two | Legacy **plaintext** password. Accepted for compatibility. |
 | `users[].role` | yes | `viewer` or `editor`. |
 
 Config is validated on load: non-empty `listen`/`upstream`/`upstream_username`,
-at least one user, unique names, non-empty tokens, and a non-empty **absolute**
-`project_directory` when it is set. Invalid configs exit non-zero with a message
-on stderr.
+at least one user, unique names, a non-empty credential (`password_hash` or
+`token`) per user, and a non-empty **absolute** `project_directory` when it is
+set. Invalid configs exit non-zero with a message on stderr.
 
 ### Project containment (`project_directory`)
 
@@ -120,10 +121,12 @@ change required**. Set:
 
 - `base_url` → the proxy's address (e.g. `http://host:4097`)
 - `username` → the user's `name` from `proxy.json`
-- `password` → the user's `token` from `proxy.json`
+- `password` → the user's own password (hashed in `password_hash`) or its
+  `token` from `proxy.json`
 
-The client sends `Authorization: Basic base64(name:token)`; the proxy resolves
-`name -> {token, role}` and injects the real upstream credentials.
+The client sends `Authorization: Basic base64(name:password)`; the proxy resolves
+the name, verifies the password (Argon2id hash, or the legacy `token`), and
+injects the real upstream credentials.
 
 ## Audit log
 
