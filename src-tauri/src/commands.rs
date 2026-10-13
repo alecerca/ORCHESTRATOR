@@ -913,3 +913,30 @@ pub async fn git_show_file(
         .await
         .map_err(stringify)?
 }
+
+/// Write `content` to a repository-relative text file in the active project
+/// directory — the editor's Ctrl+S / save-prompt path. `path` passes the same
+/// guard as `git_show_file` (non-empty, repository-relative, no `..`) before
+/// the write runs on a blocking thread.
+#[tauri::command]
+pub async fn write_file(
+    app: tauri::AppHandle,
+    path: String,
+    content: String,
+) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("invalid file path: empty".to_string());
+    }
+    if path.starts_with('/') {
+        return Err("invalid file path: must be repository-relative".to_string());
+    }
+    if path.contains("..") {
+        return Err("invalid file path: must not contain '..'".to_string());
+    }
+    let dir = active_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        orquestador_core::files::write_text_file(&dir, &path, &content)
+    })
+    .await
+    .map_err(stringify)?
+}
