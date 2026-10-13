@@ -329,13 +329,37 @@ Enforcement in `handle`, **before** forwarding:
 CLI: `orquestador-proxy adduser <name> --role <editor|viewer> --project <path>`
 (repeatable).
 
-### Option B — one pinned project for the whole shared instance (simplest)
+### Option B — one pinned project for the whole shared instance (IMPLEMENTED)
 
-A top-level `projectDirectory` (or a `--directory` flag): the proxy **strips any
-client** `X-Opencode-Directory` and injects the pinned path. Every client, no
-matter what it sends, works on the same project. No per-user bookkeeping, no
-path comparison, no response filtering — safety by construction, and it matches
-the ordinary "cowork on one project" case.
+A top-level `project_directory` (snake_case, like the rest of `proxy.json`): the
+proxy **drops any client** `x-opencode-directory` and injects the pinned path.
+Every client, no matter what it sends, works on the same project — safety by
+construction, no per-user bookkeeping and no path comparison. It matches the
+ordinary "cowork on one project" case.
+
+**Implemented** in `72e803d` (T11). Beyond the original sketch it also:
+
+- **filters `GET /project`** to the pinned project, so a client cannot even
+  enumerate the host's other projects (this is the only buffered response in the
+  proxy — `/event` keeps streaming; a non-2xx or non-array body passes through
+  unchanged);
+- **reports the pin** as `project` on `GET /orquestador/whoami`, so the app can
+  learn it instead of trusting its own stored directory;
+- validates the pin at load: non-empty and absolute. It deliberately does **not**
+  check that the path exists, so `from_json_str` stays pure and testable.
+
+Without a pin, the request path is byte-identical to before.
+
+**Known rough edges / follow-ups:**
+
+- Matching is exact string equality on `worktree`; a trailing slash or a
+  symlinked upstream path would filter the intended project out (fails safe —
+  empty list — but can hide the project). Canonicalization belongs to Option A.
+- The app's own project label still comes from its local `server.json`, so it can
+  show a stale name while every request is pinned; the app should read `project`
+  from `whoami` and show the picker as locked. Not built yet.
+- There is no host UI to set the pin: edit `proxy.json` (the Members dialog
+  preserves the key because it edits the raw document).
 
 ### Option C — disable the Project button for remote clients
 
@@ -453,6 +477,14 @@ Both are additive config, so neither breaks a current deployment.
   proxy and that the picker accepts arbitrary absolute paths. Not implemented —
   it waits for a decision between Option B (pin one project) and Option A
   (per-user allowlist).
+- 2026-10-12: **Phase 5 Option B implemented** `72e803d` (T11, proxy-only): the
+  optional `project_directory` pin drops the client's directory header and
+  injects the pinned path, filters `GET /project` to the pin, and reports
+  `project` on `/orquestador/whoami`; unpinned traffic is byte-identical.
+  Verified: `cargo test -p orquestador-proxy` → 56 lib + 18 integration (was
+  48 + 12); `cargo test --workspace` → core 106, proxy 56 + 18, 0 failed. Parent
+  spot check reproduced. Pending: the app-side counterpart (read `project` from
+  `whoami`, show the picker locked) and a host UI to set the pin.
 
 ## Delivery / RDD
 
@@ -460,10 +492,10 @@ Both are additive config, so neither breaks a current deployment.
 - Reviewed boundary: branch point `6b005bb` on `main` (nothing reviewed yet).
 - `gentle-ai review assess --base-ref 6b005bb --committed-only` over
   `6b005bb..HEAD` → **high** (`hot_path`: `crates/orquestador-proxy/src/auth.rs`),
-  35 paths / 3282 changed lines, `review_due: true` (`high_risk`).
-- Per-task RDD record (Phase 4): T8/T9/T10 each assessed on the branch range →
-  `high` / `review_due: true`; the review stays blocked by the consent envelope
-  below, so all three are recorded as **due, not reviewed**.
+  36 paths / 3943 changed lines, `review_due: true` (`high_risk`).
+- Per-task RDD record (Phase 4 + Phase 5): T8/T9/T10/T11 each assessed on the
+  branch range → `high` / `review_due: true`; the review stays blocked by the
+  consent envelope below, so all four are recorded as **due, not reviewed**.
 - The preflight returned a `review.start` whose relay yields a
   `gentle-ai.review-integration.consent/v3` envelope. **Not started:** this
   runtime has no native `question` tool to present the prompt and the contract
