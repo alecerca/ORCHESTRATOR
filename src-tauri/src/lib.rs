@@ -129,6 +129,7 @@ pub fn run() {
             commands::git_checkout,
             commands::git_status,
             commands::git_show_file,
+            commands::git_discard_file,
             commands::write_file,
             commands::get_proxy_members,
             commands::add_proxy_member,
