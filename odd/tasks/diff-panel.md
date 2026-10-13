@@ -134,4 +134,16 @@ changes **live** and opens a side-by-side diff of any changed file.
 ## Progress log
 
 - [x] Feature document created (2026-10-13) on `main`.
-- [ ] D1..D5 pending.
+- [x] D1..D5 implemented and reviewed by the user in the running app (dummy
+  M/D/U files verified working).
+- [x] **User-reported fix (accepted)**: the webview's overlay horizontal
+  scrollbar on `.tabstrip` expanded on hover and swallowed the strip (blocking
+  the close buttons). Replaced with hidden native scrollbar + `‹ ›` arrow
+  buttons shown only while the strip overflows (`TabStrip.tsx` + `styles.css`).
+- [ ] D1..D5 formal verification, RDD assessment on the work-unit commits
+  (assessment ran: medium/slice_budget_reached → candidate review declined by
+  the user, `declined_this_candidate`), push + merge to `main` (authorized,
+  pending final OK).
+- [ ] `cargo build` note: the shell does not recompile when
+  `frontend/dist` changes (no `rerun-if-changed`); after a frontend build,
+  force with `cargo clean -p orquestador && cargo build`.
