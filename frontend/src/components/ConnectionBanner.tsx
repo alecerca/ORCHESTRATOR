@@ -1,4 +1,5 @@
 import { useAppState } from "../store";
+import { useServerConfig } from "../serverConfig";
 
 interface Props {
   /**
@@ -19,6 +20,7 @@ interface Props {
  */
 export function ConnectionBanner({ ready }: Props) {
   const state = useAppState();
+  const { baseUrl } = useServerConfig();
   if (!ready || state.connected) return null;
 
   return (
@@ -27,7 +29,8 @@ export function ConnectionBanner({ ready }: Props) {
         ⚠
       </span>
       <span className="connection-banner__text">
-        Lost connection to <code>opencode serve</code> — reconnecting…
+        Can’t reach <code>opencode serve</code> at <code>{baseUrl}</code> — retrying…
+        Start it with <code>opencode serve</code>, or change the address in Settings.
       </span>
     </div>
   );

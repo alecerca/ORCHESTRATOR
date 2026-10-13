@@ -307,8 +307,11 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings, onProjectCh
               {pending} approval{pending > 1 ? "s" : ""}
             </span>
           )}
-          <span className="topbar__root" title={rootId ?? "no root session"}>
-            orchestrator: {rootTitle ?? "—"}
+          <span
+            className="topbar__root"
+            title={rootId ? `Orchestrator session: ${rootId}` : "No orchestrator session yet"}
+          >
+            {rootTitle ? `orchestrator: ${rootTitle}` : "no orchestrator"}
           </span>
           <span className="topbar__version">
             {state.server_version ? `v${state.server_version}` : "—"}

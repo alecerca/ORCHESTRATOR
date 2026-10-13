@@ -35,6 +35,7 @@ export function FollowUpInput({ sessionId }: Props) {
       <input
         type="text"
         className="followup__input"
+        aria-label="Follow-up message to this agent"
         placeholder="Send a follow-up to this agent… (Enter)"
         value={text}
         onChange={(event) => setText(event.target.value)}
@@ -53,7 +54,11 @@ export function FollowUpInput({ sessionId }: Props) {
       >
         {sending ? "…" : "Send"}
       </button>
-      {error && <p className="followup__error">{error}</p>}
+      {error && (
+        <p className="followup__error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

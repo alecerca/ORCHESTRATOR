@@ -12,6 +12,7 @@ interface Props {
 export function FileTree({ onOpenFile, activePath }: Props) {
   const [roots, setRoots] = useState<FileNode[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,6 +22,8 @@ export function FileTree({ onOpenFile, activePath }: Props) {
         if (!cancelled) setRoots(nodes);
       } catch (cause) {
         if (!cancelled) setError(describeError(cause));
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
@@ -30,7 +33,17 @@ export function FileTree({ onOpenFile, activePath }: Props) {
 
   return (
     <div className="filetree">
-      {error && <p className="filetree__error">{error}</p>}
+      {error && (
+        <p className="filetree__error" role="alert">
+          {error}
+        </p>
+      )}
+      {loading && roots.length === 0 && !error && (
+        <p className="filetree__muted">Loading files…</p>
+      )}
+      {!loading && !error && roots.length === 0 && (
+        <p className="filetree__muted">No files to show for this project.</p>
+      )}
       {roots.map((node) => (
         <TreeNode
           key={node.path}
@@ -87,6 +100,7 @@ function TreeNode({ node, depth, onOpenFile, activePath }: TreeNodeProps) {
         style={{ paddingLeft: indent }}
         onClick={() => void toggle()}
         title={node.path}
+        aria-expanded={isDirectory ? expanded : undefined}
       >
         <span className="tnode__icon" aria-hidden>
           {isDirectory ? (expanded ? "▾" : "▸") : "•"}

@@ -24,10 +24,15 @@ export function NotificationsDrawer({ effects, onDismiss, onDismissAll }: Props)
   if (effects.length === 0) return null;
 
   return (
-    <div className="notifications">
+    <div className="notifications" role="region" aria-label="Notifications" aria-live="polite">
       <div className="notifications__head">
         <span>Notifications</span>
-        <button type="button" className="btn btn--ghost btn--xs" onClick={onDismissAll}>
+        <button
+          type="button"
+          className="btn btn--ghost btn--xs"
+          onClick={onDismissAll}
+          title="Clear all notifications"
+        >
           Clear
         </button>
       </div>
@@ -42,6 +47,7 @@ export function NotificationsDrawer({ effects, onDismiss, onDismissAll }: Props)
             className="notification__close"
             onClick={() => onDismiss(index)}
             title="Dismiss"
+            aria-label="Dismiss notification"
           >
             ✕
           </button>

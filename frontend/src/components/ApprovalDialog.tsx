@@ -33,7 +33,12 @@ export function ApprovalDialog() {
 
   return (
     <div className="modal-backdrop">
-      <div className="modal approval">
+      <div
+        className="modal approval"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="approval-title"
+      >
         <div className="approval__head">
           <span className="chip chip--waiting_approval">approval</span>
           <span className="approval__type">{current.type}</span>
@@ -41,7 +46,7 @@ export function ApprovalDialog() {
             <span className="approval__queue">+{pending.length - 1} queued</span>
           )}
         </div>
-        <h2 className="approval__title">{current.title}</h2>
+        <h2 className="approval__title" id="approval-title">{current.title}</h2>
         {current.metadata !== undefined && (
           <pre className="approval__meta">{safeJson(current.metadata)}</pre>
         )}
@@ -53,12 +58,17 @@ export function ApprovalDialog() {
           />
           Remember this decision for the rest of the session
         </label>
-        {error && <p className="approval__error">{error}</p>}
+        {error && (
+          <p className="approval__error" role="alert">
+            {error}
+          </p>
+        )}
         <div className="approval__actions">
           <button
             type="button"
             className="btn btn--primary"
             disabled={busy}
+            autoFocus
             onClick={() => void respond("once")}
           >
             Once

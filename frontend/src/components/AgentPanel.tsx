@@ -116,6 +116,7 @@ export function AgentPanel({
         aria-label="Orchestrator session"
         title="Choose which session acts as the orchestrator"
         value={effectiveRootId ?? ""}
+        disabled={rootChoices.length === 0}
         onChange={(event) => {
           if (event.target.value) onPickRoot(event.target.value);
         }}
@@ -146,7 +147,11 @@ export function AgentPanel({
           onDelete={onDelete}
         />
       ) : (
-        <p className="agent-panel__empty">Connecting to the orchestrator…</p>
+        <p className="agent-panel__empty">
+          {state.connected
+            ? "No orchestrator session yet. Use “New session” to create one."
+            : "Not connected to a server yet — check the connection in the top bar."}
+        </p>
       )}
 
       <div className="panel-heading panel-heading--spaced">
@@ -155,7 +160,7 @@ export function AgentPanel({
       </div>
       {subAgents.length === 0 ? (
         <p className="agent-panel__empty">
-          No sub-agents yet. Ask the orchestrator to spawn some.
+          No sub-agents yet. Ask the orchestrator in the composer below.
         </p>
       ) : (
         <div className="agent-panel__list">
