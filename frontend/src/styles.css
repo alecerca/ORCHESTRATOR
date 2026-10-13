@@ -1135,6 +1135,15 @@ html[data-theme="light"] .drop-indicator {
   white-space: nowrap;
 }
 
+/* A small dot marks a file tab with unsaved changes (see fileDrafts.ts). */
+.tab__dirty {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
 .tab__close {
   display: flex;
   align-items: center;
