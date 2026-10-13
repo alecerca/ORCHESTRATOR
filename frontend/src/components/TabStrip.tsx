@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   type DragEvent,
@@ -51,6 +52,38 @@ export function TabStrip({ group, sessions, onActivateTab, onCloseTab, onSplit }
     y: number;
     tabId: string;
   } | null>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  // Show the scroll arrows only while the strip overflows in that direction.
+  // The native horizontal scrollbar is hidden because the webview's overlay
+  // scrollbar expands on hover and swallows the strip.
+  const updateScrollState = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 1);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    updateScrollState();
+    const observer = new ResizeObserver(updateScrollState);
+    observer.observe(el);
+    el.addEventListener("scroll", updateScrollState, { passive: true });
+    window.addEventListener("resize", updateScrollState);
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("scroll", updateScrollState);
+      window.removeEventListener("resize", updateScrollState);
+    };
+  }, [updateScrollState]);
+
+  function scrollTabs(direction: -1 | 1): void {
+    scrollerRef.current?.scrollBy({ left: 260 * direction, behavior: "smooth" });
+  }
 
   // While the menu is open: focus its first item, close on Escape, and close on
   // any pointerdown outside it. `onMouseLeave` (below) is kept too.
@@ -104,8 +137,26 @@ export function TabStrip({ group, sessions, onActivateTab, onCloseTab, onSplit }
 
   return (
     <>
-      <div className="tabstrip" role="tablist" aria-label="Open tabs" title="Open tabs">
-        {group.tabs.map((tab, index) => {
+      <div className="tabstrip-wrap">
+        {canScrollLeft && (
+          <button
+            type="button"
+            className="tabstrip__scroll tabstrip__scroll--left"
+            aria-label="Scroll tabs left"
+            title="Scroll tabs left"
+            onClick={() => scrollTabs(-1)}
+          >
+            ‹
+          </button>
+        )}
+        <div
+          className="tabstrip"
+          ref={scrollerRef}
+          role="tablist"
+          aria-label="Open tabs"
+          title="Open tabs"
+        >
+          {group.tabs.map((tab, index) => {
           const active = tab.id === group.activeTabId;
           const title = tabTitle(tab, sessions);
           return (
@@ -152,6 +203,18 @@ export function TabStrip({ group, sessions, onActivateTab, onCloseTab, onSplit }
             </div>
           );
         })}
+        </div>
+        {canScrollRight && (
+          <button
+            type="button"
+            className="tabstrip__scroll tabstrip__scroll--right"
+            aria-label="Scroll tabs right"
+            title="Scroll tabs right"
+            onClick={() => scrollTabs(1)}
+          >
+            ›
+          </button>
+        )}
       </div>
       {contextMenu && (
         <div

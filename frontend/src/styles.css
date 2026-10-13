@@ -1036,36 +1036,56 @@ html[data-theme="light"] .drop-indicator {
 }
 
 /* One role=tab per document; the active tab is illuminated, the rest dimmed. */
-.tabstrip {
+.tabstrip-wrap {
   display: flex;
   align-items: stretch;
   flex-shrink: 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.tabstrip {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 36px;
   overflow-x: auto;
   overflow-y: hidden;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  /* A thin horizontal scrollbar so many tabs can be scrolled without the
-     thick native bar swallowing the strip. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  /* The native horizontal scrollbar is hidden: the webview's overlay
+     scrollbar expands on hover and swallows the strip. Scrolling is driven
+     by the arrow buttons and the wheel instead. */
+  scrollbar-width: none;
 }
 
 .tabstrip::-webkit-scrollbar {
-  height: 6px;
+  display: none;
 }
 
-.tabstrip::-webkit-scrollbar-track {
+.tabstrip__scroll {
+  flex-shrink: 0;
+  width: 28px;
+  padding: 0;
+  border: none;
   background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
 }
 
-.tabstrip::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+.tabstrip__scroll:hover {
+  background: var(--surface-alt);
+  color: var(--text);
 }
 
-.tabstrip::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
+.tabstrip__scroll--left {
+  border-right: 1px solid var(--border);
+}
+
+.tabstrip__scroll--right {
+  border-left: 1px solid var(--border);
 }
 
 .tab {
