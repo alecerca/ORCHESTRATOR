@@ -356,8 +356,10 @@ Without a pin, the request path is byte-identical to before.
   symlinked upstream path would filter the intended project out (fails safe —
   empty list — but can hide the project). Canonicalization belongs to Option A.
 - The app's own project label still comes from its local `server.json`, so it can
-  show a stale name while every request is pinned; the app should read `project`
-  from `whoami` and show the picker as locked. Not built yet.
+  show a stale name while every request is pinned; the app reads `project` from
+  `whoami` and shows the picker as locked (`0302753`). Still pending: the
+  Settings screen's server-directory field, and a manual smoke test of the
+  locked picker (the frontend has no test runner — only typecheck).
 - There is no host UI to set the pin: edit `proxy.json` (the Members dialog
   preserves the key because it edits the raw document).
 
@@ -477,6 +479,15 @@ Both are additive config, so neither breaks a current deployment.
   proxy and that the picker accepts arbitrary absolute paths. Not implemented —
   it waits for a decision between Option B (pin one project) and Option A
   (per-user allowlist).
+- 2026-10-12: **app-side pin awareness** `0302753`: `AgentBackend::workspace_scope()`
+  (default `Ok(None)`) + `OpenCodeClient::workspace_scope()` reading `project`
+  from `GET /orquestador/whoami` and degrading to `None` on transport/404/401/
+  malformed/`null` (never `Err`), a `get_workspace_scope` command, and a
+  `useWorkspaceScope` hook that locks the `ProjectPicker` label and popover when
+  a pin is set. Verified: `cargo test --workspace` → core 111, proxy 56 + 18,
+  0 failed; `src-tauri --lib` → 18; `npm run typecheck` → exit 0. Pending:
+  manual smoke of the locked picker; the Settings directory field is untouched.
+
 - 2026-10-12: **Phase 5 Option B implemented** `72e803d` (T11, proxy-only): the
   optional `project_directory` pin drops the client's directory header and
   injects the pinned path, filters `GET /project` to the pin, and reports
