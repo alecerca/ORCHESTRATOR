@@ -70,10 +70,11 @@ changes **live** and opens a side-by-side diff of any changed file.
 
 ## Out of scope (this slice)
 
-- Editor write/save API (Ctrl+S persistence). Pending user decision — without
-  it, only on-disk changes (agents, external editors) appear in the diff.
 - Staging area controls (stage/unstage) — list only, VSCode-style, read-only.
 - Per-commit diff browsing (GitViewer already covers commit files).
+- Prompt on app quit / close-all with dirty file tabs (single-tab close only).
+- Restoring an unsaved draft after the app restarts (drafts are in-memory;
+  a reopened file tab re-reads from disk).
 
 ## Design decisions
 
@@ -114,6 +115,21 @@ changes **live** and opens a side-by-side diff of any changed file.
   HEAD vs working, live poll); `TabStrip` `DiffIcon`; layout persistence.
 - [ ] **D5 — Verification.** Core tests green; `tsc --noEmit` + `npm run
   build`; `cd src-tauri && cargo check`; RDD review on the work-unit commits.
+- [ ] **D6 — Save files (Ctrl+S) + close prompt for dirty tabs.** User request
+  (2026-10-13, "una ultima cosa antes de comitear y pushear a main"):
+  - Core `files.rs`: `write_text_file(dir, rel_path, content)` — same relative
+    path guard as `git_show_file`, `fs::write`, in-repo tests.
+  - Shell `write_file` command (active_directory + spawn_blocking), registered.
+  - Frontend `fileDrafts.ts`: clone of `skillDrafts.ts` keyed by file path
+    (baseline-based dirtiness, in-memory) — the skill close-prompt pattern
+    applied to file tabs.
+  - `MonacoEditor` `onSave` prop → `editor.addCommand(KeyMod.CtrlCmd |
+    KeyCode.KeyS, onSave)`; `FileViewer` wires save → `writeFile` invoke,
+    updates baseline, shows errors via `describeError`.
+  - `App.tsx` `requestCloseTab`: file tab + dirty → modal (Save / Don't save /
+    Cancel), mirroring `pendingSkillClose` (save → write → close; discard →
+    drop; cancel → keep). Esc closes = cancel.
+  - `TabStrip`: dirty dot on file tabs while unsaved (VSCode-style bullet).
 
 ## Checks (per task)
 
@@ -147,3 +163,5 @@ changes **live** and opens a side-by-side diff of any changed file.
 - [ ] `cargo build` note: the shell does not recompile when
   `frontend/dist` changes (no `rerun-if-changed`); after a frontend build,
   force with `cargo clean -p orquestador && cargo build`.
+- [ ] D6 (save + close prompt) implemented, verified, binary rebuilt; then
+  push + merge to `main` (authorized).
