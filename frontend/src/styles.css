@@ -85,7 +85,8 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-base);
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -137,8 +138,8 @@ summary:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  height: 40px;
-  padding: 0 14px;
+  height: 48px;
+  padding: 0 16px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -147,16 +148,16 @@ summary:focus-visible {
 .topbar__brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .topbar__logo {
   color: var(--brand);
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .topbar h1 {
-  font-size: 14px;
+  font-size: 15px;
   letter-spacing: 0.02em;
   margin: 0;
 }
@@ -165,7 +166,7 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -203,16 +204,16 @@ summary:focus-visible {
 .presence {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 
 .presence__member {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   min-width: 0;
   white-space: nowrap;
 }
@@ -241,7 +242,7 @@ summary:focus-visible {
 .presence__role {
   padding: 1px 7px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--muted);
@@ -262,20 +263,20 @@ summary:focus-visible {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .topbar__btn {
-  height: 26px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 0 9px;
   background: transparent;
   color: var(--muted);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
 }
 
@@ -313,13 +314,13 @@ summary:focus-visible {
 .skills-popover__empty {
   margin: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .skills-popover__error {
   margin: 6px;
   color: var(--error);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .skills-list {
@@ -328,20 +329,20 @@ summary:focus-visible {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .skills-item {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 10px;
+  padding: 8px 10px;
   background: transparent;
   border: none;
   border-radius: 6px;
   color: var(--text);
-  font-size: 13px;
+  font-size: 14px;
   text-align: left;
 }
 
@@ -373,7 +374,7 @@ summary:focus-visible {
   min-width: 160px;
   display: flex;
   flex-direction: column;
-  padding: 4px;
+  padding: 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -384,9 +385,9 @@ summary:focus-visible {
   background: transparent;
   border: none;
   color: var(--text);
-  padding: 6px 12px;
+  padding: 8px 14px;
   text-align: left;
-  font-size: 13px;
+  font-size: 14px;
   border-radius: 4px;
 }
 
@@ -409,7 +410,7 @@ summary:focus-visible {
 .project-picker__custom {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--border);
@@ -424,7 +425,7 @@ summary:focus-visible {
   margin-top: 6px;
   padding-top: 6px;
   border-top: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -434,12 +435,12 @@ summary:focus-visible {
   right: 0;
   z-index: 1001;
   max-width: 280px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   background: var(--surface);
   border: 1px solid var(--error);
   border-radius: 6px;
   color: var(--error);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 /* -- activity bar ----------------------------------------------------------- */
@@ -453,12 +454,12 @@ summary:focus-visible {
   flex-direction: column;
   align-items: center;
   padding: 6px 0;
-  gap: 2px;
+  gap: 4px;
 }
 
 .activitybar__btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -466,7 +467,7 @@ summary:focus-visible {
   color: var(--muted);
   border: none;
   border-radius: 6px;
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .activitybar__btn:hover {
@@ -495,14 +496,14 @@ summary:focus-visible {
   border-right: 1px solid var(--border);
   background: var(--surface);
   overflow-y: auto;
-  padding: 10px;
+  padding: 12px;
 }
 
 .panel-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -515,15 +516,15 @@ summary:focus-visible {
 
 .agent-panel__empty {
   color: var(--muted);
-  font-size: 12px;
-  padding: 4px;
+  font-size: 13px;
+  padding: 6px;
   margin: 0;
 }
 
 /* Inline failure from the "New session" control. */
 .agent-panel__error {
   color: var(--error);
-  font-size: 12px;
+  font-size: 13px;
   padding: 0 4px 8px;
   margin: 0;
 }
@@ -531,7 +532,7 @@ summary:focus-visible {
 .agent-panel__list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* Compact, theme-aware orchestrator picker. Replaces the native/OS widget look
@@ -542,9 +543,9 @@ summary:focus-visible {
   display: block;
   width: 100%;
   margin-bottom: 8px;
-  padding: 4px 8px;
+  padding: 6px 10px;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text);
   background: var(--surface-alt);
   border: 1px solid var(--border);
@@ -566,7 +567,7 @@ summary:focus-visible {
   background: var(--surface-alt);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px;
+  padding: 10px;
 }
 
 .agent-card--open {
@@ -581,7 +582,7 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   background: none;
   border: none;
@@ -592,7 +593,7 @@ summary:focus-visible {
 
 .agent-card__title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -602,7 +603,7 @@ summary:focus-visible {
 .agent-card__badges {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -610,13 +611,13 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: 6px 10px;
   margin-top: 8px;
 }
 
 .agent-card__id {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -625,8 +626,8 @@ summary:focus-visible {
 .agent-card__branch {
   display: inline-flex;
   align-items: baseline;
-  gap: 3px;
-  font-size: 11px;
+  gap: 4px;
+  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -643,8 +644,8 @@ summary:focus-visible {
 .agent-card__owner {
   display: inline-flex;
   align-items: baseline;
-  gap: 3px;
-  font-size: 11px;
+  gap: 4px;
+  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -662,7 +663,7 @@ summary:focus-visible {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 6px;
   margin-left: auto;
 }
 
@@ -670,7 +671,7 @@ summary:focus-visible {
    ticks, so the header does not jitter. */
 .agent-timer {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
   flex-shrink: 0;
@@ -686,7 +687,7 @@ summary:focus-visible {
 
 .agent-card__error {
   margin: 8px 0 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--error);
 }
 
@@ -694,9 +695,9 @@ summary:focus-visible {
 .agent-card__rename-input {
   flex: 1;
   min-width: 0;
-  padding: 2px 6px;
+  padding: 4px 8px;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text);
   background: var(--surface);
@@ -711,9 +712,9 @@ summary:focus-visible {
 .agent-card__confirm {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-top: 8px;
-  padding: 6px 8px;
+  padding: 8px 10px;
   flex-wrap: wrap;
   background: var(--surface-alt);
   border: 1px solid var(--border);
@@ -723,7 +724,7 @@ summary:focus-visible {
 .agent-card__confirm-text {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--error);
 }
 
@@ -734,7 +735,7 @@ summary:focus-visible {
   align-items: center;
   padding: 1px 8px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
   flex-shrink: 0;
@@ -810,7 +811,7 @@ summary:focus-visible {
 
 .pane-grid__hint {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* Friendly first-use guide shown when no pane is open. */
@@ -823,19 +824,19 @@ summary:focus-visible {
 .empty-state__logo {
   display: block;
   margin-bottom: 8px;
-  font-size: 22px;
+  font-size: 24px;
   color: var(--brand);
 }
 
 .empty-state__title {
   margin: 0 0 6px;
-  font-size: 16px;
+  font-size: 18px;
   color: var(--text);
 }
 
 .empty-state__lead {
   margin: 0 0 12px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -844,8 +845,8 @@ summary:focus-visible {
   padding-left: 18px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
+  gap: 8px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
@@ -1014,7 +1015,7 @@ html[data-theme="light"] .drop-indicator {
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: var(--shadow-1);
-  padding: 4px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
 }
@@ -1023,9 +1024,9 @@ html[data-theme="light"] .drop-indicator {
   background: transparent;
   border: none;
   color: var(--text);
-  padding: 6px 12px;
+  padding: 8px 14px;
   text-align: left;
-  font-size: 13px;
+  font-size: 14px;
   border-radius: 4px;
 }
 
@@ -1069,10 +1070,10 @@ html[data-theme="light"] .drop-indicator {
 .tab {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   max-width: 220px;
   padding: 0 8px 0 12px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   background: transparent;
   border: none;
@@ -1113,7 +1114,7 @@ html[data-theme="light"] .drop-indicator {
   width: 18px;
   height: 18px;
   padding: 0;
-  font-size: 11px;
+  font-size: 12px;
   color: inherit;
   background: transparent;
   border: none;
@@ -1131,7 +1132,7 @@ html[data-theme="light"] .drop-indicator {
 .group-infobar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-shrink: 0;
   padding: 4px 10px;
   min-height: 30px;
@@ -1143,7 +1144,7 @@ html[data-theme="light"] .drop-indicator {
   flex: 1;
   min-width: 0;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1165,14 +1166,14 @@ html[data-theme="light"] .drop-indicator {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 10px;
+  padding: 12px;
   font-family: var(--sans);
 }
 
 .stream__empty,
 .stream__error {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
 }
 
@@ -1185,7 +1186,7 @@ html[data-theme="light"] .drop-indicator {
 }
 
 .msg__role {
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1199,11 +1200,11 @@ html[data-theme="light"] .drop-indicator {
 .msg__body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .part {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -1215,16 +1216,16 @@ html[data-theme="light"] .drop-indicator {
 .part--reasoning summary {
   color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   user-select: none;
 }
 
 .part--divider {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1254,27 +1255,27 @@ html[data-theme="light"] .drop-indicator {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
 }
 
 .part__tool-name {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .part__tool-title {
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 8px 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
 .part__pre {
   margin: 0;
-  padding: 8px 10px;
+  padding: 10px 12px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.45;
   overflow-x: auto;
   white-space: pre-wrap;
@@ -1295,7 +1296,7 @@ html[data-theme="light"] .drop-indicator {
 }
 
 .part--subtask {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -1306,7 +1307,7 @@ html[data-theme="light"] .drop-indicator {
 .part--agent,
 .part--file,
 .part--retry {
-  font-size: 12px;
+  font-size: 13px;
   font-family: var(--mono);
   color: var(--muted);
 }
@@ -1316,8 +1317,8 @@ html[data-theme="light"] .drop-indicator {
 .followup {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 10px 12px;
   border-top: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
@@ -1326,9 +1327,9 @@ html[data-theme="light"] .drop-indicator {
 .followup__input {
   flex: 1;
   min-width: 0;
-  padding: 6px 10px;
+  padding: 8px 12px;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text);
   background: var(--surface-alt);
   border: 1px solid var(--border);
@@ -1343,7 +1344,7 @@ html[data-theme="light"] .drop-indicator {
 .followup__error {
   margin: 0;
   color: var(--error);
-  font-size: 12px;
+  font-size: 13px;
   flex-basis: 100%;
 }
 
@@ -1352,15 +1353,15 @@ html[data-theme="light"] .drop-indicator {
 .composer {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 12px 16px;
   background: var(--surface);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .composer__prompt {
-  font-size: 16px;
+  font-size: 18px;
   color: var(--brand);
   line-height: 36px;
   user-select: none;
@@ -1369,9 +1370,9 @@ html[data-theme="light"] .drop-indicator {
 .composer__input {
   flex: 1;
   resize: none;
-  padding: 8px 12px;
+  padding: 10px 14px;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.4;
   color: var(--text);
   background: var(--surface-alt);
@@ -1391,15 +1392,15 @@ html[data-theme="light"] .drop-indicator {
 .composer__error {
   margin: 6px 0 0;
   color: var(--error);
-  font-size: 12px;
+  font-size: 13px;
   flex-basis: 100%;
 }
 
 /* -- buttons ---------------------------------------------------------------- */
 
 .btn {
-  padding: 6px 14px;
-  font-size: 13px;
+  padding: 8px 16px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text);
   background: var(--surface-alt);
@@ -1434,8 +1435,8 @@ html[data-theme="light"] .drop-indicator {
 }
 
 .btn--xs {
-  padding: 2px 8px;
-  font-size: 11px;
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 /* -- banner ----------------------------------------------------------------- */
@@ -1444,13 +1445,13 @@ html[data-theme="light"] .drop-indicator {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   margin: 8px 10px 0;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: var(--surface-alt);
   border: 1px solid var(--error);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--error);
   flex-shrink: 0;
 }
@@ -1459,7 +1460,7 @@ html[data-theme="light"] .drop-indicator {
   background: none;
   border: none;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* -- connection banner ------------------------------------------------------ */
@@ -1467,18 +1468,18 @@ html[data-theme="light"] .drop-indicator {
 .connection-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 10px 14px;
   background: var(--surface-alt);
   border-bottom: 1px solid var(--warning);
   color: var(--warning);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   flex-shrink: 0;
 }
 
 .connection-banner__icon {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1;
 }
 
@@ -1512,25 +1513,25 @@ html[data-theme="light"] .drop-indicator {
 .approval__head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 12px;
 }
 
 .approval__type {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   font-family: var(--mono);
 }
 
 .approval__queue {
   margin-left: auto;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
 .approval__title {
   margin: 0 0 10px;
-  font-size: 16px;
+  font-size: 18px;
   line-height: 1.35;
 }
 
@@ -1539,19 +1540,19 @@ html[data-theme="light"] .drop-indicator {
   max-height: 180px;
   overflow: auto;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   background: var(--surface-alt);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 10px;
+  padding: 12px;
   white-space: pre-wrap;
 }
 
 .approval__remember {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: 10px;
+  font-size: 14px;
   color: var(--muted);
   margin-bottom: 14px;
 }
@@ -1559,12 +1560,12 @@ html[data-theme="light"] .drop-indicator {
 .approval__error {
   margin: 0 0 12px;
   color: var(--error);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .approval__actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   justify-content: flex-end;
 }
 
@@ -1580,11 +1581,11 @@ html[data-theme="light"] .drop-indicator {
 .settings-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .settings-field > span {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -1592,7 +1593,7 @@ html[data-theme="light"] .drop-indicator {
   width: 100%;
   box-sizing: border-box;
   padding: 7px 10px;
-  font-size: 13px;
+  font-size: 14px;
   font-family: var(--mono);
   color: var(--text);
   background: var(--surface-alt);
@@ -1607,13 +1608,13 @@ html[data-theme="light"] .drop-indicator {
 
 .settings-test {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
   margin-bottom: 16px;
 }
 
 .settings-test__result {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   word-break: break-word;
 }
@@ -1625,12 +1626,12 @@ html[data-theme="light"] .drop-indicator {
 .settings-manage {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 16px;
 }
 
 .settings-manage__hint {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -1642,7 +1643,7 @@ html[data-theme="light"] .drop-indicator {
 
 .join-hint {
   margin: 0 0 14px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
 }
 
@@ -1655,17 +1656,17 @@ html[data-theme="light"] .drop-indicator {
 .welcome__brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 12px;
 }
 
 .welcome__logo {
   color: var(--brand);
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .welcome__wordmark {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1674,12 +1675,12 @@ html[data-theme="light"] .drop-indicator {
 
 .welcome__title {
   margin: 0 0 8px;
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .welcome__lead {
   margin: 0 0 14px;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.5;
   color: var(--muted);
 }
@@ -1687,11 +1688,11 @@ html[data-theme="light"] .drop-indicator {
 .welcome__status {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin: 0 0 16px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: 13px;
   background: var(--surface-alt);
   border: 1px solid var(--border);
 }
@@ -1711,14 +1712,14 @@ html[data-theme="light"] .drop-indicator {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .welcome__step {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   padding-left: 14px;
 }
 
@@ -1734,13 +1735,13 @@ html[data-theme="light"] .drop-indicator {
 }
 
 .welcome__step-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text);
 }
 
 .welcome__step-body {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
   color: var(--muted);
 }
@@ -1750,7 +1751,7 @@ html[data-theme="light"] .drop-indicator {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* -- members dialog --------------------------------------------------------- */
@@ -1758,7 +1759,7 @@ html[data-theme="light"] .drop-indicator {
 .members-path {
   margin: 0 0 12px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   word-break: break-all;
 }
@@ -1766,7 +1767,7 @@ html[data-theme="light"] .drop-indicator {
 .members-hint,
 .members-status {
   margin: 0 0 14px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
 }
 
@@ -1780,7 +1781,7 @@ html[data-theme="light"] .drop-indicator {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   max-height: 220px;
   overflow: auto;
 }
@@ -1788,8 +1789,8 @@ html[data-theme="light"] .drop-indicator {
 .members-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
+  gap: 12px;
+  padding: 8px 10px;
   background: var(--surface-alt);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1797,7 +1798,7 @@ html[data-theme="light"] .drop-indicator {
 
 .members-row__name {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1805,7 +1806,7 @@ html[data-theme="light"] .drop-indicator {
 
 .members-role {
   margin-left: auto;
-  font-size: 11px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
@@ -1814,7 +1815,7 @@ html[data-theme="light"] .drop-indicator {
 .members-add {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 14px;
 }
 
@@ -1826,9 +1827,9 @@ html[data-theme="light"] .drop-indicator {
 .members-invite {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 14px;
-  padding: 12px;
+  padding: 14px;
   background: var(--surface-alt);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1836,18 +1837,18 @@ html[data-theme="light"] .drop-indicator {
 
 .members-invite__title {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .members-invite__note {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
 }
 
 .members-copy {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -1866,11 +1867,11 @@ html[data-theme="light"] .drop-indicator {
   z-index: 40;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 10px;
+  padding: 12px;
   box-shadow: var(--shadow-2);
 }
 
@@ -1878,7 +1879,7 @@ html[data-theme="light"] .drop-indicator {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1888,9 +1889,9 @@ html[data-theme="light"] .drop-indicator {
 .notification {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  font-size: 13px;
-  padding: 8px 10px;
+  gap: 10px;
+  font-size: 14px;
+  padding: 10px 12px;
   border-radius: 6px;
   background: var(--surface-alt);
   border: 1px solid var(--border);
@@ -1921,7 +1922,7 @@ html[data-theme="light"] .drop-indicator {
   background: none;
   border: none;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   flex-shrink: 0;
 }
 
@@ -1945,12 +1946,12 @@ html[data-theme="light"] .drop-indicator {
 }
 
 .editor-panel__tab {
-  padding: 8px 14px;
+  padding: 10px 16px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -1983,16 +1984,16 @@ html[data-theme="light"] .drop-indicator {
 
 .file-viewer__muted {
   margin: 0;
-  padding: 16px;
+  padding: 20px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .file-viewer__error {
   margin: 0;
   padding: 10px 16px;
   color: var(--error);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* -- skill editor + save prompt ---------------------------------------------- */
@@ -2007,14 +2008,14 @@ html[data-theme="light"] .drop-indicator {
 
 .skill-editor__muted {
   margin: 0;
-  padding: 16px;
+  padding: 20px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .skill-prompt__body {
   margin: 0 0 14px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--muted);
 }
@@ -2036,27 +2037,27 @@ html[data-theme="light"] .drop-indicator {
 
 .filetree__error {
   margin: 0;
-  padding: 8px 12px;
+  padding: 10px 14px;
   color: var(--error);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .filetree__muted {
   margin: 0;
-  padding: 8px 12px;
+  padding: 10px 14px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .tnode {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   width: 100%;
   background: none;
   border: none;
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
   padding: 3px 8px;
   text-align: left;
   white-space: nowrap;
@@ -2081,7 +2082,7 @@ html[data-theme="light"] .drop-indicator {
   width: 12px;
   flex-shrink: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .tnode__name {
@@ -2092,15 +2093,15 @@ html[data-theme="light"] .drop-indicator {
 
 .tnode__count {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   flex-shrink: 0;
 }
 
 .tnode__loading {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
-  padding: 2px 8px;
+  padding: 4px 10px;
 }
 
 /* -- git viewer ------------------------------------------------------------- */
@@ -2117,8 +2118,8 @@ html[data-theme="light"] .drop-indicator {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 10px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -2133,16 +2134,16 @@ html[data-theme="light"] .drop-indicator {
 .gitviewer__branch {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   max-width: 100%;
   min-width: 0;
-  padding: 2px 6px;
+  padding: 4px 8px;
   background: none;
   border: 1px solid transparent;
   border-radius: 4px;
   color: var(--text);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
 }
 
@@ -2170,7 +2171,7 @@ html[data-theme="light"] .drop-indicator {
 .gitviewer__chevron {
   flex-shrink: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .gitviewer__menu {
@@ -2181,7 +2182,7 @@ html[data-theme="light"] .drop-indicator {
   min-width: 180px;
   max-height: 240px;
   overflow-y: auto;
-  padding: 4px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -2194,14 +2195,14 @@ html[data-theme="light"] .drop-indicator {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 4px 8px;
+  gap: 10px;
+  padding: 6px 10px;
   background: none;
   border: none;
   border-radius: 4px;
   color: var(--text);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
@@ -2224,7 +2225,7 @@ html[data-theme="light"] .drop-indicator {
 .gitviewer__currentmark {
   flex-shrink: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .gitviewer__switch-error {
@@ -2234,17 +2235,17 @@ html[data-theme="light"] .drop-indicator {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--error);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .gitviewer__refresh {
   flex-shrink: 0;
-  padding: 2px 8px;
+  padding: 4px 10px;
   background: none;
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .gitviewer__refresh:hover:not(:disabled) {
@@ -2277,7 +2278,7 @@ html[data-theme="light"] .drop-indicator {
 
 .gitviewer__meta {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2293,21 +2294,21 @@ html[data-theme="light"] .drop-indicator {
   flex-shrink: 0;
   width: 14px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--brand);
   text-align: center;
 }
 
 .gitviewer__muted {
   margin: 0;
-  padding: 12px;
+  padding: 14px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .gitviewer__error {
   margin: 0;
-  padding: 10px 12px;
+  padding: 12px 16px;
   color: var(--error);
-  font-size: 12px;
+  font-size: 13px;
 }
