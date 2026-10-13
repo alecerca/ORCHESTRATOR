@@ -27,7 +27,7 @@ use std::{
 use axum::{
     body::Body,
     extract::{Request, State},
-    http::{header, HeaderName, HeaderValue, Method, StatusCode},
+    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri},
     response::{IntoResponse, Json, Response},
     routing::get,
     Router,
@@ -51,6 +51,13 @@ const PRESENCE_WINDOW: Duration = Duration::from_secs(45);
 
 /// Reserved prefix for proxy-native routes; never forwarded upstream.
 const RESERVED_PREFIX: &str = "/orquestador/";
+
+/// The `x-opencode-directory` request header OpenCode uses to scope a request
+/// to a project directory. `orquestador-core` declares the same header as
+/// `DIRECTORY_HEADER` (`crates/orquestador-core/src/client.rs`); the proxy is a
+/// standalone crate and deliberately does not depend on the core, so the
+/// literal is repeated here.
+const DIRECTORY_HEADER: &str = "x-opencode-directory";
 
 /// Shared server state: the parsed config plus the injected upstream credentials.
 pub struct AppState {
@@ -145,39 +152,35 @@ pub async fn handle(State(state): State<Arc<AppState>>, req: Request) -> Respons
         return forbidden();
     }
 
-    // 5. Forward and stream the response back.
-    match forward(&state, req).await {
-        Ok(response) => {
-            audit(
-                &name,
-                role.as_str(),
-                &method,
-                &path,
-                response.status(),
-                "allowed",
-            );
-            response
+    // 5. Forward and stream the response back. The one exception is
+    //    `GET /project` under a pin: that list is buffered and filtered so a
+    //    client cannot enumerate the host's other projects.
+    let pinned_project_list =
+        state.config.project_directory.is_some() && method == Method::GET && path == "/project";
+
+    let response = if pinned_project_list {
+        forward_project(&state, req).await
+    } else {
+        match forward(&state, req).await {
+            Ok(response) => response,
+            Err(err) => upstream_error(err),
         }
-        Err(err) => {
-            audit(
-                &name,
-                role.as_str(),
-                &method,
-                &path,
-                StatusCode::BAD_GATEWAY,
-                "allowed",
-            );
-            (
-                StatusCode::BAD_GATEWAY,
-                format!("upstream request failed: {err}"),
-            )
-                .into_response()
-        }
-    }
+    };
+
+    audit(
+        &name,
+        role.as_str(),
+        &method,
+        &path,
+        response.status(),
+        "allowed",
+    );
+    response
 }
 
 /// `GET /orquestador/whoami` — the caller's own identity, doubling as a clean
-/// credential check for the frontend. Read-only; presence is recorded by the
+/// credential check for the frontend. Also reports the pinned `project` (`null`
+/// when the instance is unrestricted). Read-only; presence is recorded by the
 /// `/present` poll (the heartbeat) and by proxied requests, not here.
 async fn whoami(State(state): State<Arc<AppState>>, req: Request) -> Response {
     let method = req.method().clone();
@@ -205,7 +208,11 @@ async fn whoami(State(state): State<Arc<AppState>>, req: Request) -> Response {
     );
     (
         StatusCode::OK,
-        Json(json!({ "name": name, "role": role.as_str() })),
+        Json(json!({
+            "name": name,
+            "role": role.as_str(),
+            "project": state.config.project_directory.as_deref(),
+        })),
     )
         .into_response()
 }
@@ -279,14 +286,6 @@ fn authenticate(state: &AppState, req: &Request) -> Option<(String, Role)> {
 /// Forward the request to upstream with injected credentials and stream back.
 async fn forward(state: &AppState, req: Request) -> Result<Response, reqwest::Error> {
     let (parts, body) = req.into_parts();
-    let method = parts.method;
-    let uri = parts.uri;
-
-    let mut url = format!("{}{}", state.upstream_base, uri.path());
-    if let Some(query) = uri.query() {
-        url.push('?');
-        url.push_str(query);
-    }
 
     let body_bytes = match axum::body::to_bytes(body, MAX_REQUEST_BODY).await {
         Ok(bytes) => bytes,
@@ -299,34 +298,147 @@ async fn forward(state: &AppState, req: Request) -> Result<Response, reqwest::Er
         }
     };
 
+    let outgoing = build_upstream_request(state, parts.method, &parts.uri, &parts.headers);
+    let upstream = outgoing.body(body_bytes).send().await?;
+
+    let status = upstream.status();
+    let headers = upstream.headers().clone();
+    // `Body::from_stream` drives reqwest's byte stream directly, so SSE frames
+    // are relayed as they arrive instead of being buffered.
+    let stream = upstream.bytes_stream();
+    Ok(build_response(status, &headers, Body::from_stream(stream)))
+}
+
+/// `GET /project` under a pin: buffer the upstream project list and keep only
+/// the pinned project, so a client can never enumerate the host's others. This
+/// is the only place the proxy buffers a response body — `/event` keeps
+/// streaming. A non-2xx status, or a body that is not a JSON array of objects,
+/// is passed through unchanged rather than replaced with an invented body.
+async fn forward_project(state: &AppState, req: Request) -> Response {
+    let Some(pin) = state.config.project_directory.as_deref() else {
+        // Unreachable from `handle`'s guard; forward verbatim to be safe.
+        return match forward(state, req).await {
+            Ok(response) => response,
+            Err(err) => upstream_error(err),
+        };
+    };
+
+    let (parts, body) = req.into_parts();
+
+    let body_bytes = match axum::body::to_bytes(body, MAX_REQUEST_BODY).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "request body exceeds the proxy limit",
+            )
+                .into_response();
+        }
+    };
+
+    let outgoing = build_upstream_request(state, parts.method, &parts.uri, &parts.headers);
+    let upstream = match outgoing.body(body_bytes).send().await {
+        Ok(response) => response,
+        Err(err) => return upstream_error(err),
+    };
+
+    let status = upstream.status();
+    let headers = upstream.headers().clone();
+    let bytes = match upstream.bytes().await {
+        Ok(bytes) => bytes,
+        Err(err) => return upstream_error(err),
+    };
+
+    if status.is_success() {
+        if let Some(filtered) = filter_projects_json(&bytes, pin) {
+            let body = serde_json::to_vec(&filtered).unwrap_or_else(|_| bytes.to_vec());
+            return build_response(status, &headers, Body::from(body));
+        }
+    }
+
+    build_response(status, &headers, Body::from(bytes))
+}
+
+/// Build the upstream request: URL, injected Basic auth, and the forwarded
+/// headers with the project-directory pin rule applied. Shared by the streaming
+/// [`forward`] path and the buffered [`forward_project`] path.
+///
+/// Without a pin the client's `x-opencode-directory` passes through verbatim and
+/// nothing is injected; with a pin the client's value is dropped and the pinned
+/// value is injected instead, so no client can leave the pinned project.
+fn build_upstream_request(
+    state: &AppState,
+    method: Method,
+    uri: &Uri,
+    headers: &HeaderMap,
+) -> reqwest::RequestBuilder {
+    let mut url = format!("{}{}", state.upstream_base, uri.path());
+    if let Some(query) = uri.query() {
+        url.push('?');
+        url.push_str(query);
+    }
+
     let mut outgoing = state
         .client
         .request(method, &url)
         .basic_auth(&state.upstream_username, Some(&state.upstream_password));
-    for (name, value) in parts.headers.iter() {
+
+    for (name, value) in headers.iter() {
         if strip_request_header(name) {
+            continue;
+        }
+        if state.config.project_directory.is_some() && name.as_str() == DIRECTORY_HEADER {
             continue;
         }
         outgoing = outgoing.header(name, value);
     }
 
-    let upstream = outgoing.body(body_bytes).send().await?;
+    if let Some(directory) = &state.config.project_directory {
+        outgoing = outgoing.header(DIRECTORY_HEADER, directory);
+    }
 
-    let status = upstream.status();
+    outgoing
+}
+
+/// Build a client response from an upstream status, the upstream headers that
+/// survive hop-by-hop stripping, and a body.
+fn build_response(status: StatusCode, headers: &HeaderMap, body: Body) -> Response {
     let mut builder = Response::builder().status(status);
-    for (name, value) in upstream.headers().iter() {
+    for (name, value) in headers.iter() {
         if strip_response_header(name) {
             continue;
         }
         builder = builder.header(name, value);
     }
+    builder
+        .body(body)
+        .unwrap_or_else(|_| Response::new(Body::empty()))
+}
 
-    // `Body::from_stream` drives reqwest's byte stream directly, so SSE frames
-    // are relayed as they arrive instead of being buffered.
-    let stream = upstream.bytes_stream();
-    Ok(builder
-        .body(Body::from_stream(stream))
-        .unwrap_or_else(|_| Response::new(Body::empty())))
+/// Keep only the `GET /project` entry whose `worktree` equals `pin`. Returns
+/// `None` when the body is not a JSON array of objects, so the caller passes the
+/// upstream response through unchanged instead of inventing one.
+fn filter_projects_json(bytes: &[u8], pin: &str) -> Option<serde_json::Value> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let projects = value.as_array()?;
+    if !projects.iter().all(serde_json::Value::is_object) {
+        return None;
+    }
+    let kept: Vec<serde_json::Value> = projects
+        .iter()
+        .filter(|project| project.get("worktree").and_then(|w| w.as_str()) == Some(pin))
+        .cloned()
+        .collect();
+    Some(serde_json::Value::Array(kept))
+}
+
+/// The response sent when the upstream call itself fails.
+fn upstream_error(err: reqwest::Error) -> Response {
+    (
+        StatusCode::BAD_GATEWAY,
+        format!("upstream request failed: {err}"),
+    )
+        .into_response()
 }
 
 /// Headers the proxy never forwards from the client to upstream.
@@ -383,4 +495,45 @@ fn unauthorized() -> Response {
 
 fn forbidden() -> Response {
     (StatusCode::FORBIDDEN, "forbidden: viewer role is read-only").into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::filter_projects_json;
+
+    #[test]
+    fn keeps_only_the_pinned_project() {
+        let body = br#"[
+            { "id": "alpha", "worktree": "/home/dev/alpha" },
+            { "id": "beta", "worktree": "/home/dev/beta" }
+        ]"#;
+        let filtered = filter_projects_json(body, "/home/dev/beta").expect("array of objects");
+        assert_eq!(
+            filtered,
+            serde_json::json!([{ "id": "beta", "worktree": "/home/dev/beta" }])
+        );
+    }
+
+    #[test]
+    fn empty_array_stays_an_empty_array() {
+        let filtered = filter_projects_json(b"[]", "/home/dev/beta").expect("array of objects");
+        assert_eq!(filtered, serde_json::json!([]));
+    }
+
+    #[test]
+    fn non_array_body_is_not_filtered() {
+        assert_eq!(
+            filter_projects_json(br#"{ "worktree": "/home/dev/beta" }"#, "/home/dev/beta"),
+            None
+        );
+        assert_eq!(filter_projects_json(b"not json", "/home/dev/beta"), None);
+    }
+
+    #[test]
+    fn array_with_non_object_entry_is_not_filtered() {
+        assert_eq!(
+            filter_projects_json(br#"[{ "worktree": "/x" }, "oops"]"#, "/x"),
+            None
+        );
+    }
 }

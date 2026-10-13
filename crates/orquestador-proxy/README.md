@@ -71,6 +71,7 @@ Config path resolution (first match wins):
   "upstream": "http://127.0.0.1:4096",
   "upstream_username": "opencode",
   "upstream_password": "optional-fallback",
+  "project_directory": "/home/owner/projects/team-app",
   "users": [
     { "name": "alice", "token": "change-me-1", "role": "editor" },
     { "name": "bob",   "token": "change-me-2", "role": "viewer" }
@@ -84,13 +85,33 @@ Config path resolution (first match wins):
 | `upstream` | yes | Base URL of the real `opencode serve`, e.g. `http://127.0.0.1:4096`. |
 | `upstream_username` | yes | Username for the injected upstream Basic auth. |
 | `upstream_password` | no | Fallback upstream password. `ORQUESTADOR_UPSTREAM_PASSWORD` **wins** over this field. |
+| `project_directory` | no | Optional absolute path that pins the whole shared instance to one project directory (see below). Absent = unrestricted. |
 | `users[].name` | yes | Client username; must be unique. |
 | `users[].token` | yes | Client token (the password half of Basic auth). |
 | `users[].role` | yes | `viewer` or `editor`. |
 
 Config is validated on load: non-empty `listen`/`upstream`/`upstream_username`,
-at least one user, unique names, and non-empty tokens. Invalid configs exit
-non-zero with a message on stderr.
+at least one user, unique names, non-empty tokens, and a non-empty **absolute**
+`project_directory` when it is set. Invalid configs exit non-zero with a message
+on stderr.
+
+### Project containment (`project_directory`)
+
+By default the proxy is **unrestricted**: it forwards the client's
+`x-opencode-directory` header verbatim, so a whitelisted client can point the
+shared server at any project on the host.
+
+Set the optional `project_directory` to pin the **whole shared instance** to a
+single absolute project directory. When it is set, the proxy strips whatever
+directory the client sends and injects the pinned one, and `GET /project` is
+filtered to that project alone — so no client can leave the pinned project or
+even see the host's others. This is the containment boundary for a shared
+instance; omit it (the default) to keep today's unrestricted behaviour.
+
+> [!NOTE]
+> It narrows **which directory is the working project**; it is not a sandbox.
+> The agent still runs with the host user's privileges, so split genuinely
+> untrusted work across OS users, containers, or VMs, or grant `viewer` only.
 
 ### Client setup
 
@@ -129,6 +150,9 @@ Redirect stderr to a file or your log collector to keep a trail.
   assumption — revisit if an upstream `GET` ever gains side effects.
 - **Streaming.** Responses are streamed back as they arrive; the `/event` SSE
   stream is not buffered.
+- **Project pin.** With `project_directory` set, the client's
+  `x-opencode-directory` is replaced by the pinned value and `GET /project` is
+  filtered to it; without it, the header passes through verbatim.
 - **Hop-by-hop stripping.** `Authorization` (inbound), `host`,
   `content-length`, `transfer-encoding`, `connection`, `keep-alive`, `te`,
   `upgrade`, and `proxy-*` are stripped; the proxy adds upstream Basic auth.
