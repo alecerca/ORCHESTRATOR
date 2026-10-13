@@ -27,6 +27,8 @@ use orquestador_proxy::{
 struct Captured {
     authorizations: Vec<String>,
     methods: Vec<String>,
+    /// The `x-opencode-directory` header seen per request (`None` when absent).
+    directory_headers: Vec<Option<String>>,
 }
 
 async fn stub_upstream(State(cap): State<Arc<Mutex<Captured>>>, req: Request) -> impl IntoResponse {
@@ -40,6 +42,12 @@ async fn stub_upstream(State(cap): State<Arc<Mutex<Captured>>>, req: Request) ->
                 .to_string(),
         );
         cap.methods.push(req.method().to_string());
+        cap.directory_headers.push(
+            req.headers()
+                .get("x-opencode-directory")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string),
+        );
     }
 
     if req.uri().path() == "/event" {
@@ -47,6 +55,15 @@ async fn stub_upstream(State(cap): State<Arc<Mutex<Captured>>>, req: Request) ->
             StatusCode::OK,
             [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
             "event: message\ndata: hello\n\n",
+        )
+            .into_response();
+    }
+
+    if req.uri().path() == "/project" {
+        return (
+            StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            r#"[{"id":"alpha","worktree":"/home/dev/alpha"},{"id":"beta","worktree":"/home/dev/beta"}]"#,
         )
             .into_response();
     }
@@ -100,6 +117,41 @@ async fn spawn_proxy_with_state(upstream: &str) -> (String, Arc<AppState>) {
         axum::serve(listener, app).await.unwrap();
     });
     (format!("http://{addr}"), state)
+}
+
+/// A config identical to [`test_config`] but with the instance pinned to `pin`.
+fn test_config_with_pin(upstream: &str, pin: &str) -> Config {
+    Config::from_json_str(&format!(
+        r#"{{
+            "listen": "127.0.0.1:0",
+            "upstream": "{upstream}",
+            "upstream_username": "opencode",
+            "project_directory": "{pin}",
+            "users": [
+                {{ "name": "alice", "token": "editor-token", "role": "editor" }},
+                {{ "name": "bob",   "token": "viewer-token", "role": "viewer" }}
+            ]
+        }}"#
+    ))
+    .expect("valid pinned test config")
+}
+
+/// Spawn the proxy from an arbitrary config; returns its base URL.
+async fn spawn_proxy_with_config(config: Config) -> String {
+    let state = Arc::new(AppState::new(config, Some("upstream-secret".to_string())));
+    let app = proxy::router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    format!("http://{addr}")
+}
+
+/// Spawn the proxy with the whole instance pinned to `pin`.
+async fn spawn_proxy_pinned(upstream: &str, pin: &str) -> String {
+    let config = test_config_with_pin(upstream, pin);
+    spawn_proxy_with_config(config).await
 }
 
 /// Spawn the proxy with a user whose credential is an Argon2id hash, built via
@@ -315,7 +367,7 @@ async fn whoami_returns_caller_identity() {
     let body: serde_json::Value = editor.json().await.unwrap();
     assert_eq!(
         body,
-        serde_json::json!({ "name": "alice", "role": "editor" })
+        serde_json::json!({ "name": "alice", "role": "editor", "project": null })
     );
 
     let viewer = client
@@ -326,7 +378,10 @@ async fn whoami_returns_caller_identity() {
         .unwrap();
     assert_eq!(viewer.status(), StatusCode::OK);
     let body: serde_json::Value = viewer.json().await.unwrap();
-    assert_eq!(body, serde_json::json!({ "name": "bob", "role": "viewer" }));
+    assert_eq!(
+        body,
+        serde_json::json!({ "name": "bob", "role": "viewer", "project": null })
+    );
 }
 
 #[tokio::test]
@@ -515,5 +570,161 @@ async fn reserved_prefix_never_reaches_upstream() {
         captured.authorizations.is_empty(),
         "reserved paths must never reach upstream: {:?}",
         captured.authorizations
+    );
+}
+
+#[tokio::test]
+async fn pin_replaces_foreign_directory_header() {
+    let (upstream, captured) = spawn_upstream().await;
+    let pin = "/home/owner/team-app";
+    let proxy = spawn_proxy_pinned(&upstream, pin).await;
+
+    let response = reqwest::Client::new()
+        .get(format!("{proxy}/session"))
+        .basic_auth("alice", Some("editor-token"))
+        .header("x-opencode-directory", "/home/owner/someone-elses-project")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let captured = captured.lock().unwrap();
+    assert_eq!(
+        captured.directory_headers,
+        vec![Some(pin.to_string())],
+        "upstream must receive the pinned directory, never the client's"
+    );
+}
+
+#[tokio::test]
+async fn pin_injects_directory_when_client_sends_none() {
+    let (upstream, captured) = spawn_upstream().await;
+    let pin = "/home/owner/team-app";
+    let proxy = spawn_proxy_pinned(&upstream, pin).await;
+
+    let response = reqwest::Client::new()
+        .get(format!("{proxy}/session"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let captured = captured.lock().unwrap();
+    assert_eq!(
+        captured.directory_headers,
+        vec![Some(pin.to_string())],
+        "a pin injects the directory even when the client sends none"
+    );
+}
+
+#[tokio::test]
+async fn no_pin_forwards_directory_verbatim() {
+    let (upstream, captured) = spawn_upstream().await;
+    let proxy = spawn_proxy(&upstream).await;
+    let client = reqwest::Client::new();
+
+    // With a header: forwarded unchanged, nothing injected.
+    let with_header = client
+        .get(format!("{proxy}/session"))
+        .basic_auth("alice", Some("editor-token"))
+        .header("x-opencode-directory", "/home/owner/chosen-project")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(with_header.status(), StatusCode::OK);
+
+    // Without a header: none reaches upstream (no implicit injection).
+    let without_header = client
+        .get(format!("{proxy}/session"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(without_header.status(), StatusCode::OK);
+
+    assert_eq!(
+        captured.lock().unwrap().directory_headers,
+        vec![Some("/home/owner/chosen-project".to_string()), None],
+        "without a pin the client's header passes through and nothing is injected"
+    );
+}
+
+#[tokio::test]
+async fn whoami_reports_project_pin() {
+    let (upstream, _captured) = spawn_upstream().await;
+    let client = reqwest::Client::new();
+
+    let pin = "/home/owner/team-app";
+    let pinned = spawn_proxy_pinned(&upstream, pin).await;
+    let body: serde_json::Value = client
+        .get(format!("{pinned}/orquestador/whoami"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({ "name": "alice", "role": "editor", "project": pin })
+    );
+
+    let unpinned = spawn_proxy(&upstream).await;
+    let body: serde_json::Value = client
+        .get(format!("{unpinned}/orquestador/whoami"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({ "name": "alice", "role": "editor", "project": null })
+    );
+}
+
+#[tokio::test]
+async fn project_list_is_filtered_to_the_pin() {
+    let (upstream, _captured) = spawn_upstream().await;
+    let proxy = spawn_proxy_pinned(&upstream, "/home/dev/beta").await;
+
+    let response = reqwest::Client::new()
+        .get(format!("{proxy}/project"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!([{ "id": "beta", "worktree": "/home/dev/beta" }]),
+        "only the pinned project may be visible"
+    );
+}
+
+#[tokio::test]
+async fn project_list_is_unfiltered_without_a_pin() {
+    let (upstream, _captured) = spawn_upstream().await;
+    let proxy = spawn_proxy(&upstream).await;
+
+    let response = reqwest::Client::new()
+        .get(format!("{proxy}/project"))
+        .basic_auth("alice", Some("editor-token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        body.as_array().map(Vec::len),
+        Some(2),
+        "without a pin the upstream project list passes through: {body:?}"
     );
 }

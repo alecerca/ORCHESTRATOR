@@ -51,6 +51,17 @@ pub struct Config {
     /// Upstream password fallback (env `ORQUESTADOR_UPSTREAM_PASSWORD` wins).
     #[serde(default)]
     pub upstream_password: Option<String>,
+    /// When set, the proxy pins the whole shared instance to this single project
+    /// directory: the inbound `x-opencode-directory` header is replaced by this
+    /// value and `GET /project` is filtered to it. Absent means unrestricted
+    /// (today's behaviour).
+    ///
+    /// The path is validated as non-empty and absolute, but deliberately not
+    /// checked against the filesystem: the project may be created later, and a
+    /// missing path is a startup-visibility problem, not a parse error. Keeping
+    /// [`Config::from_json_str`] pure and testable matters more.
+    #[serde(default)]
+    pub project_directory: Option<String>,
     /// Known clients.
     pub users: Vec<User>,
 }
@@ -112,6 +123,15 @@ impl Config {
         }
         if self.upstream_username.trim().is_empty() {
             return invalid("`upstream_username` must not be empty".into());
+        }
+        if let Some(directory) = &self.project_directory {
+            let trimmed = directory.trim();
+            if trimmed.is_empty() {
+                return invalid("`project_directory` must not be empty when set".into());
+            }
+            if !trimmed.starts_with('/') {
+                return invalid("`project_directory` must be an absolute path".into());
+            }
         }
         if self.users.is_empty() {
             return invalid("`users` must contain at least one user".into());
@@ -187,6 +207,42 @@ mod tests {
         let json = VALID.replace("\"users\"", "\"upstream_password\": \"pw\", \"users\"");
         let cfg = Config::from_json_str(&json).expect("valid config");
         assert_eq!(cfg.upstream_password.as_deref(), Some("pw"));
+    }
+
+    #[test]
+    fn parses_project_directory() {
+        let json = VALID.replace(
+            "\"users\"",
+            "\"project_directory\": \"/home/owner/team-app\", \"users\"",
+        );
+        let cfg = Config::from_json_str(&json).expect("valid config");
+        assert_eq!(
+            cfg.project_directory.as_deref(),
+            Some("/home/owner/team-app")
+        );
+    }
+
+    #[test]
+    fn rejects_empty_project_directory() {
+        let json = VALID.replace("\"users\"", "\"project_directory\": \"   \", \"users\"");
+        let err = Config::from_json_str(&json).unwrap_err();
+        assert!(matches!(err, ConfigError::Invalid(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn rejects_relative_project_directory() {
+        let json = VALID.replace(
+            "\"users\"",
+            "\"project_directory\": \"relative/path\", \"users\"",
+        );
+        let err = Config::from_json_str(&json).unwrap_err();
+        assert!(matches!(err, ConfigError::Invalid(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn project_directory_none_when_absent() {
+        let cfg = Config::from_json_str(VALID).expect("valid config");
+        assert_eq!(cfg.project_directory, None);
     }
 
     #[test]
