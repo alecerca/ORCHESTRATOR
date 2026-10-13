@@ -370,6 +370,14 @@ button {
   min-width: 0;
 }
 
+.project-picker__lock {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted-text);
+}
+
 .skills-error {
   position: absolute;
   top: calc(100% + 6px);

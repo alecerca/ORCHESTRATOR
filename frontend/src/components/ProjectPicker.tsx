@@ -3,6 +3,7 @@ import { listProjects, setProjectDirectory } from "../commands";
 import { setDirectory } from "../serverConfig";
 import type { Project, ServerConfig } from "../types";
 import { baseName, describeError } from "../utils";
+import { useWorkspaceScope } from "../workspaceScope";
 
 interface Props {
   /** Active project directory, or `null` for the server's own cwd project. */
@@ -19,6 +20,11 @@ interface Props {
  * config so the app can refresh its project-scoped state.
  */
 export function ProjectPicker({ directory, onChanged }: Props) {
+  // The proxy's pin wins over this app's own choice: when it is set every
+  // request goes to that project whatever the local config says, so the picker
+  // reports the pin instead of a directory the workspace will ignore.
+  const pinned = useWorkspaceScope();
+  const locked = pinned !== null;
   const [open, setOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [custom, setCustom] = useState("");
@@ -87,7 +93,11 @@ export function ProjectPicker({ directory, onChanged }: Props) {
     void choose(value);
   }
 
-  const label = directory ? baseName(directory) : "Default project";
+  const effectiveDirectory = locked ? pinned : directory;
+  const label = effectiveDirectory ? baseName(effectiveDirectory) : "Default project";
+  const title = locked
+    ? `Locked by the workspace: ${pinned}`
+    : effectiveDirectory ?? "Server default (its working directory)";
 
   return (
     <div className="project-picker" ref={rootRef}>
@@ -96,7 +106,7 @@ export function ProjectPicker({ directory, onChanged }: Props) {
         className={`topbar__btn${open ? " is-active" : ""}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={directory ?? "Server default (its working directory)"}
+        title={title}
         onClick={toggle}
         disabled={busy}
       >
@@ -108,66 +118,89 @@ export function ProjectPicker({ directory, onChanged }: Props) {
           role="menu"
           aria-label="Projects"
         >
-          <ul className="skills-list">
-            <li>
+          {locked ? (
+            <ul className="skills-list">
+              <li>
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked
+                  className="skills-item is-selected"
+                  title={pinned}
+                  disabled
+                >
+                  <span className="skills-item__check" aria-hidden>
+                    ✓
+                  </span>
+                  <span className="skills-item__name">{baseName(pinned)}</span>
+                </button>
+              </li>
+            </ul>
+          ) : (
+            <ul className="skills-list">
+              <li>
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={directory === null}
+                  className={`skills-item${directory === null ? " is-selected" : ""}`}
+                  title="Use the server's own working directory"
+                  disabled={busy}
+                  onClick={() => void choose(null)}
+                >
+                  <span className="skills-item__check" aria-hidden>
+                    {directory === null ? "✓" : ""}
+                  </span>
+                  <span className="skills-item__name">Server default (cwd)</span>
+                </button>
+              </li>
+              {projects.map((project) => {
+                const active = project.worktree === directory;
+                return (
+                  <li key={project.id}>
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={active}
+                      className={`skills-item${active ? " is-selected" : ""}`}
+                      title={project.worktree}
+                      disabled={busy}
+                      onClick={() => void choose(project.worktree)}
+                    >
+                      <span className="skills-item__check" aria-hidden>
+                        {active ? "✓" : ""}
+                      </span>
+                      <span className="skills-item__name">{baseName(project.worktree)}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {locked && <p className="project-picker__lock">Locked by the workspace</p>}
+          {!locked && (
+            <div className="project-picker__custom">
+              <input
+                className="settings-input"
+                value={custom}
+                placeholder="/absolute/path/to/project"
+                aria-label="Project path"
+                disabled={busy}
+                onChange={(event) => setCustom(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") handleCustom();
+                }}
+              />
               <button
                 type="button"
-                role="menuitemradio"
-                aria-checked={directory === null}
-                className={`skills-item${directory === null ? " is-selected" : ""}`}
-                title="Use the server's own working directory"
-                disabled={busy}
-                onClick={() => void choose(null)}
+                className="btn btn--ghost btn--xs"
+                disabled={busy || !custom.trim()}
+                onClick={handleCustom}
               >
-                <span className="skills-item__check" aria-hidden>
-                  {directory === null ? "✓" : ""}
-                </span>
-                <span className="skills-item__name">Server default (cwd)</span>
+                Open
               </button>
-            </li>
-            {projects.map((project) => {
-              const active = project.worktree === directory;
-              return (
-                <li key={project.id}>
-                  <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={active}
-                    className={`skills-item${active ? " is-selected" : ""}`}
-                    title={project.worktree}
-                    disabled={busy}
-                    onClick={() => void choose(project.worktree)}
-                  >
-                    <span className="skills-item__check" aria-hidden>
-                      {active ? "✓" : ""}
-                    </span>
-                    <span className="skills-item__name">{baseName(project.worktree)}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          <div className="project-picker__custom">
-            <input
-              className="settings-input"
-              value={custom}
-              placeholder="/absolute/path/to/project"
-              aria-label="Project path"
-              disabled={busy}
-              onChange={(event) => setCustom(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") handleCustom();
-              }}
-            />
-            <button
-              type="button"
-              className="btn btn--ghost btn--xs"
-              disabled={busy || !custom.trim()}
-              onClick={handleCustom}
-            >
-              Open
-            </button>
-          </div>
+            </div>
+          )}
           {error && <p className="skills-popover__error">{error}</p>}
         </div>
       )}
