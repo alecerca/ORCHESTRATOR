@@ -180,3 +180,11 @@ changes **live** and opens a side-by-side diff of any changed file.
   force with `cargo clean -p orquestador && cargo build`.
 - [ ] D6 (save + close prompt) implemented, verified, binary rebuilt; then
   push + merge to `main` (authorized).
+- [x] D6 (Ctrl+S save + close prompt, `9bf20f0` + `e52cca9`) implemented,
+  verified (132 core tests, tsc, build), user-tested ("bien funciona muy
+  bien"); D7 (discard changes, `7e4dc40` + `bcda5ec`) implemented, verified;
+  both RDD candidates declined by the user (`declined_this_candidate`,
+  lineages review-591a841209a71c4f and review-4450a5d3cdbe5e8f);
+  binary rebuilt (`src-tauri/target/debug/orquestador` — note the shell's
+  build target is `src-tauri/target/`, not the workspace `target/`).
+- [ ] Merge to `main` + delete `feat/diff-panel` (authorized 2026-10-13).
