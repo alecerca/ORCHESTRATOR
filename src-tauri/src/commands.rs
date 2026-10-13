@@ -914,6 +914,28 @@ pub async fn git_show_file(
         .map_err(stringify)?
 }
 
+/// Discard the working-tree changes to one path in the active project
+/// directory, restoring it to `HEAD`. Mutating: the core runs `git status`,
+/// then `git checkout HEAD -- <path>` / `git reset` / `fs::remove_file`
+/// depending on the path's state. `path` must be repository-relative and free
+/// of `..` traversal; it is validated here before git is spawned.
+#[tauri::command]
+pub async fn git_discard_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("invalid file path: empty".to_string());
+    }
+    if path.starts_with('/') {
+        return Err("invalid file path: must be repository-relative".to_string());
+    }
+    if path.contains("..") {
+        return Err("invalid file path: must not contain '..'".to_string());
+    }
+    let dir = active_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || orquestador_core::git::discard_file(&dir, &path))
+        .await
+        .map_err(stringify)?
+}
+
 /// Write `content` to a repository-relative text file in the active project
 /// directory — the editor's Ctrl+S / save-prompt path. `path` passes the same
 /// guard as `git_show_file` (non-empty, repository-relative, no `..`) before

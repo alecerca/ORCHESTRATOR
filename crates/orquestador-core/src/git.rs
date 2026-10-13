@@ -2,9 +2,11 @@
 //!
 //! The OpenCode server API does not expose the git branch, so Orquestador
 //! derives it locally from a session's `directory`. Every operation here is
-//! **read-only** except [`checkout`], the single deliberate exception: it
-//! switches the repository to another local branch at the user's explicit
-//! request. Nothing else may mutate a repository.
+//! **read-only** except two deliberate mutations, both reached only at the
+//! user's explicit request: [`checkout`] switches the repository to another
+//! local branch, and [`discard_file`] throws away the working-tree changes to
+//! one path (behind a confirmation in the UI). Nothing else may mutate a
+//! repository.
 
 use serde::Serialize;
 use std::path::Path;
@@ -365,6 +367,104 @@ pub fn show(dir: &Path, path: &str) -> Result<HeadFile, String> {
             content: None,
         }),
     }
+}
+
+/// Validate a repository-relative path, returning a readable error string.
+///
+/// Rejects an empty (or whitespace-only) path, an absolute path (leading `/`),
+/// and any path containing `..` — the same rules `git_show_file` and
+/// `files::write_text_file` enforce, so a discard can never address a file
+/// outside `dir`. The path is never pasted into a shell string; it is passed to
+/// git as a single argument.
+fn validate_relative(rel_path: &str) -> Result<(), String> {
+    if rel_path.trim().is_empty() {
+        return Err("invalid file path: empty".to_string());
+    }
+    if rel_path.starts_with('/') {
+        return Err("invalid file path: must be repository-relative".to_string());
+    }
+    if rel_path.contains("..") {
+        return Err("invalid file path: must not contain '..'".to_string());
+    }
+    Ok(())
+}
+
+/// Run a git command in `dir` that must succeed, mapping a failure to a
+/// friendly error. Arguments are passed verbatim (never a shell string).
+fn run_git(dir: &Path, args: &[&str]) -> Result<(), String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .map_err(|err| format!("failed to run git: {err}"))?;
+    if !output.status.success() {
+        return Err(friendly_git_error(&String::from_utf8_lossy(&output.stderr)));
+    }
+    Ok(())
+}
+
+/// Remove `dir/rel_path` from the working tree. A file that is already gone is a
+/// no-op, so a discard never fails on a concurrent delete.
+fn remove_worktree_file(dir: &Path, rel_path: &str) -> Result<(), String> {
+    match std::fs::remove_file(dir.join(rel_path)) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("failed to remove {rel_path}: {err}")),
+    }
+}
+
+/// Discard the working-tree changes to one repository-relative path, restoring
+/// it to its `HEAD` state.
+///
+/// This **mutates** the repository — it is the second deliberate mutation
+/// alongside [`checkout`], reached only from the diff panel behind an explicit
+/// "discard changes" confirmation. The path is validated first (see
+/// [`validate_relative`]) and never becomes part of a shell string.
+///
+/// The porcelain state of just this path decides the recovery:
+/// - untracked (`??`) → remove the working-tree file;
+/// - staged-added (`A `) → unstage it (`git reset HEAD --`) and then remove the
+///   file if it still exists;
+/// - anything else that changed (modified, deleted, …) →
+///   `git checkout HEAD -- <path>`, which restores both index and worktree
+///   (and re-creates a deleted file).
+///
+/// A path in no changed state is a no-op `Ok`.
+pub fn discard_file(dir: &Path, rel_path: &str) -> Result<(), String> {
+    validate_relative(rel_path)?;
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["status", "--porcelain", "--"])
+        .arg(rel_path)
+        .output()
+        .map_err(|err| format!("failed to run git: {err}"))?;
+    if !output.status.success() {
+        return Err(friendly_git_error(&String::from_utf8_lossy(&output.stderr)));
+    }
+
+    // A clean path produces no entry: nothing to discard.
+    let porcelain = String::from_utf8_lossy(&output.stdout);
+    let Some(line) = porcelain.lines().next() else {
+        return Ok(());
+    };
+
+    if line.starts_with("??") {
+        return remove_worktree_file(dir, rel_path);
+    }
+
+    if line.starts_with('A') {
+        // The file only exists in the index: unstage it against HEAD, then drop
+        // the now-untracked working-tree copy. `A ` (staged add) and `AM`/`AD`
+        // (staged add then worktree edit/delete) all end up here.
+        run_git(dir, &["reset", "-q", "HEAD", "--", rel_path])?;
+        return remove_worktree_file(dir, rel_path);
+    }
+
+    // Modified, deleted, or any other tracked change: restore index + worktree.
+    run_git(dir, &["checkout", "HEAD", "--", rel_path])
 }
 
 /// Parse the `--pretty=format:` output of [`overview`]: records split on
@@ -780,5 +880,110 @@ mod tests {
         let head = show(dir.path(), "bin.dat").expect("show succeeds");
         assert_eq!(head.kind, HeadFileKind::Binary);
         assert_eq!(head.content, None);
+    }
+
+    #[test]
+    fn discard_restores_a_modified_file() {
+        let dir = TempDir::new("discard-modified");
+        git(dir.path(), &["init", "-b", "main"]);
+        std::fs::write(dir.path().join("a.txt"), "base\n").expect("write");
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "base"]);
+        std::fs::write(dir.path().join("a.txt"), "changed\n").expect("write");
+
+        discard_file(dir.path(), "a.txt").expect("discard succeeds");
+
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).expect("read"),
+            "base\n"
+        );
+        assert!(status(dir.path()).expect("status").is_empty());
+    }
+
+    #[test]
+    fn discard_restores_a_deleted_file() {
+        let dir = TempDir::new("discard-deleted");
+        git(dir.path(), &["init", "-b", "main"]);
+        std::fs::write(dir.path().join("a.txt"), "base\n").expect("write");
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "base"]);
+        std::fs::remove_file(dir.path().join("a.txt")).expect("remove");
+
+        discard_file(dir.path(), "a.txt").expect("discard succeeds");
+
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).expect("read"),
+            "base\n"
+        );
+        assert!(status(dir.path()).expect("status").is_empty());
+    }
+
+    #[test]
+    fn discard_removes_an_untracked_file() {
+        let dir = TempDir::new("discard-untracked");
+        git(dir.path(), &["init", "-b", "main"]);
+        git(dir.path(), &["commit", "--allow-empty", "-m", "base"]);
+        std::fs::write(dir.path().join("new.txt"), "new\n").expect("write");
+
+        discard_file(dir.path(), "new.txt").expect("discard succeeds");
+
+        assert!(!dir.path().join("new.txt").exists());
+        assert!(status(dir.path()).expect("status").is_empty());
+    }
+
+    #[test]
+    fn discard_clears_a_staged_added_file() {
+        let dir = TempDir::new("discard-staged");
+        git(dir.path(), &["init", "-b", "main"]);
+        git(dir.path(), &["commit", "--allow-empty", "-m", "base"]);
+        std::fs::write(dir.path().join("b.txt"), "b\n").expect("write");
+        git(dir.path(), &["add", "b.txt"]);
+
+        discard_file(dir.path(), "b.txt").expect("discard succeeds");
+
+        assert!(!dir.path().join("b.txt").exists());
+        assert!(status(dir.path()).expect("status").is_empty());
+    }
+
+    #[test]
+    fn discard_clears_a_staged_modified_added_file() {
+        // `AM` porcelain: staged add, then a worktree edit on top.
+        let dir = TempDir::new("discard-am");
+        git(dir.path(), &["init", "-b", "main"]);
+        git(dir.path(), &["commit", "--allow-empty", "-m", "base"]);
+        std::fs::write(dir.path().join("b.txt"), "b\n").expect("write");
+        git(dir.path(), &["add", "b.txt"]);
+        std::fs::write(dir.path().join("b.txt"), "b edited\n").expect("write");
+
+        discard_file(dir.path(), "b.txt").expect("discard succeeds");
+
+        assert!(!dir.path().join("b.txt").exists());
+        assert!(status(dir.path()).expect("status").is_empty());
+    }
+
+    #[test]
+    fn discard_is_a_noop_for_a_clean_path() {
+        let dir = TempDir::new("discard-clean");
+        git(dir.path(), &["init", "-b", "main"]);
+        std::fs::write(dir.path().join("a.txt"), "base\n").expect("write");
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-m", "base"]);
+
+        assert_eq!(discard_file(dir.path(), "a.txt"), Ok(()));
+        assert!(status(dir.path()).expect("status").is_empty());
+    }
+
+    #[test]
+    fn discard_rejects_invalid_paths() {
+        let dir = TempDir::new("discard-invalid");
+        git(dir.path(), &["init", "-b", "main"]);
+        git(dir.path(), &["commit", "--allow-empty", "-m", "base"]);
+
+        for path in ["", "   ", "/etc/passwd", "../escape.txt"] {
+            assert!(
+                discard_file(dir.path(), path).is_err(),
+                "path {path:?} must be rejected before git is spawned",
+            );
+        }
     }
 }
