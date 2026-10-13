@@ -10,6 +10,20 @@ interface Props {
 
 const MAX_PRE = 4000;
 
+/**
+ * Outputs longer than this start folded: the transcript stays scannable and the
+ * full text is still one click away, rather than a screenful of log per call.
+ */
+const INLINE_OUTPUT_LIMIT = 700;
+
+function lineCount(text: string): number {
+  let lines = 1;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) === 10) lines += 1;
+  }
+  return lines;
+}
+
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}\n… (${text.length - max} more chars)` : text;
 }
@@ -148,6 +162,8 @@ function ToolPart({ part }: { part: Part }) {
   const output =
     state && state.status === "completed" ? state.output : undefined;
   const error = state && state.status === "error" ? state.error : undefined;
+  const outputLines = output ? lineCount(output) : 0;
+  const folded = output !== undefined && output.length > INLINE_OUTPUT_LIMIT;
 
   return (
     <div className={`part part--tool part--tool-${status}`}>
@@ -156,9 +172,15 @@ function ToolPart({ part }: { part: Part }) {
         <span className={`chip chip--tool-${status}`}>{status}</span>
       </div>
       {title && <div className="part__tool-title">{title}</div>}
-      {output && output.length > 0 && (
-        <pre className="part__pre">{truncate(output, MAX_PRE)}</pre>
+      {output && output.length > 0 && folded && (
+        <details className="part__tool-details">
+          <summary>
+            output · {outputLines} {outputLines === 1 ? "line" : "lines"}
+          </summary>
+          <pre className="part__pre">{truncate(output, MAX_PRE)}</pre>
+        </details>
       )}
+      {output && output.length > 0 && !folded && <pre className="part__pre">{output}</pre>}
       {error && <pre className="part__pre part__pre--error">{truncate(error, MAX_PRE)}</pre>}
     </div>
   );
