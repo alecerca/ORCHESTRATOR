@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listFiles } from "../commands";
 import type { FileNode } from "../types";
 import { describeError } from "../utils";
+import { FileIcon, FolderIcon } from "./icons";
 
 interface Props {
   onOpenFile: (path: string) => void;
@@ -102,8 +103,11 @@ function TreeNode({ node, depth, onOpenFile, activePath }: TreeNodeProps) {
         title={node.path}
         aria-expanded={isDirectory ? expanded : undefined}
       >
+        <span className="tnode__chevron" aria-hidden>
+          {isDirectory ? (expanded ? "▾" : "▸") : ""}
+        </span>
         <span className="tnode__icon" aria-hidden>
-          {isDirectory ? (expanded ? "▾" : "▸") : "•"}
+          {isDirectory ? <FolderIcon open={expanded} /> : <FileIcon name={node.name} />}
         </span>
         <span className="tnode__name">{node.name}</span>
       </button>

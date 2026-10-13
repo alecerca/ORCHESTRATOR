@@ -9,6 +9,7 @@ import {
 import { tabSessionId, type GroupNode, type Tab } from "../tabs";
 import type { SessionSnapshot } from "../types";
 import { baseName, shortId } from "../utils";
+import { FileIcon, SkillIcon, TerminalIcon } from "./icons";
 
 /** Custom MIME type carrying the dragged tab payload (see PaneGrid's drop targets). */
 export const TAB_DRAG_MIME = "application/x-orquestador-tab";
@@ -122,6 +123,15 @@ export function TabStrip({ group, sessions, onActivateTab, onCloseTab, onSplit }
               onDragStart={(event) => handleDragStart(event, tab.id)}
               onContextMenu={(event) => handleContextMenu(event, tab.id)}
             >
+              <span className="tab__icon" aria-hidden>
+                {tab.kind === "file" ? (
+                  <FileIcon name={tab.path} size={14} />
+                ) : tab.kind === "skill" ? (
+                  <SkillIcon />
+                ) : (
+                  <TerminalIcon />
+                )}
+              </span>
               <span className="tab__label">{title}</span>
               <button
                 type="button"
