@@ -18,6 +18,7 @@ pub mod backend;
 pub mod client;
 pub mod error;
 pub mod events;
+pub mod files;
 pub mod git;
 pub mod skills;
 pub mod state;
