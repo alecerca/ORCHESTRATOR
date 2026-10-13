@@ -876,3 +876,40 @@ pub async fn git_checkout(app: tauri::AppHandle, name: String) -> Result<(), Str
         .await
         .map_err(stringify)?
 }
+
+/// The working-tree paths that differ from `HEAD` in the active project
+/// directory, each with its change kind. Read-only: the core only runs
+/// `git status`.
+#[tauri::command]
+pub async fn git_status(
+    app: tauri::AppHandle,
+) -> Result<Vec<orquestador_core::git::Change>, String> {
+    let dir = active_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || orquestador_core::git::status(&dir))
+        .await
+        .map_err(stringify)?
+}
+
+/// The `HEAD` revision of one path in the active project directory, for the
+/// "before" side of a diff. Read-only: the core only runs `git cat-file` /
+/// `git show`. `path` must be repository-relative and free of `..` traversal;
+/// it is validated here before git is spawned.
+#[tauri::command]
+pub async fn git_show_file(
+    app: tauri::AppHandle,
+    path: String,
+) -> Result<orquestador_core::git::HeadFile, String> {
+    if path.trim().is_empty() {
+        return Err("invalid file path: empty".to_string());
+    }
+    if path.starts_with('/') {
+        return Err("invalid file path: must be repository-relative".to_string());
+    }
+    if path.contains("..") {
+        return Err("invalid file path: must not contain '..'".to_string());
+    }
+    let dir = active_directory(&app)?;
+    tauri::async_runtime::spawn_blocking(move || orquestador_core::git::show(&dir, &path))
+        .await
+        .map_err(stringify)?
+}
