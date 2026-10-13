@@ -46,9 +46,10 @@ and everything is the same size, so nothing leads.
 
 ## Out of scope
 
-- Component-level UX redesign beyond density/hierarchy/disclosure.
+- Component-level UX redesign beyond density/hierarchy/disclosure, except for
+  the explorer and the tab strip, which U6 covers.
 - Motion/choreography beyond simple transitions.
-- Icon set redesign, layout restructuring, new features.
+- Layout restructuring and new features.
 
 ## Design direction — "Night Console"
 
@@ -78,20 +79,24 @@ accent, real elevation, monospace reserved for data.
 
 | Token | Value |
 | --- | --- |
-| `--bg` | `#f6f7f9` |
-| `--surface` | `#ffffff` |
-| `--surface-alt` | `#eef1f5` |
-| `--surface-raised` | `#ffffff` |
-| `--border` | `#dce1e9` |
-| `--border-strong` | `#c2cad6` |
-| `--text` | `#0f131a` |
-| `--muted` | `#5a6474` |
-| `--brand` | `#0d8f52` |
+| `--bg` | `#e9ebef` |
+| `--surface` | `#f7f8fb` |
+| `--surface-alt` | `#eef0f5` |
+| `--surface-raised` | `#fcfdff` |
+| `--border` | `#d7dbe2` |
+| `--border-strong` | `#b9c0cb` |
+| `--text` | `#1b2129` |
+| `--muted` | `#5b6573` |
+| `--brand` | `#0b7d47` |
 | `--brand-text` | `#ffffff` |
-| `--secondary` | `#1a6fd4` |
-| `--accent` | `#0e7490` |
-| `--warning` | `#8a5a00` |
-| `--error` | `#cc3340` |
+| `--secondary` | `#1565c0` |
+| `--accent` | `#0b6d86` |
+| `--warning` | `#7a5200` |
+| `--error` | `#c02b38` |
+
+Light mode shipped softer than first drafted: the pure `#ffffff` shell and
+panels glared once the denser type/spacing landed, so the shell is now a
+low-glare grey and only the panels stay near-white.
 
 **Scales (new tokens)**
 
@@ -111,15 +116,27 @@ accent, real elevation, monospace reserved for data.
   declarations; raise line-height where missing; add breathing room to the main
   containers (shell, panels, toolbars, lists) via the space scale.
   *Exit: build green; nothing clipped or overflowing.*
-- [ ] **U3 — Hierarchy pass.** Introduce real weights/labels so nothing is flat:
-  section headings, uppercase micro-labels with letter-spacing, stronger
-  primary/secondary text contrast, clear separation between chrome and content.
-- [ ] **U4 — Progressive disclosure.** Reduce simultaneous text: demote
-  secondary descriptions to `--muted`, move hints into `title`/tooltips where
-  the string is already explanatory, group with headings, and make dense areas
-  (activity list, approvals, notifications) breathe. No information removed.
-- [ ] **U5 — Verification.** `npx tsc --noEmit` + `npm run build`; a human pass
-  over the running app (dark + light) for contrast, clipping and focus.
+- [x] **U3 — Hierarchy pass.** Titles (`welcome__title`, `empty-state__title`,
+  `approval__title`, `group-infobar__title`, `agent-card__title`) lifted to 700;
+  the transcript role label became a bold micro-label carrying the accent tint on
+  the agent side. *Exit: build green.*
+- [x] **U4 — Progressive disclosure.** Tool output past 700 characters folds
+  behind a `<details>` whose summary carries the line count, so the transcript no
+  longer pays a screenful per call. Short output still renders inline. No
+  information removed.
+- [x] **U5 — Light palette softening.** Light-theme surfaces dropped pure
+  `#ffffff` for a low-glare grey shell with near-white panels (see the table).
+- [x] **U6 — Kind icons + tab strip.** New `frontend/src/components/icons.tsx`
+  (hand-written SVG, no dependency): a page tinted by the file's extension, an
+  opening folder, a terminal for session tabs, a spark for skill tabs. Wired into
+  `FileTree` and `TabStrip`; the tab close affordance now waits for
+  hover/active/focus instead of adding noise to every tab.
+- [ ] **U7 — Verification.** `npx tsc --noEmit` + `npm run build`; a human pass
+  over the running app (dark + light) for contrast, clipping and focus. Needs a
+  second pair of eyes: the agent cannot see the rendered result.
+
+> U5/U6 are new (they came out of the direction review); the verification task
+> that used to be U5 is now U7.
 
 ## Acceptance criteria
 
@@ -157,8 +174,15 @@ accent, real elevation, monospace reserved for data.
 - [x] U2 — type floor raised one step on every `font-size`, `body` line-height
   1.5, paddings/gaps widened one step, fixed chrome grown (topbar 48px, its
   buttons 30px, rail buttons 36px). `3942c7e`. Build green.
-- [ ] U3 — hierarchy pass.
-- [ ] U4 — progressive disclosure.
-- [ ] U5 — verification + human pass (dark + light).
-- [ ] Human review of the direction before U3/U4 — the palette is ~15 lines and
-  is swappable in a minute if the direction misses.
+- [x] U3 + U5 — hierarchy pass and the light palette softening.
+  `5ee5f91` feat(ui): soften the light theme and lift heading hierarchy.
+- [x] U4 — progressive disclosure (tool output folds past 700 characters).
+  `d1de3d6` feat(ui): fold long tool output behind a disclosure.
+- [x] U6 — kind icons + tab strip polish (4 files, new `icons.tsx`).
+  `730680c` feat(ui): give the explorer and the tab strip kind icons.
+- [x] Direction approved on review ("vale, si vamos por ahi con este diseno"),
+  with three follow-ups folded in as U5/U6: soften light mode, touch the agent
+  console tabs, add file/folder icons by extension.
+- [ ] U7 — verification + human pass (dark + light). Not yet run.
+- [ ] Branch `feat/ui-visual-identity` is committed but **not pushed**; no PR
+  opened. Waiting on the user's OK.
