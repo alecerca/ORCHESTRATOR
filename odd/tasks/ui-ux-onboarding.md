@@ -60,7 +60,7 @@ missing — without changing product behaviour or the wire contract.
 
 ## Tasks
 
-- [ ] **U1 — First-run Welcome (highest priority).** New
+- [x] **U1 — First-run Welcome (highest priority).** New
   `components/WelcomeDialog.tsx`: brand mark, value prop, live connection line,
   a 3-step "how it works" list, primary **Connect / Get started**, secondary
   **Join a shared workspace**, ghost **Skip**. `App.tsx`: show it on first run
@@ -68,16 +68,16 @@ missing — without changing product behaviour or the wire contract.
   `orquestador.welcomeSeen` on any dismiss so it never nags; `Connect` persists
   the default local config via the same `setServerConfig` path. `styles.css`:
   welcome styles.
-- [ ] **U2 — Guidance & coherent states.** `PaneGrid` getting-started empty
+- [x] **U2 — Guidance & coherent states.** `PaneGrid` getting-started empty
   state; `AgentPanel` context-aware copy + disabled picker when empty;
   `ConnectionBanner` names the URL and distinguishes "can't reach" from "lost";
   `FileTree` empty/loading states + `aria-expanded` + `role="alert"`; richer
   `MessageStream` empty + `role="log"`.
-- [ ] **U3 — Design polish + bugs.** Fix `--muted-text` → `--muted`; global
+- [x] **U3 — Design polish + bugs.** Fix `--muted-text` → `--muted`; global
   `:focus-visible`; replace `ActivityBar` glyphs with inline SVG icons (no more
   duplicate `▤`) + `aria-pressed`; clearer `TopBar` meta; friendlier
   `StatusChip` titles.
-- [ ] **U4 — Accessibility.** Dialog roles/labels/initial-focus in
+- [x] **U4 — Accessibility.** Dialog roles/labels/initial-focus in
   `ApprovalDialog` + `SkillSavePrompt`; `role="tablist|tab|tabpanel"` in
   `EditorPanel`; `aria-label` + `role="alert"` in `FollowUpInput` / `Composer`;
   `aria-live` + labelled dismiss buttons in `NotificationsDrawer`.
@@ -103,5 +103,20 @@ missing — without changing product behaviour or the wire contract.
 ## Progress log
 
 - [x] Feature document created (2026-10-12) on branch `feat/ui-ux-onboarding`.
-- [ ] U1..U4 implementation.
-- [ ] Verification + user review BEFORE any commit/push (user-owned delivery).
+- [x] U1..U4 implemented.
+- [x] Verification: `npx tsc --noEmit` (exit 0) + `npm run build` (exit 0).
+- [x] Committed + pushed after explicit user approval:
+  - `167ea46` feat(ui): add first-run onboarding, guided states and an a11y pass
+  - `df52fe5` docs(odd): record the ui/ux onboarding feature plan
+  - upstream: `origin/feat/ui-ux-onboarding` (PR not opened).
+
+## Status notes
+
+- Receipt-driven development is enabled (global), but the review START returned a
+  `gentle-ai.review-integration.consent/v3` envelope that must be relayed through
+  the native `question` UI, which this runtime does not expose. Per the contract
+  the consent is not relayable from chat, so no review was started and no
+  authority was mutated; delivery proceeded under ordinary policy with explicit
+  user approval.
+- Follow-ups (out of scope here): open the PR, then optionally run the native
+  review from an interactive runtime that exposes the `question` UI.
