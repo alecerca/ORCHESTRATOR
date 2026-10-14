@@ -89,30 +89,45 @@ Two things turned it from a personal tool into something shareable:
 
 ## Installation
 
-Orquestador is a desktop app for **Windows, macOS and Linux**. Full details,
-prerequisites and troubleshooting: [`docs/INSTALL.md`](docs/INSTALL.md).
-
-**Installer from a release** — grab the installer for your platform from the
-[Releases page](https://github.com/alecerca/ORCHESTRATOR/releases):
-
-- **Windows** — `.msi` or `.exe` (WebView2 is built into Windows 10/11).
-- **macOS** — `.dmg` (Intel and Apple Silicon).
-- **Linux** — `.deb` (Debian/Ubuntu), `.rpm` (Fedora/openSUSE) or the portable
-  `.AppImage`.
+Orquestador is a desktop app for **Windows, macOS and Linux**, and it ships a
+companion CLI, **`orquestador-proxy`**. Both come from the same
+[GitHub Release](https://github.com/alecerca/ORCHESTRATOR/releases). Full
+details, prerequisites and troubleshooting: [`docs/INSTALL.md`](docs/INSTALL.md).
 
 > The first release is **not published yet**. It will be built automatically by
 > the release workflow (`.github/workflows/release.yml`) the first time a `v*`
-> tag is pushed.
+> tag is pushed; the GUI installers and the CLI binaries will then appear on the
+> Releases page.
 
-**One-line CLI install (Linux/macOS)** — once a release exists:
+**Desktop GUI — installer from a release** — grab the installer for your
+platform from the
+[Releases page](https://github.com/alecerca/ORCHESTRATOR/releases):
+
+- **Windows** — `.msi` or `.exe` (WebView2 is built into Windows 10/11).
+- **macOS** — one universal `.dmg` (Intel and Apple Silicon).
+- **Linux** — `.deb` (Debian/Ubuntu), `.rpm` (Fedora/openSUSE) or the portable
+  `.AppImage`.
+
+**CLI (`orquestador-proxy`) — one-line install** — `orquestador-proxy` is the
+headless binary: it serves the role-enforcing proxy and mints users
+(`adduser`). It is published for Linux/macOS/Windows from the same release, so
+once a release exists you install it with one command:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/alecerca/ORCHESTRATOR/main/scripts/install.sh | sh
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/alecerca/ORCHESTRATOR/main/scripts/install.sh | sh -s -- --cli
 ```
 
-The script picks the right bundle for your OS and architecture, installs it
-under `~/.local/bin` (Linux) or opens the `.dmg` (macOS). Options, uninstall
-and troubleshooting: [`docs/INSTALL.md`](docs/INSTALL.md).
+```powershell
+# Windows (PowerShell)
+iex "& { $(irm https://raw.githubusercontent.com/alecerca/ORCHESTRATOR/main/scripts/install.ps1) } -Cli"
+```
+
+The Linux/macOS script installs under `~/.local/bin`; the Windows script
+installs under `%USERPROFILE%\.orquestador\bin` and prints the line to add that
+directory to `PATH`. Run the same scripts without `--cli` / `-Cli` to install
+the GUI bundle instead. Options, uninstall and troubleshooting:
+[`docs/INSTALL.md`](docs/INSTALL.md).
 
 **Build from source** — the path that works today; see
 [`docs/INSTALL.md`](docs/INSTALL.md) for the per-OS prerequisites and the
