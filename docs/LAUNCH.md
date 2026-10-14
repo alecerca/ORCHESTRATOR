@@ -40,24 +40,28 @@ Rule: pain first, relief second. Never open with a feature list.
 
 ## Publishing the demo
 
-Status: the demo video has **not been recorded or uploaded yet** — it is the
-intended README hero, in place of screenshots (which are also still pending,
-see [`screenshots/README.md`](screenshots/README.md)).
+Status: **published.** The video is embedded in the README's **Demo** section
+through a GitHub user-attachments link — a `<video>` tag whose `src` is
+`https://github.com/user-attachments/assets/<uuid>` — with
+[`orquestador-demo.mp4`](../orquestador-demo.mp4) committed in the repo as a
+fallback for anyone who cannot play the inline embed. Screenshots are still
+pending ([`screenshots/README.md`](screenshots/README.md)); the video is the
+hero instead.
 
-Once the video is recorded:
+To update the demo later:
 
-1. Upload it by **dragging the file into a GitHub comment box** (any issue or
-   PR comment works). GitHub uploads it and replies with a URL of the form
+1. Upload the new file by **dragging it into a GitHub comment box** (any issue
+   or PR comment works). GitHub uploads it and replies with a URL of the form
    `https://github.com/user-attachments/assets/<uuid>`.
-2. Paste the embed into the README's **Demo** section, at the placeholder
-   HTML comment that currently sits there:
+2. Replace the `src` in the README's **Demo** `<video>` tag with the new URL:
 
    ```html
    <video src="https://github.com/user-attachments/assets/<uuid>" controls playsinline width="900"></video>
    ```
 
-3. Delete the placeholder comment and verify the video plays inline on the
-   rendered README before sharing any link to the repo.
+3. Commit the render as `orquestador-demo.mp4` so the fallback link stays
+   current, and verify the video plays inline on the rendered README before
+   sharing any link to the repo.
 
 ## Where to share it (in order)
 
@@ -81,15 +85,17 @@ please" — that is noise, and it buries the post.
 A one-command install is the adoption enabler, not vanity. The pieces now
 exist:
 
-- **Release pipeline** — `.github/workflows/release.yml` builds the native
-  installers (deb/rpm/AppImage, msi/nsis, dmg) on ubuntu/windows/macos and
-  publishes them to the GitHub Releases page whenever a `v*` tag is pushed.
-  Nothing is published yet: the first `v*` tag flips this from "build from
-  source only" to "grab your installer".
-- **One-line install** — `scripts/install.sh` (Linux/macOS) downloads the
-  right bundle from the latest release and installs it. It needs a published
-  release to point at.
+- **Release pipeline** — `.github/workflows/release.yml` builds the native GUI
+  installers (deb/rpm/AppImage, msi/nsis, one universal dmg) on
+  ubuntu/windows/macos **and** the headless `orquestador-proxy` CLI for
+  Linux/macOS/Windows, publishing everything to the GitHub Releases page
+  whenever a `v*` tag is pushed. Nothing is published yet: the first `v*` tag
+  flips this from "build from source only" to "grab your installer".
+- **One-line install** — `scripts/install.sh` (Linux/macOS) and
+  `scripts/install.ps1` (Windows) download the right bundle from the latest
+  release and install it; with `--cli` / `-Cli` they install the
+  `orquestador-proxy` binary instead. They need a published release to point at.
 
 So the funnel until the first tag: demo + repository + build-from-source docs
-([`INSTALL.md`](INSTALL.md)). After the first tag: releases page +
-the one-liner.
+([`INSTALL.md`](INSTALL.md)). After the first tag: releases page + the
+one-liners (GUI and CLI).

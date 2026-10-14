@@ -1,12 +1,14 @@
 # Installing Orquestador
 
-Orquestador is a desktop app for **Windows, macOS and Linux**. Choose one of
-the paths:
+Orquestador is a desktop app for **Windows, macOS and Linux**. It also ships a
+headless CLI, **`orquestador-proxy`**. Choose one of the paths:
 
 - **From a release** — fastest, no toolchain needed (available once the first
-  release is published).
-- **One-line script (Linux/macOS)** — same release binaries, installed for
-  you; also needs a published release.
+  release is published). Covers the GUI installers **and** the CLI binaries.
+- **One-line script** — Linux/macOS (`install.sh`) and Windows
+  (`install.ps1`); same release binaries, installed for you. Needs a published
+  release. Add `--cli` (or `-Cli` on Windows) to install the CLI instead of the
+  GUI.
 - **Build from source** — the path that works today while releases are not
   published yet, or if you want to hack on the code.
 
@@ -28,24 +30,35 @@ Grab the installer for your platform from the GitHub **Releases** page.
 No additional runtime needs to be installed: the app ships everything except
 the OS webview it runs on.
 
-## Install with the one-line script (Linux/macOS)
+Each release also carries the headless CLI, `orquestador-proxy`, as
+architecture-specific binaries — `orquestador-proxy-linux-x86_64`,
+`orquestador-proxy-macos-x86_64`, `orquestador-proxy-macos-aarch64` and
+`orquestador-proxy-windows-x86_64.exe`. Download the one matching your OS and
+architecture and put it on your `PATH`, or let a one-line script below do it.
 
-Prerequisites: `curl` and a POSIX shell — nothing else.
+## Install with the one-line script
+
+Prerequisites: `curl` and a POSIX shell on Linux/macOS; Windows PowerShell on
+Windows — nothing else. Like the release installers above, the scripts need a
+**published release** to download from. Until the first release exists they
+exit with a clear message pointing you back to this page.
+
+### Linux / macOS
 
 ```sh
+# GUI bundle: installs the AppImage under ~/.local/bin, or opens the .dmg
 curl -fsSL https://raw.githubusercontent.com/alecerca/ORCHESTRATOR/main/scripts/install.sh | sh
 ```
-
-> Like the release installers above, the script needs a **published release**
-> to download from. Until the first release exists it exits with a clear
-> message pointing you back to this page.
 
 What it does, step by step (it prints each step as it goes):
 
 1. Detects your OS (`Linux` or `Darwin`) and architecture (`x86_64` or
    `aarch64`); anything else exits with an error.
 2. Asks the GitHub API for the latest release and picks the matching bundle by
-   pattern — Linux: `*.AppImage` first (`.deb` fallback), macOS: `*.dmg`.
+   pattern — Linux: `*_amd64.AppImage` or `*_aarch64.AppImage` (`.deb`
+   fallback), macOS: `*.dmg`. The architecture token is required, so a
+   mismatched host fails with a clear message instead of installing the wrong
+   architecture.
 3. Installs:
    - **Linux** — the AppImage goes to `${XDG_BIN_HOME:-$HOME/.local/bin}/orquestador`
      (the directory is created if needed), and a desktop entry is written to
@@ -64,10 +77,58 @@ Options:
 ```sh
 sh install.sh --help            # usage
 sh install.sh --version v0.1.0  # install a specific release tag
+sh install.sh --cli             # install the CLI (orquestador-proxy), not the GUI
 sh install.sh --deb             # Linux: prefer the .deb over the AppImage
 ```
 
-(When piping via `curl`, download the file first if you want to pass options.)
+(When piping via `curl`, pass options as `... | sh -s -- --cli`, or download
+the file and run it.)
+
+#### CLI install (Linux/macOS)
+
+`--cli` downloads the `orquestador-proxy-<os>-<arch>` asset and installs it to
+`${XDG_BIN_HOME:-$HOME/.local/bin}/orquestador-proxy` (no GUI bundle):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alecerca/ORCHESTRATOR/main/scripts/install.sh | sh -s -- --cli
+```
+
+### Windows (PowerShell)
+
+The Windows installer is `scripts/install.ps1`. By default it downloads the
+`.msi` (falling back to the `-setup.exe`), starts it, and lets the UAC prompt
+install the GUI:
+
+```powershell
+iex "& { $(irm https://raw.githubusercontent.com/alecerca/ORCHESTRATOR/main/scripts/install.ps1) }"
+```
+
+With `-Cli` it downloads `orquestador-proxy-windows-x86_64.exe` to
+`%USERPROFILE%\.orquestador\bin\orquestador-proxy.exe` and prints the line to
+add that directory to `PATH`:
+
+```powershell
+iex "& { $(irm https://raw.githubusercontent.com/alecerca/ORCHESTRATOR/main/scripts/install.ps1) } -Cli"
+```
+
+Both forms accept `-Version v0.1.0` to install a specific release tag. Like the
+other paths, the script needs a published release and points at
+[build from source](#build-from-source) when none exists yet.
+
+### Using the CLI (`orquestador-proxy`)
+
+`orquestador-proxy` is the headless binary shipped next to the GUI. It has two
+modes:
+
+```sh
+orquestador-proxy ./proxy.json                           # serve the role-enforcing proxy (default)
+orquestador-proxy adduser <name> --role <editor|viewer>  # add a user (password read from stdin)
+```
+
+`serve` loads `proxy.json` (the path argument, or `ORQUESTADOR_PROXY_CONFIG`,
+or `./proxy.json`) and runs the reverse proxy. `adduser` appends an
+Argon2id-hashed user to `proxy.json` (use `--config <path>` to point elsewhere).
+See [`COWORK.md`](COWORK.md) for the full role-enforcement setup.
 
 ### Uninstall
 
@@ -81,6 +142,9 @@ sh install.sh --deb             # Linux: prefer the .deb over the AppImage
 - **Linux (.deb)** — `sudo dpkg -r orquestador`.
 - **macOS** — delete `Orquestador.app` from *Applications* and the `.dmg` in
   *Downloads*.
+- **CLI (Linux/macOS)** — `rm ~/.local/bin/orquestador-proxy`.
+- **CLI (Windows)** — delete `%USERPROFILE%\.orquestador\bin\orquestador-proxy.exe`
+  and remove that directory from `PATH` if you added it.
 
 ## Build from source
 
