@@ -19,17 +19,11 @@ just one, and the rest keep working.
 
 A 3-minute, 1080p60 walkthrough of the app.
 
-GitHub only renders an inline player when the `<video>` source is a GitHub
-user-attachments URL, so upload the MP4 (drag it into any GitHub comment box and
-copy the generated link) and paste it here:
-
-<!--
 <div align="center">
-  <video src="https://github.com/user-attachments/assets/PASTE-UPLOAD-URL-HERE" controls playsinline width="900"></video>
+  <video src="https://github.com/user-attachments/assets/97e7b4b1-be6f-407a-bffe-911d73a3f416" controls playsinline width="900"></video>
 </div>
--->
 
-Until then, the render lives in this repo:
+The render is also committed in this repo:
 [`orquestador-demo.mp4`](orquestador-demo.mp4) — 1920×1080, 60 fps, 3 min, 16 MB.
 
 
