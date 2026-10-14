@@ -1,22 +1,32 @@
 # Release pipeline.
 #
-# Pushing a `v*` tag (e.g. v0.1.0) builds the platform-native bundles and
-# publishes them as a GitHub Release for that tag. Tauri does not cross-compile,
-# so each OS builds its own artifacts — the artifact matrix is:
+# Pushing a `v*` tag (e.g. v0.1.0) builds the platform-native GUI bundles and
+# the headless `orquestador-proxy` CLI, then publishes them as a single GitHub
+# Release for that tag. Tauri does not cross-compile, so each OS builds its own
+# artifacts — the artifact matrix is:
 #
 #   ubuntu-22.04   -> deb/  rpm/  appimage/   (e.g. Orquestador_0.1.0_amd64.deb,
 #                                               Orquestador_0.1.0_amd64.AppImage)
 #   windows-latest -> msi/  nsis/             (e.g. Orquestador_0.1.0_x64_en-US.msi,
 #                                               Orquestador_0.1.0_x64-setup.exe)
-#   macos-latest   -> dmg/  macos/            (e.g. Orquestador_0.1.0_x64.dmg or
-#                                               Orquestador_0.1.0_universal.dmg)
+#   macos-latest   -> dmg/  macos/            (one universal .dmg:
+#                                               Orquestador_0.1.0_universal.dmg,
+#                                               Intel + Apple Silicon)
 #
 # Outputs land in src-tauri/target/release/bundle/ on each runner; the
 # tauri-action step uploads them to the release.
 #
+# The `cli` job builds `orquestador-proxy` for each OS/arch and uploads it to
+# the SAME release under a stable, machine-discoverable name
+# (`orquestador-proxy-<os>-<arch>[.exe]`) so the install scripts can find it.
+#
 # Signing is intentionally NOT enabled yet: no TAURI_SIGNING_PRIVATE_KEY, no
 # updater artifacts, no notarization. Installers are unsigned today (Windows
 # SmartScreen / macOS Gatekeeper warnings are expected). Signing is a future step.
+#
+# Release creation happens only on a `v*` tag: every step that mutates the
+# release is guarded by `startsWith(github.ref, 'refs/tags/v')`, so a
+# `workflow_dispatch` on a branch builds without publishing a bogus release.
 
 name: Release
 
@@ -24,22 +34,27 @@ on:
   push:
     tags:
       - "v*"
-  # Manual runs: select the workflow, ideally with a `v*` tag as the ref so a
-  # release is created for an existing tag.
+  # Manual runs: select the workflow with a `v*` tag as the ref to publish, or
+  # run it on a branch to build without creating a release.
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  # GUI bundles: one native build per OS. macOS pins the universal target so a
+  # single .dmg serves Intel + Apple Silicon.
   release:
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: ubuntu-22.04
+            args: ""
           - platform: windows-latest
+            args: ""
           - platform: macos-latest
+            args: "--target universal-apple-darwin"
 
     runs-on: ${{ matrix.platform }}
 
@@ -65,13 +80,86 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # The universal macOS build needs both Apple targets installed; the
+      # Linux/Windows legs use the host target only.
+      - name: Add Apple targets for the universal build
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
-      - uses: tauri-apps/tauri-action@v0
+      # Builds the GUI bundle and creates/updates the release. Guarded so a
+      # branch `workflow_dispatch` never publishes anything (otherwise
+      # `tagName: ${{ github.ref_name }}` would use the branch name).
+      - name: Build and publish the GUI bundle
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Orquestador ${{ github.ref_name }}
+          args: ${{ matrix.args }}
+
+  # Headless CLI: build `orquestador-proxy` per OS/arch and attach it to the
+  # same release under the stable asset names the install scripts expect.
+  cli:
+    # Wait for the GUI job so the release already exists when the CLI uploads;
+    # `always()` keeps the CLI publishing even when one GUI platform failed.
+    # softprops/action-gh-release finds-or-creates the release by tag and
+    # uploads idempotently, so there is no duplicate-release race.
+    needs: release
+    if: ${{ always() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bin: orquestador-proxy
+            asset: orquestador-proxy-linux-x86_64
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            bin: orquestador-proxy
+            asset: orquestador-proxy-macos-x86_64
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            bin: orquestador-proxy
+            asset: orquestador-proxy-macos-aarch64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin: orquestador-proxy.exe
+            asset: orquestador-proxy-windows-x86_64.exe
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Build orquestador-proxy
+        run: cargo build --release -p orquestador-proxy --target ${{ matrix.target }}
+
+      - name: Stage the binary under its release asset name
+        shell: bash
+        run: cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "${{ matrix.asset }}"
+
+      # Only a `v*` tag may publish; a branch dispatch just builds.
+      - name: Upload the CLI binary to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: ${{ matrix.asset }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
