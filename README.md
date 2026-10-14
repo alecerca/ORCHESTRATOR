@@ -17,9 +17,12 @@ just one, and the rest keep working.
 
 ## Demo
 
-A 3-minute demo video is on the way. When it lands, it will live right here:
+Demo video:
 
-<!-- Demo video: paste the user-attachments <video src="https://github.com/user-attachments/assets/..." controls playsinline width="900"></video> here -->
+<div align="center">
+  <video src="orquestador-demo.mp4" controls playsinline width="900"></video>
+</div>
+
 
 ## Why
 
