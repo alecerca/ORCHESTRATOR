@@ -23,8 +23,15 @@ A 3-minute, 1080p60 walkthrough of the app.
   <video src="https://github.com/user-attachments/assets/97e7b4b1-be6f-407a-bffe-911d73a3f416" controls playsinline width="900"></video>
 </div>
 
-The render is also committed in this repo:
-[`orquestador-demo.mp4`](orquestador-demo.mp4) — 1920×1080, 60 fps, 3 min, 16 MB.
+If you prefer Spanish, see here:
+
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/2f828948-d58f-4cfd-8338-1ed5df10b8df" controls playsinline width="900"></video>
+</div>
+
+The renders are also committed in this repo:
+[`orquestador-demo.mp4`](orquestador-demo.mp4) (English) and
+[`orquestador-demo-es.mp4`](orquestador-demo-es.mp4) (Spanish) — 1920×1080, 60 fps, 3 min.
 
 
 ## Why
