@@ -123,9 +123,9 @@ curl -fsSL https://raw.githubusercontent.com/alecerca/ORCHESTRATOR/main/scripts/
 iex "& { $(irm https://raw.githubusercontent.com/alecerca/ORCHESTRATOR/main/scripts/install.ps1) } -Cli"
 ```
 
-The Linux/macOS script installs under `~/.local/bin`; the Windows script
-installs under `%USERPROFILE%\.orquestador\bin` and prints the line to add that
-directory to `PATH`. Run the same scripts without `--cli` / `-Cli` to install
+The Linux/macOS script installs under `${XDG_BIN_HOME:-~/.local/bin}`; the
+Windows script installs under `%USERPROFILE%\.orquestador\bin` and prints the
+line to add that directory to `PATH`. Run the same scripts without `--cli` / `-Cli` to install
 the GUI bundle instead. Options, uninstall and troubleshooting:
 [`docs/INSTALL.md`](docs/INSTALL.md).
 

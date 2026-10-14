@@ -201,14 +201,15 @@ elif [ "$os" = linux ]; then
     fi
   fi
 else # macos
+  # The .dmg must carry a matching architecture token (the release ships one
+  # `universal` image). There is deliberately NO "any .dmg" fallback: that
+  # would silently install the wrong architecture.
   if [ "$arch" = x86_64 ]; then
     asset_url=$(pick '(_x64|_x86_64|_universal)\.dmg$') \
-      || asset_url=$(pick '\.dmg$') \
-      || die "release $tag has no .dmg asset for Intel Macs"
+      || die "release $tag has no universal or x86_64 .dmg asset for Intel Macs"
   else
     asset_url=$(pick '(_aarch64|_arm64|_universal)\.dmg$') \
-      || asset_url=$(pick '\.dmg$') \
-      || die "release $tag has no .dmg asset for Apple Silicon"
+      || die "release $tag has no universal or arm64 .dmg asset for Apple Silicon"
   fi
 fi
 
@@ -222,8 +223,13 @@ curl -fL -o "$tmpdir/$asset_name" "$asset_url" \
 if [ "$USE_CLI" = 1 ]; then
   info "installing the CLI to $BIN_DIR/orquestador-proxy"
   mkdir -p "$BIN_DIR"
-  cp "$tmpdir/$asset_name" "$BIN_DIR/orquestador-proxy"
-  chmod +x "$BIN_DIR/orquestador-proxy"
+  cli_dest="$BIN_DIR/orquestador-proxy"
+  # Write next to the target and rename: a failed or partial copy never
+  # clobbers a working install.
+  cp "$tmpdir/$asset_name" "$cli_dest.new" \
+    || { rm -f "$cli_dest.new"; die "could not write to $BIN_DIR"; }
+  chmod +x "$cli_dest.new"
+  mv -f "$cli_dest.new" "$cli_dest"
   printf '%s\n' \
     "orquestador-install: installed orquestador-proxy $tag to $BIN_DIR/orquestador-proxy" \
     "" \
@@ -235,7 +241,7 @@ if [ "$USE_CLI" = 1 ]; then
     *":$BIN_DIR:"*) ;;
     *)
       info "note: $BIN_DIR is not on your PATH. Add it to your shell profile:"
-      info "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+      info "  export PATH=\"$BIN_DIR:\$PATH\""
       ;;
   esac
   exit 0
@@ -286,8 +292,11 @@ case "$asset_name" in
   *)
     info "installing AppImage to $BIN_DIR/orquestador"
     mkdir -p "$BIN_DIR"
-    cp "$tmpdir/$asset_name" "$BIN_DIR/orquestador"
-    chmod +x "$BIN_DIR/orquestador"
+    app_dest="$BIN_DIR/orquestador"
+    cp "$tmpdir/$asset_name" "$app_dest.new" \
+      || { rm -f "$app_dest.new"; die "could not write to $BIN_DIR"; }
+    chmod +x "$app_dest.new"
+    mv -f "$app_dest.new" "$app_dest"
 
     apps_dir="$DATA_DIR/applications"
     mkdir -p "$apps_dir"
@@ -308,7 +317,7 @@ case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *)
     info "note: $BIN_DIR is not on your PATH. Add it to your shell profile:"
-    info "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+    info "  export PATH=\"$BIN_DIR:\$PATH\""
     ;;
 esac
 
