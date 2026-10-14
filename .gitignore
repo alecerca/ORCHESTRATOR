@@ -33,3 +33,6 @@ tmp/
 
 # Local skill registry index
 .atl/
+
+# ODD working docs (local development journal, not part of the published repo)
+odd/
