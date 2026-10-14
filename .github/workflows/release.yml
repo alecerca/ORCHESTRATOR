@@ -1,0 +1,77 @@
+# Release pipeline.
+#
+# Pushing a `v*` tag (e.g. v0.1.0) builds the platform-native bundles and
+# publishes them as a GitHub Release for that tag. Tauri does not cross-compile,
+# so each OS builds its own artifacts — the artifact matrix is:
+#
+#   ubuntu-22.04   -> deb/  rpm/  appimage/   (e.g. Orquestador_0.1.0_amd64.deb,
+#                                               Orquestador_0.1.0_amd64.AppImage)
+#   windows-latest -> msi/  nsis/             (e.g. Orquestador_0.1.0_x64_en-US.msi,
+#                                               Orquestador_0.1.0_x64-setup.exe)
+#   macos-latest   -> dmg/  macos/            (e.g. Orquestador_0.1.0_x64.dmg or
+#                                               Orquestador_0.1.0_universal.dmg)
+#
+# Outputs land in src-tauri/target/release/bundle/ on each runner; the
+# tauri-action step uploads them to the release.
+#
+# Signing is intentionally NOT enabled yet: no TAURI_SIGNING_PRIVATE_KEY, no
+# updater artifacts, no notarization. Installers are unsigned today (Windows
+# SmartScreen / macOS Gatekeeper warnings are expected). Signing is a future step.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Manual runs: select the workflow, ideally with a `v*` tag as the ref so a
+  # release is created for an existing tag.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+          - platform: windows-latest
+          - platform: macos-latest
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl wget file libssl-dev libgtk-3-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm install --prefix frontend
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Orquestador ${{ github.ref_name }}
