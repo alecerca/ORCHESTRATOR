@@ -116,9 +116,14 @@ try {
     $binDir = Join-Path $HOME ".orquestador\bin"
     New-Item -ItemType Directory -Force -Path $binDir | Out-Null
     $dest = Join-Path $binDir "orquestador-proxy.exe"
+    $staged = "$dest.new"
     try {
-      Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $dest -UseBasicParsing
+      # Download next to the target, then rename: a failed transfer never
+      # clobbers a working install.
+      Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $staged -UseBasicParsing
+      Move-Item -Force -Path $staged -Destination $dest
     } catch {
+      Remove-Item -Force -ErrorAction SilentlyContinue -Path $staged
       Die "download failed: $($asset.browser_download_url)"
     }
     Info "installed orquestador-proxy $tag to $dest"
