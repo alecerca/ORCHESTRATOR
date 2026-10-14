@@ -11,6 +11,9 @@
 #           .deb     -> dpkg (only when root or non-interactive sudo is available)
 #   macOS   .dmg     -> ~/Downloads, then opens it (drag to Applications)
 #
+# With --cli it installs the headless `orquestador-proxy` binary instead:
+#   orquestador-proxy -> ${XDG_BIN_HOME:-$HOME/.local/bin}/orquestador-proxy
+#
 # Needs a published release: https://github.com/alecerca/ORCHESTRATOR/releases
 # Full docs: docs/INSTALL.md
 set -eu
@@ -21,6 +24,7 @@ DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}"
 
 VERSION=""
 USE_DEB=0
+USE_CLI=0
 
 info() { printf 'orquestador-install: %s\n' "$*" >&2; }
 die()  { printf 'orquestador-install: error: %s\n' "$*" >&2; exit 1; }
@@ -36,6 +40,7 @@ Usage:
 Options:
   --version <tag>   Install a specific release tag (default: latest),
                     e.g. --version v0.1.0
+  --cli             Install the CLI (orquestador-proxy) instead of the GUI
   --deb             Linux: install the .deb instead of the AppImage
   -h, --help        Show this help
 
@@ -45,6 +50,8 @@ What it does:
     Linux   AppImage -> ~/.local/bin/orquestador (+ a .desktop menu entry);
             .deb     -> dpkg, only with root or non-interactive sudo
     macOS   .dmg     -> ~/Downloads, then opens it (drag to Applications)
+  With --cli it installs the headless binary instead, to
+    ~/.local/bin/orquestador-proxy.
 
 This script needs a published release to download from:
   https://github.com/alecerca/ORCHESTRATOR/releases
@@ -60,6 +67,10 @@ while [ $# -gt 0 ]; do
       ;;
     --deb)
       USE_DEB=1
+      shift
+      ;;
+    --cli)
+      USE_CLI=1
       shift
       ;;
     -h|--help)
@@ -161,20 +172,33 @@ pick() {
 
 # --- Select the asset for this platform --------------------------------------
 
-if [ "$os" = linux ]; then
-  if [ "$USE_DEB" = 1 ]; then
-    asset_url=$(pick '\.deb$') \
-      || die "release $tag has no .deb asset"
-  elif [ "$arch" = x86_64 ]; then
-    asset_url=$(pick '_amd64\.AppImage$') \
-      || asset_url=$(pick '\.AppImage$') \
-      || asset_url=$(pick '\.deb$') \
-      || die "release $tag has no AppImage or .deb asset for x86_64"
+if [ "$USE_CLI" = 1 ]; then
+  # Stable CLI asset name: orquestador-proxy-<os>-<arch> (Linux/macOS here;
+  # Windows is handled by install.ps1).
+  cli_asset="orquestador-proxy-$os-$arch"
+  asset_url=$(pick "^${cli_asset}\$") \
+    || die "release $tag has no '$cli_asset' asset for $os/$arch"
+elif [ "$os" = linux ]; then
+  # Strict arch matching: require the arch token, never fall back to another
+  # architecture's package.
+  if [ "$arch" = x86_64 ]; then
+    if [ "$USE_DEB" = 1 ]; then
+      asset_url=$(pick '_amd64\.deb$') \
+        || die "release $tag has no '_amd64.deb' asset for x86_64"
+    else
+      asset_url=$(pick '_amd64\.AppImage$') \
+        || asset_url=$(pick '_amd64\.deb$') \
+        || die "release $tag has no '_amd64.AppImage' or '_amd64.deb' asset for x86_64"
+    fi
   else
-    asset_url=$(pick '_aarch64\.AppImage$') \
-      || asset_url=$(pick '\.AppImage$') \
-      || asset_url=$(pick '\.deb$') \
-      || die "release $tag has no AppImage or .deb asset for aarch64"
+    if [ "$USE_DEB" = 1 ]; then
+      asset_url=$(pick '_aarch64\.deb$|_arm64\.deb$') \
+        || die "release $tag has no '_aarch64.deb' or '_arm64.deb' asset for aarch64"
+    else
+      asset_url=$(pick '_aarch64\.AppImage$') \
+        || asset_url=$(pick '_aarch64\.deb$|_arm64\.deb$') \
+        || die "release $tag has no '_aarch64.AppImage', '_aarch64.deb' or '_arm64.deb' asset for aarch64"
+    fi
   fi
 else # macos
   if [ "$arch" = x86_64 ]; then
@@ -192,6 +216,30 @@ asset_name=${asset_url##*/}
 info "downloading $asset_name"
 curl -fL -o "$tmpdir/$asset_name" "$asset_url" \
   || die "download failed: $asset_url"
+
+# --- CLI mode ----------------------------------------------------------------
+
+if [ "$USE_CLI" = 1 ]; then
+  info "installing the CLI to $BIN_DIR/orquestador-proxy"
+  mkdir -p "$BIN_DIR"
+  cp "$tmpdir/$asset_name" "$BIN_DIR/orquestador-proxy"
+  chmod +x "$BIN_DIR/orquestador-proxy"
+  printf '%s\n' \
+    "orquestador-install: installed orquestador-proxy $tag to $BIN_DIR/orquestador-proxy" \
+    "" \
+    "Serve (reads ./proxy.json by default):" \
+    "  $BIN_DIR/orquestador-proxy [config.json]" \
+    "Add a user (the password is read from stdin):" \
+    "  $BIN_DIR/orquestador-proxy adduser <name> --role <editor|viewer>" >&2
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *)
+      info "note: $BIN_DIR is not on your PATH. Add it to your shell profile:"
+      info "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+      ;;
+  esac
+  exit 0
+fi
 
 # --- Install -----------------------------------------------------------------
 
