@@ -8,14 +8,16 @@ reviewable and headless-testable.
 
 - **One feature, one branch.** Name it `feat/<short-name>` (or `docs/`,
   `fix/`, `chore/`). Branch from `main`, never commit straight to it.
-- **Conventional Commits** with scopes: `feat(ui)`, `feat(core)`, `docs(odd)`,
-  `fix(cowork)`, `chore(meta)`, … Keep each commit a reviewable work unit:
-  behavior, its tests and its docs land together.
+- **Conventional Commits** with scopes: `feat(ui)`, `feat(core)`,
+  `docs(install)`, `fix(cowork)`, `chore(meta)`, … Keep each commit a
+  reviewable work unit: behavior, its tests and its docs land together.
 - **No AI attribution** in commits (no `Co-Authored-By`). The work speaks for
   itself.
-- **Features get a plan.** Substantial work tracks a lightweight feature
-  document under `odd/tasks/<feature>.md` (objective, tasks, acceptance
-  criteria, progress) before the first write.
+- **Features get a plan.** Substantial work carries a short plan in the PR
+  description (objective, tasks, acceptance criteria) before the first write.
+  Note: the maintainer keeps a local development journal under `odd/` — that
+  directory is gitignored and not part of the published repo. **Do not add
+  files under `odd/`**; the PR description is where shared planning lives.
 
 ## Repository layout
 
@@ -23,9 +25,8 @@ reviewable and headless-testable.
 crates/orquestador-core/   # all core logic — headless, no Tauri dependency
 src-tauri/                 # Tauri 2 desktop shell (standalone workspace)
 frontend/                  # Vite + React + TypeScript + Monaco
-scripts/                   # setup-system-deps.sh · verify-headless.sh · …
+scripts/                   # setup-system-deps.sh · verify-headless.sh · install.sh · …
 docs/                      # INSTALL · ARCHITECTURE · COWORK · RUNBOOK · …
-odd/tasks/                 # per-feature task documents
 SPEC.md                    # canonical specification
 ```
 
@@ -64,7 +65,7 @@ tauri/wry/webkit. Keep it that way.
 ## Desktop shell
 
 The GUI itself needs the Tauri system dependencies (Linux: webkit2gtk-4.1, see
-[`docs/INSTALL.md`](docs/INSTALL.md)). They are **not** needed to develop or
+[`INSTALL.md`](INSTALL.md)). They are **not** needed to develop or
 test the core — a change that only touches core/frontend never requires them.
 
 ## Pull requests

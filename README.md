@@ -1,5 +1,9 @@
 # Orquestador
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](docs/INSTALL.md)
+[![Build from source](https://img.shields.io/badge/build%20from%20source-Rust%20%2B%20Tauri-1687B8)](docs/INSTALL.md)
+
 **The desktop control tower for OpenCode and [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) orchestrator sub-agents.**
 
 You run an OpenCode-based orchestrator and suddenly **five sub-agents are
@@ -8,10 +12,14 @@ to fix a single one you interrupt everything. Orquestador is a desktop GUI
 that puts **every sub-agent in its own live pane**: you watch all of them, fix
 just one, and the rest keep working.
 
-![Orquestador — main window](docs/screenshots/main-window.png)
-
 > What a terminal sidebar can't do: live split panes, per-agent control, a real
 > diff viewer, and a visual handle on the whole project.
+
+## Demo
+
+A 3-minute demo video is on the way. When it lands, it will live right here:
+
+<!-- Demo video: paste the user-attachments <video src="https://github.com/user-attachments/assets/..." controls playsinline width="900"></video> here -->
 
 ## Why
 
@@ -42,14 +50,25 @@ Two things turned it from a personal tool into something shareable:
 - Composer for the orchestrator session, with approval prompts and desktop
   notifications.
 
+**Review and control agent work**
+
+- Diff tab: see every file your agents touched — modified, added, deleted or
+  untracked — with status badges, and review each change in a Monaco diff
+  viewer (base `HEAD` vs your working tree) before it lands.
+- Discard a single file's changes with one click, behind a confirm dialog —
+  undo one agent's edit without touching the rest of the tree.
+- Save with `Ctrl/Cmd+S`, and never lose an edit: closing a file with unsaved
+  changes prompts Save / Don't save / Cancel, and the tab shows a dirty dot.
+
 **Workspace**
 
-- Built-in Monaco editor with a diff viewer: review the files your agents are
-  touching and edit them without leaving the app.
+- Built-in Monaco editor: review the files your agents are touching and edit
+  them without leaving the app.
 - File tree and a git view (branches, checkout, commit staging, log) — the
-  project lives in the same window.
+  project lives in the same window, including a branch switcher in the status
+  bar.
 - Tab system with splits: watch several agents at once, or an agent and a file
-  side by side.
+  side by side. Tab-strip scroll arrows keep many open tabs reachable.
 
 **Skills**
 
@@ -62,31 +81,36 @@ Two things turned it from a personal tool into something shareable:
 - Connect the app to any OpenCode server — local, LAN or remote — from the
   server settings, no terminal needed.
 
-## Screenshots
-
-Real captures are pending (this machine's display is not reachable from a shell;
-see [`docs/screenshots/README.md`](docs/screenshots/README.md) for the capture
-list). The README embeds them at:
-
-- `docs/screenshots/main-window.png` — the control tower.
-- `docs/screenshots/agent-panes.png` — per-agent panes with branch chips.
-- `docs/screenshots/workspace.png` — editor, diff and git view.
-
 ## Installation
 
-Orquestador is a desktop app for **Windows, macOS and Linux**.
+Orquestador is a desktop app for **Windows, macOS and Linux**. Full details,
+prerequisites and troubleshooting: [`docs/INSTALL.md`](docs/INSTALL.md).
 
-**From a release** (once the first release is published): grab the installer
-for your platform —
+**Installer from a release** — grab the installer for your platform from the
+[Releases page](https://github.com/alecerca/ORCHESTRATOR/releases):
 
-- **Windows** — `.msi` or `.exe` installer (WebView2 is built into
-  Windows 10/11).
+- **Windows** — `.msi` or `.exe` (WebView2 is built into Windows 10/11).
 - **macOS** — `.dmg` (Intel and Apple Silicon).
 - **Linux** — `.deb` (Debian/Ubuntu), `.rpm` (Fedora/openSUSE) or the portable
   `.AppImage`.
 
-**Build from source** — see [`docs/INSTALL.md`](docs/INSTALL.md) for the
-per-OS prerequisites and the exact commands.
+> The first release is **not published yet**. It will be built automatically by
+> the release workflow (`.github/workflows/release.yml`) the first time a `v*`
+> tag is pushed.
+
+**One-line CLI install (Linux/macOS)** — once a release exists:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alecerca/ORCHESTRATOR/main/scripts/install.sh | sh
+```
+
+The script picks the right bundle for your OS and architecture, installs it
+under `~/.local/bin` (Linux) or opens the `.dmg` (macOS). Options, uninstall
+and troubleshooting: [`docs/INSTALL.md`](docs/INSTALL.md).
+
+**Build from source** — the path that works today; see
+[`docs/INSTALL.md`](docs/INSTALL.md) for the per-OS prerequisites and the
+exact commands.
 
 ## Quick start
 
@@ -103,11 +127,17 @@ per-OS prerequisites and the exact commands.
    npx @tauri-apps/cli dev
    ```
 
+## Screenshots
+
+Screenshots have not been captured yet — the demo video above is the intended
+hero. The planned shot list lives in
+[`docs/screenshots/README.md`](docs/screenshots/README.md).
+
 ## How it works
 
 - **`crates/orquestador-core`** — Rust core: typed HTTP client, SSE event hub,
   session/state model. No Tauri dependency, so it compiles and tests headless
-  (77 unit tests).
+  (132 unit tests).
 - **`src-tauri/`** — the Tauri 2 desktop shell (standalone workspace).
 - **`frontend/`** — Vite + React + TypeScript + Monaco (editor and diff),
   bundled locally.
@@ -119,15 +149,15 @@ Verify headless with `bash scripts/verify-headless.sh`. Full architecture:
 
 | Doc | What it covers |
 | --- | --- |
-| [`docs/INSTALL.md`](docs/INSTALL.md) | Generic install for Windows / macOS / Linux |
-| [`docs/LAUNCH.md`](docs/LAUNCH.md) | 90-second demo and where the project is shared |
+| [`docs/INSTALL.md`](docs/INSTALL.md) | Install for Windows / macOS / Linux |
+| [`docs/LAUNCH.md`](docs/LAUNCH.md) | Launch kit: demo and where the project is shared |
 | [`docs/COWORK.md`](docs/COWORK.md) | Shared sessions: roles, whitelist, presence |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | First run, day-to-day operations |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core, shell and frontend design |
 | [`docs/PLAN.md`](docs/PLAN.md) | Master contract and feature plan |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Future directions |
 | [`docs/AUDIT.md`](docs/AUDIT.md) | Independent audit results |
-| `SPEC.md` | Canonical specification |
+| [`SPEC.md`](SPEC.md) | Canonical specification |
 
 ## Development
 

@@ -38,6 +38,27 @@ Record it once; reuse it everywhere. Screen-only, no voice-over needed.
 
 Rule: pain first, relief second. Never open with a feature list.
 
+## Publishing the demo
+
+Status: the demo video has **not been recorded or uploaded yet** — it is the
+intended README hero, in place of screenshots (which are also still pending,
+see [`screenshots/README.md`](screenshots/README.md)).
+
+Once the video is recorded:
+
+1. Upload it by **dragging the file into a GitHub comment box** (any issue or
+   PR comment works). GitHub uploads it and replies with a URL of the form
+   `https://github.com/user-attachments/assets/<uuid>`.
+2. Paste the embed into the README's **Demo** section, at the placeholder
+   HTML comment that currently sits there:
+
+   ```html
+   <video src="https://github.com/user-attachments/assets/<uuid>" controls playsinline width="900"></video>
+   ```
+
+3. Delete the placeholder comment and verify the video plays inline on the
+   rendered README before sharing any link to the repo.
+
 ## Where to share it (in order)
 
 1. **OpenCode issue #12463** — say you built a desktop solution and link the
@@ -57,6 +78,18 @@ please" — that is noise, and it buries the post.
 
 ## Making it installable
 
-A one-command install is the adoption enabler, not vanity: a release binary per
-OS (see the `docs/ROADMAP.md` Track 1 build matrix). Until then, the demo and
-the repository are the funnel.
+A one-command install is the adoption enabler, not vanity. The pieces now
+exist:
+
+- **Release pipeline** — `.github/workflows/release.yml` builds the native
+  installers (deb/rpm/AppImage, msi/nsis, dmg) on ubuntu/windows/macos and
+  publishes them to the GitHub Releases page whenever a `v*` tag is pushed.
+  Nothing is published yet: the first `v*` tag flips this from "build from
+  source only" to "grab your installer".
+- **One-line install** — `scripts/install.sh` (Linux/macOS) downloads the
+  right bundle from the latest release and installs it. It needs a published
+  release to point at.
+
+So the funnel until the first tag: demo + repository + build-from-source docs
+([`INSTALL.md`](INSTALL.md)). After the first tag: releases page +
+the one-liner.

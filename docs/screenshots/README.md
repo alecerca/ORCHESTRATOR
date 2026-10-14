@@ -3,6 +3,11 @@
 Public screenshots of the app live here and are embedded from the README.
 Captures must be real app screenshots, not mocked UI.
 
+**Status: no captures exist yet.** Until they do, the README hero is the demo
+video (see the Demo section in the root README and
+[`docs/LAUNCH.md`](../LAUNCH.md) for the upload/embed steps). Screenshots
+below are the planned set for after the video.
+
 ## Capturing
 
 Run the app (`npx @tauri-apps/cli dev`, or the built binary) with a live
