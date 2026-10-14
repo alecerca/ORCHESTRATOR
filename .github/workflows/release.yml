@@ -13,8 +13,9 @@
 #                                               Orquestador_0.1.0_universal.dmg,
 #                                               Intel + Apple Silicon)
 #
-# Outputs land in src-tauri/target/release/bundle/ on each runner; the
-# tauri-action step uploads them to the release.
+# Outputs land in src-tauri/target/release/bundle/ on the Linux/Windows runners
+# and under src-tauri/target/universal-apple-darwin/release/bundle/ on macOS;
+# the tauri-action step uploads them to the release either way.
 #
 # The `cli` job builds `orquestador-proxy` for each OS/arch and uploads it to
 # the SAME release under a stable, machine-discoverable name
@@ -35,7 +36,8 @@ on:
     tags:
       - "v*"
   # Manual runs: select the workflow with a `v*` tag as the ref to publish, or
-  # run it on a branch to build without creating a release.
+  # run it on a branch to build without publishing — note that on a branch only
+  # the `cli` job actually builds (the GUI step is tag-guarded).
   workflow_dispatch:
 
 permissions:

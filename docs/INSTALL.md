@@ -56,9 +56,9 @@ What it does, step by step (it prints each step as it goes):
    `aarch64`); anything else exits with an error.
 2. Asks the GitHub API for the latest release and picks the matching bundle by
    pattern — Linux: `*_amd64.AppImage` or `*_aarch64.AppImage` (`.deb`
-   fallback), macOS: `*.dmg`. The architecture token is required, so a
-   mismatched host fails with a clear message instead of installing the wrong
-   architecture.
+   fallback), macOS: the `*_universal.dmg`. The architecture token is required
+   on every platform, so a mismatched host fails with a clear message instead
+   of installing the wrong architecture.
 3. Installs:
    - **Linux** — the AppImage goes to `${XDG_BIN_HOME:-$HOME/.local/bin}/orquestador`
      (the directory is created if needed), and a desktop entry is written to
