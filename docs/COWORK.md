@@ -22,7 +22,8 @@ OPENCODE_SERVER_PASSWORD=<upstream-password> \
   opencode serve --hostname 127.0.0.1 --port 4096
 
 # 2. A config (start from the example below).
-cp proxy.json proxy.json   # create it next to where you will run the proxy
+#    The file does not exist yet: create it next to where you will run the
+#    proxy, and paste the example from "Configuration reference" below.
 
 # 3. Add each collaborator; the password is read from stdin and hashed.
 cargo build -p orquestador-proxy --release
@@ -57,7 +58,7 @@ proxy resolves them and injects the real upstream credentials.
 | Field | Meaning |
 |---|---|
 | `password_hash` | Argon2id (PHC string). Written by `adduser` or the app's **Members** dialog. |
-| `token` | Legacy plaintext password. Still accepted; a user needs one of the two. |
+| `token` | Legacy plaintext password. A record needs one of the two: when `token` is used **alone** it still authenticates. If a record has **both** `password_hash` and `token`, the **hash wins** and the plaintext token stops authenticating (`crates/orquestador-proxy/src/auth.rs`). |
 
 Prefer `password_hash`. A user with `token` keeps a **plaintext secret in the
 file** — that file is the host's to protect. Hashes are never logged, and
