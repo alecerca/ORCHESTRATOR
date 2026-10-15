@@ -90,7 +90,8 @@ Two things turned it from a personal tool into something shareable:
 
 **Cowork & remote**
 
-- Shared sessions with group roles, whitelist, presence and a pinned project.
+- Shared sessions with group roles, whitelist, presence and a pinned project
+  ([setup guide](docs/COWORK-SETUP.md)).
 - Connect the app to any OpenCode server — local, LAN or remote — from the
   server settings, no terminal needed.
 
@@ -179,7 +180,8 @@ Verify headless with `bash scripts/verify-headless.sh`. Full architecture:
 | --- | --- |
 | [`docs/INSTALL.md`](docs/INSTALL.md) | Install for Windows / macOS / Linux |
 | [`docs/LAUNCH.md`](docs/LAUNCH.md) | Launch kit: demo and where the project is shared |
-| [`docs/COWORK.md`](docs/COWORK.md) | Shared sessions: roles, whitelist, presence |
+| [`docs/COWORK-SETUP.md`](docs/COWORK-SETUP.md) | Step-by-step Cowork walkthrough: project → server → users → proxy → teammates → connect |
+| [`docs/COWORK.md`](docs/COWORK.md) | Cowork reference: roles, whitelist, presence, config and limits |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | First run, day-to-day operations |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Core, shell and frontend design |
 | [`docs/PLAN.md`](docs/PLAN.md) | Master contract and feature plan |
