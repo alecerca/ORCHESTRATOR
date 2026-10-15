@@ -144,18 +144,22 @@ exact commands.
 
 ## Quick start
 
-1. Make sure an OpenCode server is reachable: `opencode serve` (default
-   `http://127.0.0.1:4096`). Point the app at your own server — local, LAN or
-   remote — via the in-app server settings, or the `OPENCODE_SERVER_BASE_URL`
-   and `OPENCODE_SERVER_PASSWORD` environment variables.
-2. Install the desktop system dependencies — on Linux,
-   `bash scripts/setup-system-deps.sh` prints the exact command; see
-   [`docs/INSTALL.md`](docs/INSTALL.md) for Windows and macOS.
-3. Run the app:
+The short version for a user (full detail in [Installation](#installation) and
+[`docs/INSTALL.md`](docs/INSTALL.md)):
 
-   ```sh
-   npx @tauri-apps/cli dev
-   ```
+1. **Install the desktop app** — from the
+   [Releases page](https://github.com/alecerca/ORCHESTRATOR/releases) or the
+   one-line script above. No release is published yet, so the working path today
+   is [build from source](docs/INSTALL.md#build-from-source).
+2. **Give it a server.** Orquestador is a client and does nothing on its own:
+   run `opencode serve` (default `http://127.0.0.1:4096`), or point the app at a
+   local, LAN or remote server from Settings, or with the
+   `OPENCODE_SERVER_BASE_URL` and `OPENCODE_SERVER_PASSWORD` environment
+   variables.
+3. **Open Orquestador** and pick your project. For shared or remote work,
+   install the CLI companion `orquestador-proxy` (same script with `--cli` on
+   Linux/macOS or `-Cli` on Windows) and follow
+   [`docs/COWORK-SETUP.md`](docs/COWORK-SETUP.md).
 
 ## Screenshots
 

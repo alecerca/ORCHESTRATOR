@@ -2,19 +2,22 @@
 
 > Forward-looking companion to `docs/ARCHITECTURE.md` (current design) and
 > `docs/PLAN.md` (v1 contract). `PLAN.md` remains the single source of truth for
-> v1; this document is **non-authoritative post-v1 planning**. It maps three
-> product directions that are feasible but **not part of v1**: multi-platform
-> distribution, collaborative/remote ("cowork") use with roles, and pluggable AI
-> backends beyond OpenCode. Nothing here is implemented yet.
+> v1; this document is **non-authoritative planning**. It tracks four directions
+> beyond the bare OpenCode desktop app: multi-platform distribution,
+> collaborative/remote ("cowork") use with roles, pluggable AI backends, and an
+> onboarding/backend-selector seam. **Part of it already ships** — Cowork (Track
+> 2) is a working v0 and is in v1 (see `PLAN.md` §1), and Track 1's release
+> pipeline exists — so each track carries a **Status** line instead of a blanket
+> "future work" label. Tracks 3 and 4 remain genuinely unbuilt.
 
 ## TL;DR
 
-| Track | Verdict | Biggest gap |
-|---|---|---|
-| 1. Multi-platform desktop (Windows / macOS / Linux) | Feasible now (Tauri 2) | Per-OS build matrix + code signing; WebKitGTK / notification variance |
-| 2. Cowork — connect to a remote address; share a project; read-only role | Feasible, mostly wiring | OpenCode has no roles → need an owned role-enforcing proxy |
-| 3. Multi-backend (OpenCode / Claude Code / Codex) | Feasible | Needs an `AgentBackend` trait + per-backend event adapters; protocol research done (Track 3 + Appendix A) |
-| 4. Onboarding + backend selector | Design-only for now | Connection model differs per backend (Server vs Process); ship OpenCode-only in v1 |
+| Track | Status | Verdict | Biggest gap |
+|---|---|---|---|
+| 1. Multi-platform desktop (Windows / macOS / Linux) | Build pipeline shipped; no published build | Feasible now (Tauri 2) | Code signing; a tested, published build per OS; WebKitGTK / notification variance |
+| 2. Cowork — connect to a remote address; share a project; read-only role | **Shipped (v0)** | Feasible, mostly wiring | TLS termination + production hardening |
+| 3. Multi-backend (OpenCode / Claude Code / Codex) | Not built | Feasible | Needs per-backend `AgentBackend` adapters + a normalized event model; protocol research done (Track 3 + Appendix A) |
+| 4. Onboarding + backend selector | Not built (design-only) | Design-only for now | Connection model differs per backend (Server vs Process); ship OpenCode-only in v1 |
 
 ## Baseline (what exists today)
 
@@ -23,15 +26,24 @@
 - **Headless core** `crates/orquestador-core` (no Tauri dependency, unit-tested).
 - **Already a network client**: it drives `opencode serve` over HTTP + SSE.
   - `crates/orquestador-core/src/client.rs` — typed `reqwest`/`rustls` client;
-    `DEFAULT_BASE_URL = http://127.0.0.1:4096` (`client.rs:20`); HTTP basic auth.
+    `DEFAULT_BASE_URL = http://127.0.0.1:4096` (`client.rs:25`); HTTP basic auth.
   - Config from the environment: `OPENCODE_SERVER_BASE_URL`,
-    `OPENCODE_SERVER_PASSWORD`, `OPENCODE_SERVER_USERNAME` (`client.rs:99`).
+    `OPENCODE_SERVER_PASSWORD`, `OPENCODE_SERVER_USERNAME`
+    (`ClientConfig::from_env_or_default`, `client.rs:73`).
   - The app does **not** spawn OpenCode; it connects to a server that runs
     separately.
 
 That last point is why Tracks 2 and 3 are close.
 
 ## Track 1 — Multi-platform desktop
+
+**Status: build pipeline shipped; no published build.** The app declares all
+three platforms (`src-tauri/tauri.conf.json` → `bundle.targets: "all"`) and
+`.github/workflows/release.yml` builds one native bundle per OS on
+`ubuntu-22.04` / `windows-latest` / `macos-latest`. Code signing is **not**
+enabled (see the workflow header), and no `v*` tag has been pushed (`git tag` is
+empty), so no release exists yet. The Tauri shell also has not been compiled in
+this dev environment — see `docs/AUDIT.md`.
 
 **Verdict:** feasible — it is what Tauri is for. One Rust core, a native webview
 per OS (WebView2 / WKWebView / WebKitGTK). It is a desktop app, **not** a browser
@@ -40,26 +52,35 @@ app.
 **What already holds:**
 
 - Tauri 2 + `bundle.targets: "all"` already declares desktop bundles.
+- The release workflow already runs a three-OS build matrix (GUI + CLI).
 - Core dependencies are portable: `reqwest` + `rustls` (no OpenSSL), `notify-rust`.
 
 **Work / risks:**
 
 | Area | Notes |
 |---|---|
-| Build matrix | `targets: "all"` builds all formats **for the host OS only**. Ship three platforms via CI (windows / macos / ubuntu). Tauri cross-compilation is painful — build on each OS (or use Tauri's CI action). |
+| Build matrix | `targets: "all"` builds all formats **for the host OS only**. The release workflow already ships three platforms via CI (ubuntu / windows / macos). Tauri cross-compilation is painful — build on each OS (or use Tauri's CI action). |
 | Linux webview | Behavior and version vary by distro (already surfaced with GNOME 50). `webkit2gtk-4.1` is Linux-only — that is why `src-tauri` sets an empty `[workspace]` table. |
 | Notifications | `notify-rust` maps to Windows toast / macOS / Linux D-Bus, but the UX differs per OS — test each. |
-| Signing | macOS: Developer ID + notarization (else Gatekeeper blocks). Windows: code-signing cert (SmartScreen). Linux: AppImage/deb/rpm, unsigned is normal. |
+| Signing | macOS: Developer ID + notarization (else Gatekeeper blocks). Windows: code-signing cert (SmartScreen). Linux: AppImage/deb/rpm, unsigned is normal. **Not yet configured** in the release workflow. |
 | Commercialization | Tauri is MIT/Apache → closed-source and paid distribution are allowed. The crate is MIT. The real constraint is the AI **backends'** licenses (Track 3), not Tauri. |
 
 ## Track 2 — Cowork (remote + roles)
+
+**Status: shipped (v0), and part of v1.** `crates/orquestador-proxy` implements
+the role-enforcing proxy — viewer/editor roles over HTTP Basic, SSE passthrough,
+an audit log — plus presence (`GET /orquestador/whoami`, `GET /orquestador/present`)
+and the optional `project_directory` pin. The app side exists too: Settings saves
+`base_url` + credentials (`set_server_config`) and the presence strip renders
+live members. TLS termination and production hardening remain follow-ups; see
+`docs/COWORK.md` and `crates/orquestador-proxy/README.md`.
 
 **Verdict:** feasible, and largely wiring — the client is already network-based.
 
 **How it maps to today's code:**
 
 - "Type the address to point at" == expose `base_url` + `password` in a Settings
-  screen instead of the hardcoded default (`client.rs:20`).
+  screen instead of the hardcoded default (`client.rs:25`).
 - **Host** runs: `opencode serve --hostname 0.0.0.0 --port 4096` with
   `OPENCODE_SERVER_PASSWORD` set. Verified: OpenCode supports `--hostname`,
   `--port`, and HTTP basic auth natively. Clients then connect to
@@ -72,14 +93,16 @@ app.
   cloud-hosted server. Track 4's backend selector is orthogonal and never
   replaces this (see the ⚠ note in Track 4).
 
-**The real gap — read-only / roles:**
+**The real gap — read-only / roles (now shipped in v0):**
 
 - OpenCode auth is a **single shared password**: anyone who authenticates can
   also execute (send prompts, answer permissions). There is **no RBAC**.
 - "Connect but cannot execute" therefore requires a **role-enforcing proxy owned
   by Orquestador**, placed in front of OpenCode: authenticate per user, allow the
   read endpoints + `/event` for a *viewer*, and block write endpoints
-  (prompt / permission / session mutations).
+  (prompt / permission / session mutations). **This shipped** as
+  `crates/orquestador-proxy` (viewer/editor roles, SSE passthrough, audit log,
+  presence, project pin).
 
 **Security (non-negotiable):**
 
@@ -92,6 +115,11 @@ the self-hosted / SaaS shape. The core is already headless, so a standalone
 "Orquestador server" binary wrapping OpenCode + the proxy is a natural step.
 
 ## Track 3 — Multi-backend (OpenCode / Claude Code / Codex)
+
+**Status: not built.** v1 ships OpenCode only. The `AgentBackend` trait seam
+exists (`crates/orquestador-core/src/backend.rs`), but there is no Codex, Claude
+Code or ACP adapter, and the trait's events are still OpenCode-shaped (see Track
+4's honesty note). Everything below is the plan for when this starts.
 
 **Verdict:** feasible, but requires a real abstraction — not plug-and-play.
 Protocol research was completed on 2026-10-12; full detail, flags, and sources
@@ -149,6 +177,11 @@ ACP (`agent-client-protocol`) is Apache-2.0.
 reusable, but the *transport* it drives is **OpenCode-specific**. See **Track 4**.
 
 ## Track 4 — Onboarding + backend selector (connection model)
+
+**Status: not built (design-only by decision).** The Base URL / user / password
+Settings screen ships and is the Track 2 cowork foundation; the multi-backend
+selector is deliberately deferred until a second backend exists. What follows is
+design only, explicitly not scheduled.
 
 **Verdict:** the pattern is right, but it should stay **design-only until a second
 backend actually exists**. Shipping v1 with OpenCode alone is the correct call.

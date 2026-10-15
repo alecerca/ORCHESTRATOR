@@ -169,9 +169,10 @@ Redirect stderr to a file or your log collector.
 ## How this was built
 
 Five phases on the `feat/cowork` branch, merged to `main` in one go. Every phase
-was implemented by a delegated worker under a design doc
-([`../odd/tasks/cowork.md`](../odd/tasks/cowork.md)), and the parent reviewed the
-diffs before committing.
+was implemented by a delegated worker under an internal design doc, and the
+parent reviewed the diffs before committing. The proxy's own reference — security
+model, config table and behaviour notes — is
+[`crates/orquestador-proxy/README.md`](../crates/orquestador-proxy/README.md).
 
 | Phase | What it added | Commits |
 |---|---|---|
@@ -195,7 +196,7 @@ Two design choices worth knowing:
 Verification actually run at merge time:
 
 ```bash
-cargo test --workspace                              # core 111, proxy 56 + 18
+cargo test --workspace                              # core 132, proxy 56 + 18
 cargo test --manifest-path src-tauri/Cargo.toml --lib   # 18
 npm run typecheck                                   # from frontend/ — exit 0
 ```
@@ -226,7 +227,7 @@ document).
 
 ## Next step
 
-Read [`../odd/tasks/cowork.md`](../odd/tasks/cowork.md) for the full design,
-acceptance criteria and open decisions, and
-[`../crates/orquestador-proxy/README.md`](../crates/orquestador-proxy/README.md)
-for the proxy's own reference.
+Read [`crates/orquestador-proxy/README.md`](../crates/orquestador-proxy/README.md)
+for the proxy's own reference — the security model, config table and behaviour
+notes — and [`COWORK-SETUP.md`](COWORK-SETUP.md) for the end-to-end walkthrough
+from an empty machine to a connected teammate.

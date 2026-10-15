@@ -6,7 +6,7 @@
 
 ## 0. Prerequisites
 
-- Rust `1.99+`, Node `24+`, npm `11+`.
+- Rust `1.99+`, Node `20+`, npm `11+`.
 - A running OpenCode server: `opencode serve` (default `http://127.0.0.1:4096`).
 - **GUI only**: the Tauri system libraries (see step 3). They are **not** needed
   to build or test the core.

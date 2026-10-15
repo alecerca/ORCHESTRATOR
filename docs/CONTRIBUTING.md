@@ -15,9 +15,8 @@ reviewable and headless-testable.
   itself.
 - **Features get a plan.** Substantial work carries a short plan in the PR
   description (objective, tasks, acceptance criteria) before the first write.
-  Note: the maintainer keeps a local development journal under `odd/` — that
-  directory is gitignored and not part of the published repo. **Do not add
-  files under `odd/`**; the PR description is where shared planning lives.
+  Keep planning in the PR description; do not commit local scratch or journal
+  files — the PR is where shared planning lives.
 
 ## Repository layout
 
