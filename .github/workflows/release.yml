@@ -77,8 +77,14 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # `npm install --prefix <dir>` is broken on Windows (npm/cli#7722, a
+      # duplicate of #4511): it ignores the prefix and looks for package.json in
+      # the cwd, failing with ENOENT. Running from the directory removes the
+      # prefix entirely, and `npm ci` is unaffected by the bug besides being
+      # deterministic (it installs from the committed lockfile).
       - name: Install frontend dependencies
-        run: npm install --prefix frontend
+        working-directory: frontend
+        run: npm ci
 
       - uses: dtolnay/rust-toolchain@stable
 
