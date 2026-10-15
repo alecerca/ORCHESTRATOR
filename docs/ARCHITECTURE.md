@@ -32,13 +32,12 @@ three layers with a hard boundary:
 
 ## Why the core is separate (the constraint that shapes everything)
 
-`webkit2gtk-4.1` is now installed on this machine, but
-`libayatana-appindicator3` is still absent and `sudo` still requires a password,
-so the Tauri shell **has not been compiled in this environment**. The split
-remains the right shape regardless: the core is a plain workspace member with
+The split remains the right shape: the core is a plain workspace member with
 **zero** Tauri dependency and is verified headless (`cargo check`/`test`/`clippy`).
 `src-tauri` is a standalone crate (empty `[workspace]` table) excluded from the
-root workspace, so root `cargo` never tries to compile tauri/wry/webkit.
+root workspace, so root `cargo` never tries to compile tauri/wry/webkit. The
+Tauri shell compiles in this environment, but that structural isolation still
+preserves a clean headless contract.
 
 ## Responsibilities
 

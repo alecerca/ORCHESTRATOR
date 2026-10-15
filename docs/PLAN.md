@@ -23,9 +23,9 @@ HTTP basic auth via `OPENCODE_SERVER_PASSWORD`, user `opencode`).
 The core and proxy crates are implemented and headless-verified
 (`cargo test` + `cargo clippy` clean; `cargo fmt --check` currently reports
 toolchain-drift diffs — see §9). The Tauri shell and the frontend are fully
-written but the shell **has not been compiled in this environment** (see §5);
-`src-tauri` is cross-read against the frontend contract, not executed here. The
-project is not published (no git tags).
+written and the shell compiles in this environment (see §5); `src-tauri` is
+cross-read against the frontend contract, not executed here. The project is
+published with `v0.1.0` and `v0.2.0`.
 
 ## 3. Repository layout
 
@@ -93,9 +93,7 @@ project is not published (no git tags).
 
 ## 5. Build isolation (why `src-tauri` compiles alone)
 
-`webkit2gtk-4.1` is now present on this machine, but
-`libayatana-appindicator3` is still absent and `sudo` still requires a password,
-so the shell has not been compiled here. The isolation is structural, not
+The shell compiles in this environment. The isolation is structural, not
 incidental:
 
 - Root `Cargo.toml`: `members = ["crates/*"]` → the workspace contains **only**
@@ -445,9 +443,11 @@ state call commands and **do not** assume success (surface the `String` error).
 
 ## 11. Risks & open questions
 
-1. **Unverifiable shell** — `src-tauri` has not been compiled here. It is written
-   to compile but is unproven; the first `cargo build` after installing deps may
-   need small fixes (import paths, Tauri 2 API names). Expected, not a defect.
+1. **Shell build verification (Resolved 2026-10-15)** — The shell now compiles in
+   this environment, and the release workflow built GUI bundles on ubuntu,
+   windows and macos for `v0.1.0`/`v0.2.0`. The original concern: `src-tauri` was
+   unproven here; the first `cargo build` after installing deps may need small
+   fixes (import paths, Tauri 2 API names). Expected, not a defect.
 2. **Tauri 2 arg casing** — JS must send camelCase keys for snake_case Rust
    params. Verify `respond_permission` (`permissionId`) and `send_message_async`
    on the first manual run.

@@ -1,5 +1,11 @@
 # Orquestador — Audit & hardening review
 
+> **Resolution note (2026-10-15)** — the environment limitations recorded below
+> have since been resolved. The `src-tauri` desktop shell compiles in this
+> environment now, and releases `v0.1.0` and `v0.2.0` have been tagged and
+> published with installers for Windows, macOS and Linux. The findings below are
+> preserved verbatim as the record of the audited revision.
+
 A point-in-time review of the Orquestador desktop app against `SPEC.md` and
 `docs/PLAN.md`: what was verified, what was found, and what remains
 environment-blocked. Method: full source read plus re-running every verification
@@ -26,8 +32,8 @@ by inspection only — its crate cannot be compiled in this environment.
 | TS typecheck | `cd frontend && npx tsc --noEmit` | exit 0 |
 | Tauri commands | `grep -c '#\[tauri::command\]' src-tauri/src/commands.rs` | 46 |
 | Debug-macro audit | grep `todo!`/`unimplemented!` in `crates`, `src-tauri/src` | only in `events.rs` `#[cfg(test)] mod tests` |
-| Git tags | `git tag` | 0 (not published) |
-| GUI compile/run | `npx @tauri-apps/cli dev` / `build` | **ENV-BLOCKED** (see below) |
+| Git tags | `git tag` | 0 (not published) — resolved 2026-10-15 (see Resolution note) |
+| GUI compile/run | `npx @tauri-apps/cli dev` / `build` | **ENV-BLOCKED** — resolved 2026-10-15 (see Resolution note) |
 
 The `cargo fmt --check` failure is toolchain drift (line-wrapping / multi-line
 call style across `backend.rs`, `client.rs`, `events.rs`, `skills.rs`,
