@@ -7,7 +7,7 @@ members = ["crates/*"]
 # compiles tauri/wry/webkit code (webkit2gtk-4.1 is not installed here).
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/alecerca/ORCHESTRATOR"
