@@ -1,51 +1,31 @@
-# Orquestador — Implementation Plan (PLANNER deliverable)
+# Orquestador — Technical design reference
 
-> Master contract for **AGENT 2 (IMPLEMENTER)**. Read `SPEC.md` first; this
-> document refines it and resolves the `[PLANNER]` TODOs. Where this file and
-> `SPEC.md` disagree, `SPEC.md` wins — report the conflict in
-> `docs/IMPLEMENTATION_NOTES.md`.
->
-> Companion docs: `docs/ARCHITECTURE.md` (diagrams), `docs/IMPLEMENTATION_PLAN.md`
-> (the ordered task list extracted from §9 here). `PLAN.md` is the single source
-> of truth; the other two are views over it.
-
----
+Detailed technical contract for the Orquestador desktop app: the module
+boundaries, the exact wire shapes of the OpenCode server API, the Tauri command
+surface, and the frontend contract. The product/API spec lives in `SPEC.md`; the
+layered overview lives in `docs/ARCHITECTURE.md`.
 
 ## 1. Purpose & product recap
 
 A desktop control tower for OpenCode sub-agents (Tauri 2 + TypeScript). One
 window with: an **orchestrator composer**, an **agent panel** (sub-agent list
 with status), **split panes** with each agent's live stream, **interrupt /
-re-instruct**, **approval prompts** with desktop notifications, and an
-**editor + diff viewer** (Monaco). Out of scope for v1: worktrees, issues/PRs,
-multi-project switching, chat persistence.
+re-instruct**, **approval prompts** with desktop notifications, an **editor +
+git diff viewer** (Monaco), and — for shared use — a **Cowork** mode that talks
+to the `orquestador-proxy` auth/whitelist proxy (see `docs/COWORK.md`). Out of
+scope for v1: worktrees, issues/PRs, multi-project switching, chat persistence.
 
 Runtime target: a local `opencode serve` at `http://127.0.0.1:4096` (optional
 HTTP basic auth via `OPENCODE_SERVER_PASSWORD`, user `opencode`).
 
----
+## 2. Scope & status
 
-## 2. Status snapshot (what this scaffold already contains)
-
-Created by AGENT 1 and **verified green** (commands in §10):
-
-| Area | State | Evidence |
-|---|---|---|
-| `Cargo.toml` workspace (core only) | done | `cargo metadata` → 1 member |
-| `crates/orquestador-core` (types/error/client/state/events) | done + tested | `cargo test -p orquestador-core` → **37 passed** |
-| `cargo clippy --all-targets -- -D warnings` | clean | — |
-| `src-tauri` shell (bridge/commands/lib/notify/config) | scaffolded, **not compiled** (no webkit2gtk) | `cargo metadata` in `src-tauri` → resolves 487 pkgs |
-| `frontend` (Vite+React+TS strict) | scaffold, builds | `npx tsc --noEmit` + `vite build` green |
-| `scripts/setup-system-deps.sh` / `install-deps.sh` / `verify-headless.sh` | done | — |
-| `docs/PLAN.md`, `docs/ARCHITECTURE.md`, `docs/IMPLEMENTATION_PLAN.md` | this | — |
-| `README.md` | stub (status: planning) | finalized by AGENT 3 |
-
-**What AGENT 2 must build**: the real frontend UI (§8 + §9 steps S3–S11),
-finish/verify `src-tauri` once webkit2gtk is installed, and write
-`docs/IMPLEMENTATION_NOTES.md`. The core crate is considered complete — only
-extend it if a UI need proves a gap (record it).
-
----
+The core and proxy crates are implemented and headless-verified
+(`cargo test` + `cargo clippy` clean; `cargo fmt --check` currently reports
+toolchain-drift diffs — see §9). The Tauri shell and the frontend are fully
+written but the shell **has not been compiled in this environment** (see §5);
+`src-tauri` is cross-read against the frontend contract, not executed here. The
+project is not published (no git tags).
 
 ## 3. Repository layout
 
@@ -53,36 +33,35 @@ extend it if a UI need proves a gap (record it).
 .
 ├── Cargo.toml                      # workspace: members = ["crates/*"] (src-tauri excluded)
 ├── Cargo.lock
-├── SPEC.md                         # canonical spec (do not edit)
-├── README.md                       # stub
-├── odd/tasks/orquestador-dashboard.md   # feature doc (do not edit)
+├── SPEC.md                         # product + API spec
+├── README.md
 ├── crates/
-│   └── orquestador-core/           # ALL logic, no tauri dep, headless-tested
+│   ├── orquestador-core/           # ALL logic, no tauri dep, headless-tested
+│   │   ├── Cargo.toml
+│   │   └── src/{lib,types,error,client,state,events,backend,files,git,skills}.rs
+│   └── orquestador-proxy/          # Cowork auth proxy CLI (roles, whitelist, presence)
 │       ├── Cargo.toml
-│       └── src/{lib,types,error,client,state,events}.rs
+│       └── src/{main,lib,auth,authorize,config,proxy,adduser}.rs
 ├── src-tauri/                      # thin Tauri shell (own [workspace], NOT a root member)
 │   ├── Cargo.toml                  # [workspace] empty table => standalone
 │   ├── build.rs                    # tauri_build::build()
-│   ├── tauri.conf.json
-│   ├── capabilities/default.json
-│   ├── icons/{icon.png,README.md}
-│   └── src/{main,lib,bridge,commands,notify}.rs
+│   ├── tauri.conf.json · capabilities/default.json · icons/
+│   └── src/{main,lib,bridge,commands,notify,proxy_config,server_config}.rs
 ├── frontend/                       # Vite + React + TS (strict) + Monaco
 │   ├── package.json · tsconfig.json · tsconfig.node.json · vite.config.ts · index.html
-│   └── src/{main.tsx,App.tsx,store.ts,types.ts,styles.css,vite-env.d.ts}
-├── scripts/{setup-system-deps.sh,install-deps.sh,verify-headless.sh}
-└── docs/{PLAN.md,ARCHITECTURE.md,IMPLEMENTATION_PLAN.md}
+│   └── src/{main.tsx,App.tsx,store.ts,types.ts,commands.ts,styles.css,…}
+│       └── components/*.tsx        # TopBar, AgentPanel, PaneGrid, EditorPanel, …
+├── scripts/{setup-system-deps.sh,install-deps.sh,install.sh,install.ps1,verify-headless.sh}
+└── docs/{ARCHITECTURE,AUDIT,CONTRIBUTING,COWORK-SETUP,COWORK,INSTALL,LAUNCH,PLAN,ROADMAP,RUNBOOK}.md
 ```
-
----
 
 ## 4. Architecture overview
 
 ```
 ┌──────────────────────────── src-tauri (Tauri 2) ───────────────────────────┐
 │  lib.rs      Builder: manage(AppBridge), emit("core://message"), bootstrap  │
-│  bridge.rs   owns Arc<OpenCodeClient> + Arc<RwLock<AppState>> + broadcast    │
-│  commands.rs 21 #[tauri::command]s -> core (Result<T,String>)               │
+│  bridge.rs   owns Arc<dyn AgentBackend> + Arc<RwLock<AppState>> + broadcast  │
+│  commands.rs 46 #[tauri::command]s -> core (Result<T,String>)               │
 │  notify.rs   Effect -> notify-rust (always notifies)                          │
 └───────────────▲───────────────────────────────────────────────┬────────────┘
         invoke()│ Tauri IPC                              emit() │ "core://message"
@@ -99,10 +78,11 @@ extend it if a UI need proves a gap (record it).
 
 **Data flow**
 
-1. `AppBridge::bootstrap()` does a synchronous load (health, sessions, statuses,
-   agents) and picks/creates the root session; `spawn_hub()` starts `EventHub`.
-2. `EventHub` keeps one SSE connection: on each event it updates
-   `AppState` (state-changing events) and broadcasts a `CoreMessage`:
+1. `bootstrap()` does a synchronous load (health, sessions, statuses, agents,
+   pending permissions) and picks/creates the root session; `spawn_hub()` starts
+   `EventHub`.
+2. `EventHub` keeps one SSE connection: on each event it updates `AppState`
+   (state-changing events) and broadcasts a `CoreMessage`:
    - `RawEvent{event}` — every SSE event verbatim (message/part streaming; display only),
    - `StateSnapshot{snapshot}` — after state-changing or `session.status` events,
    - `Effect{effect}` — a notification the shell should raise.
@@ -111,15 +91,16 @@ extend it if a UI need proves a gap (record it).
 4. The webview reads full state with the `get_state` command and listens to
    `core://message`; commands are the only way it mutates server state.
 
----
-
 ## 5. Build isolation (why `src-tauri` compiles alone)
 
-`webkit2gtk-4.1` + `libayatana-appindicator3-dev` are missing and `sudo` needs a
-password on the dev machine. Therefore:
+`webkit2gtk-4.1` is now present on this machine, but
+`libayatana-appindicator3` is still absent and `sudo` still requires a password,
+so the shell has not been compiled here. The isolation is structural, not
+incidental:
 
 - Root `Cargo.toml`: `members = ["crates/*"]` → the workspace contains **only**
-  `orquestador-core`. Root `cargo check`/`test` never compiles Tauri.
+  `orquestador-core` and `orquestador-proxy`. Root `cargo check`/`test` never
+  compiles Tauri.
 - `src-tauri/Cargo.toml` has an **empty `[workspace]` table**, which makes it its
   own workspace root and excludes it from the parent. Verified: `cargo metadata`
   inside `src-tauri` lists exactly one member (`orquestador`) and resolves
@@ -127,10 +108,7 @@ password on the dev machine. Therefore:
 - The core uses `reqwest` with `default-features = false, features =
   ["json","stream","rustls-tls"]` → **rustls**, no openssl link dependency.
 - `notify-rust` is a dependency of `src-tauri` (NOT of core), so the core stays
-  pure and headless; notifications use the freedesktop D-Bus service (zbus, pure
-  Rust). A missing daemon only logs a warning.
-
----
+  pure and headless; a missing D-Bus daemon only logs a warning.
 
 ## 6. `orquestador-core` contract
 
@@ -139,15 +117,18 @@ password on the dev machine. Therefore:
 | Module | Responsibility | I/O? |
 |---|---|---|
 | `types` | Serde shapes of every server object + SSE events. Wire-exact renames. | no |
-| `error` | `CoreError` (`thiserror`) + `kind()` + manual `Serialize`. | no |
-| `client` | `OpenCodeClient` + `ClientConfig`. **Only** place that builds URLs/HTTP. | yes (reqwest) |
+| `error` | `CoreError` (`thiserror`) + `kind()` + helpers (`is_not_found`, `is_usage_limit`). | no |
+| `client` | `OpenCodeClient` + `ClientConfig` + `decode_payload`. **Only** place that builds URLs/HTTP. | yes (reqwest) |
 | `state` | `AppState` pure reducer, `AgentUiStatus`, `AppStateSnapshot`, `Effect`. | no |
-| `events` | `EventHub` (SSE + backoff + resync), `CoreMessage`, `bootstrap`. | yes (SSE) |
+| `events` | `EventHub` (SSE + backoff + resync + reconcile), `CoreMessage`, `bootstrap`. | yes (SSE) |
+| `backend` | `AgentBackend` trait + `BackendEvent`/`EventStream` — the seam that keeps the hub/shell backend-agnostic. | no |
+| `files` | `write_text_file` — validated repository-relative write helper. | yes (fs) |
+| `git` | Read-only git introspection (`branch_for_dir`, `overview`, `commit_files`, `branches`, `status`, `show`) + the single mutating `checkout`/`discard_file`. | yes (`git`) |
+| `skills` | Pure `slugify`, `SkillInfo`, `merge_skills`, `build_preamble`. | no |
 
 Re-exports (`lib.rs`): `OpenCodeClient`, `CoreError`, `EventHub`, `AppState`,
-`DEFAULT_BASE_URL`. Also public: `client::{ClientConfig, DEFAULT_ROOT_TITLE}`,
-`events::{CoreMessage, EVENT_BUFFER, BootstrapOutcome, bootstrap}`,
-`state::{AppStateSnapshot, SessionSnapshot, AgentUiStatus, Effect}`.
+`DEFAULT_BASE_URL`. Also public: `backend::{AgentBackend, BackendEvent,
+EventStream, BACKEND_OPENCODE}`, `skills::{build_preamble, slugify, SkillInfo}`.
 
 ### 6.2 `ClientConfig`
 
@@ -156,12 +137,19 @@ pub struct ClientConfig {
     pub base_url: String,          // default http://127.0.0.1:4096
     pub username: String,          // default "opencode"
     pub password: Option<String>,  // OPENCODE_SERVER_PASSWORD
+    pub directory: Option<String>, // x-opencode-directory scope; None = server cwd
+    pub member_name: Option<String>, // optional attribution name for created sessions
     pub request_timeout: Duration, // default 30s
 }
 ```
-`OpenCodeClient::from_env()` reads `OPENCODE_SERVER_BASE_URL` and
-`OPENCODE_SERVER_PASSWORD`. `OpenCodeClient::new(cfg)` is synchronous and
-returns `Result<_, CoreError>`.
+
+`ClientConfig::from_env_or_default()` reads `OPENCODE_SERVER_BASE_URL`
+(`OPENCODE_SERVER_URL` accepted as a legacy alias), `OPENCODE_SERVER_USERNAME`
+(optional, default `opencode`), and `OPENCODE_SERVER_PASSWORD` (optional, enables
+basic auth). `OpenCodeClient::new(cfg)` is synchronous and returns
+`Result<_, CoreError>`. Every request (and the SSE stream) sends
+`x-opencode-directory` when `directory` is set, which is how one server can
+serve several projects without a restart.
 
 ### 6.3 Exact API type shapes (wire)
 
@@ -173,11 +161,11 @@ Wire names use **capitalised abbreviations** — naive camelCase is wrong:
 | project id | `projectID` |
 | parent id | `parentID` |
 | message id | `messageID` |
-| permission id | `permissionID` (path param; body uses `id`) |
+| permission id | `permissionID` / request id `per_…` |
 | model | `{ providerID, modelID }` (an **object**, not a string) |
-| provider id | `providerID` |
 | built in (agent) | `builtIn` |
 | agent mode | `type` |
+| project scope header | `x-opencode-directory` |
 
 Key structs (see `types.rs` for the full list):
 
@@ -188,10 +176,11 @@ SessionStatus = {type:"idle"} | {type:"busy"}
               | {type:"retry", attempt, message, next}
 MessageBundle { info: Message, parts: Part[] }     // history + reply shape
 Part (12 variants + Unknown)   ToolState · PermissionPattern
-Permission   { id, type, pattern?, sessionID, messageID, callID?, title, metadata, time }
+Permission     { id, type, pattern?, sessionID, messageID, callID?, title, metadata, time }
+PermissionRequest { id, sessionID, permission, patterns, metadata, always, tool? }
 PermissionResponse = "once" | "always" | "reject"   // NOT allow/deny
 Todo         { id, content, status, priority }
-FileDiff · FileNode · FileContent · FileStatus
+FileDiff · FileNode · FileContent · FileStatus · Project · PresenceEntry
 Agent        { name, description?, type, builtIn, color?, model? }
 PromptBody   { messageID?, model?, agent?, noReply?, system?, tools?, parts:[InputPart] }
 InputPart    = { type:"text", text }                // v1 composer sends text only
@@ -200,10 +189,18 @@ CommandBody  { command, arguments? }
 Event (17 variants + Unknown, tagged on `type`)
 ```
 
-**Resolved spec gaps** (record, do not "fix" in code):
-1. Permission response body is `{ response: "once"|"always"|"reject", remember? }`;
-   `SPEC.md` §4 just says `{response, remember?}` — value set clarified here.
-   `remember` is omitted when `None`.
+**Wire notes** (record, do not "fix" in code):
+
+1. Permission replies vary by id form and route:
+   - a **request id** (`per_…`, from `GET /permission` or `permission.updated`)
+     answers `POST /permission/:requestID/reply` with body `{ reply, message? }`
+     (`reply` is `once`/`always`/`reject`; `message` is added only when present,
+     because the route rejects extra properties and a JSON `null`);
+   - a **session permission id** answers
+     `POST /session/:id/permissions/:permissionID` with body
+     `{ response, remember? }`. `remember` is **omitted** when `None` — a JSON
+     `null` would make strict servers reject the body. `OpenCodeClient::respond_permission`
+     routes automatically on the `per_` prefix.
 2. `POST /session/:id/message` body `model` is an **object** `{providerID,
    modelID}`, not a string.
 3. Prefer `POST /session/:id/prompt_async` (returns 204, does not block) for the
@@ -227,24 +224,36 @@ waiting_approval | error`.
 Reducer rules: a new run (`busy`) clears the sticky error; `session.idle` after a
 run emits `Effect::Finished` **once**; `session.error` emits `Effect::Failed`
 once per distinct error; a new `permission.updated` emits `Effect::Approval`
-once. `session.deleted` cascades (sessions/status/active/finished/errored/todos/
-pending). `session.created|updated` upserts.
+once. A usage/rate limit is surfaced as `Effect::UsageLimit` (distinct from
+`Failed`) and leaves the "running" state, whether it arrives as a
+`session.error` or a `retry` status. `session.deleted` cascades
+(sessions/status/active/finished/errored/todos/pending/root). `session.created|updated`
+upserts. The snapshot also carries timing (`status_since`, `last_run_ms` derivable
+from the run window, `WaitingApproval` included).
 
 ### 6.5 SSE hub (`events.rs`)
 
 - `EventHub::run()` loops forever until shutdown; never returns `Err`.
-- Per connection: `health()` (best effort) → `GET /event` → `set_connection(true)`
-  → publish snapshot → `resync()` (list sessions + statuses) → consume frames.
+- Per connection: `health()` (best effort) → `stream_events()` →
+  `set_connection(true)` → publish snapshot → `resync()` (list sessions +
+  statuses) → consume frames.
+- The consume loop also runs two `select!` arms: a periodic HTTP **reconcile**
+  (`RECONCILE_INTERVAL` = 5 s: statuses + pending permissions, because SSE does
+  not replay), and a **idle watchdog** (`STREAM_IDLE_TIMEOUT` = 30 s) that breaks
+  a half-open stream so the outer loop reconnects.
 - On EOF/error: `mark_disconnected()` (publish snapshot with `connected:false`),
-  then backoff. A handshake resets the attempt counter.
+  then backoff. A `server.connected` handshake resets the attempt counter.
 - Backoff: `delay_for(attempt, jitter)` = `min(500ms << attempt, 30s)` + jitter
   < 250ms. `attempt` caps at 6 (30s).
-- Frame decoding (`decode_payload`) handles: plain `data:` event, the
-  `/global/event` `{directory, payload}` envelope, and a bare payload whose type
-  comes from the SSE `event:` line. Unknown types become `Event::Unknown`.
+- Frame decoding (`client::decode_payload`) handles: plain `{"type","properties"}`
+  event, the `/global/event` `{directory, payload}` envelope, and a bare payload
+  whose type comes from the SSE `event:` line. Unknown types become
+  `Event::Unknown`.
 - `bootstrap()` never panics; a stopped server yields
   `BootstrapOutcome::Disconnected{error}`; with no sessions it creates a root
-  session titled `DEFAULT_ROOT_TITLE` ("Orchestrator").
+  session titled `[<member>] Orchestrator` (`attributed_title`). Bootstrap also
+  reconciles `GET /permission`, remembering the fetch start so a `permission.updated`
+  that races in mid-fetch is not dropped.
 - `CoreMessage` envelope (serialized `tag="kind"`):
   `{"kind":"raw_event","event":…}` |
   `{"kind":"state_snapshot","snapshot":…}` |
@@ -252,11 +261,9 @@ pending). `session.created|updated` upserts.
 
 ### 6.6 Notification policy
 
-Core computes `Effect`; the **shell** always shows it (`src-tauri/src/notify.rs`),
-regardless of whether the main window is focused. Do not send notifications for
-message/part streaming.
-
----
+Core computes `Effect`; the **shell** always shows it (`src-tauri/src/notify.rs`,
+`notify-rust`), regardless of whether the main window is focused. Do not send
+notifications for message/part streaming.
 
 ## 7. Tauri shell (thin glue)
 
@@ -265,49 +272,77 @@ message/part streaming.
   `frontendDist ../frontend/dist`, `devUrl http://localhost:1420`,
   `beforeDevCommand`/`beforeBuildCommand` run `npm --prefix ../frontend …`.
 - `capabilities/default.json`: window `main`, permissions `["core:default"]`.
-- `AppBridge` (`bridge.rs`): builds the client from env, owns the broadcast
-  sender + shutdown watch, exposes `subscribe`, `snapshot`, `bootstrap`,
-  `spawn_hub` (on `tauri::async_runtime`), `request_shutdown`.
+- `AppBridge` (`bridge.rs`): builds the client from persisted config or env,
+  owns `Arc<dyn AgentBackend>` + `Arc<RwLock<AppState>>` + the broadcast sender +
+  shutdown watch; exposes `subscribe`, `snapshot`, `bootstrap`, `spawn_hub` (on
+  `tauri::async_runtime`), `reconnect`, `push_snapshot`, `push_effect`,
+  `request_shutdown`.
 - **Event name**: `core://message` (constant `CORE_EVENT`). Payload = the
   serialized `CoreMessage`.
 - Window close (`WindowEvent::Destroyed`) → `bridge.request_shutdown()`.
 
-### 7.1 Tauri command list (23)
+### 7.1 Tauri command list (46)
 
-All are `async fn(State<'_, AppBridge>, …) -> Result<T, String>`; errors are the
-core `Display` string.
+Every command is `async fn` returning `Result<T, String>` unless noted; errors
+are the core `Display` string. `bridge: State<'_, AppBridge>` and
+`app: AppHandle` parameters are injected by Tauri and are not listed below; the
+**Args** column lists only the caller-supplied arguments (snake_case Rust — the
+JS side sends camelCase keys).
 
 | Command | Args | Returns | Core call |
 |---|---|---|---|
 | `get_state` | — | `AppStateSnapshot` | `bridge.snapshot()` |
-| `get_health` | — | `Health` | `health()` |
-| `get_agents` | — | `Agent[]` | `agents()` |
-| `session_statuses` | — | `{ [id]: SessionStatus }` | `session_statuses()` |
-| `list_sessions` | — | `Session[]` | `list_sessions()` |
-| `create_session` | `parent_id?`, `title?` | `Session` | `create_session()` |
-| `list_children` | `session_id` | `Session[]` | `session_children()` |
-| `delete_session` | `session_id` | `bool` | `delete_session()` |
-| `rename_session` | `session_id`, `title` | `Session` | `rename_session()` |
-| `get_todos` | `session_id` | `Todo[]` | `todos()` |
-| `send_message` | `session_id`, `text`, `agent?` | `MessageBundle` | `prompt()` |
-| `send_message_async` | `session_id`, `text`, `agent?` | `void` | `prompt_async()` |
-| `send_command` | `session_id`, `command`, `arguments?` | `MessageBundle` | `command()` |
-| `abort_session` | `session_id` | `bool` | `abort()` |
-| `get_messages` | `session_id`, `limit?` | `MessageBundle[]` | `messages()` |
-| `get_message` | `session_id`, `message_id` | `MessageBundle` | `message()` |
-| `respond_permission` | `session_id`, `permission_id`, `response`, `remember?` | `bool` | `respond_permission()` |
-| `get_diff` | `session_id`, `message_id?` | `FileDiff[]` | `diff()` |
-| `list_files` | `path?` | `FileNode[]` | `file_tree()` |
-| `read_file` | `path` | `FileContent` | `file_content()` |
-| `file_status` | — | `FileStatus[]` | `file_status()` |
-| `find_files` | `query`, `limit?` | `string[]` | `find_files()` |
-| `find_symbols` | `query` | `unknown[]` | `find_symbols()` |
+| `get_health` | — | `Health` | `client().health()` |
+| `test_connection` | `base_url`, `username?`, `password?` | `Health` | `OpenCodeClient::new(cfg).health()` |
+| `get_server_config` | — | `ServerConfigDto` | `server_config::load_from_dir` |
+| `set_server_config` | `base_url`, `username?`, `password?`, `member_name?`, `proxy_config_path?` | `ServerConfigDto` | save + `bridge.reconnect` |
+| `list_projects` | — | `Project[]` | `client().projects()` |
+| `current_project` | — | `Project` | `client().current_project()` |
+| `set_project_directory` | `directory?` | `ServerConfigDto` | save + `bridge.reconnect` |
+| `get_agents` | — | `Agent[]` | `client().agents()` |
+| `get_presence` | — | `PresenceEntry[]` | `client().presence()` |
+| `get_workspace_scope` | — | `string?` | `client().workspace_scope()` |
+| `session_statuses` | — | `{ [id]: SessionStatus }` | `client().session_statuses()` |
+| `list_sessions` | — | `Session[]` | `client().list_sessions()` |
+| `create_session` | `parent_id?`, `title?` | `Session` | `client().create_session()` |
+| `list_children` | `session_id` | `Session[]` | `client().session_children()` |
+| `delete_session` | `session_id` | `bool` | `client().delete_session()` |
+| `rename_session` | `session_id`, `title` | `Session` | `client().rename_session()` |
+| `get_todos` | `session_id` | `Todo[]` | `client().todos()` |
+| `send_message` | `session_id`, `text`, `agent?`, `skills?` | `MessageBundle` | `client().prompt()` + `apply_skills` |
+| `send_message_async` | `session_id`, `text`, `agent?`, `skills?` | `void` | `client().prompt_async()` + `apply_skills` |
+| `abort_session` | `session_id` | `bool` | `client().abort()` |
+| `get_messages` | `session_id`, `limit?` | `MessageBundle[]` | `client().messages()` |
+| `get_message` | `session_id`, `message_id` | `MessageBundle` | `client().message()` |
+| `send_command` | `session_id`, `command`, `arguments?` | `MessageBundle` | `client().command()` |
+| `respond_permission` | `session_id`, `permission_id`, `response`, `remember?` | `bool` | `client().respond_permission()` |
+| `list_files` | `path?` | `FileNode[]` | `client().file_tree()` |
+| `read_file` | `path` | `FileContent` | `client().file_content()` |
+| `file_status` | — | `FileStatus[]` | `client().file_status()` |
+| `find_files` | `query`, `limit?` | `string[]` | `client().find_files()` |
+| `find_symbols` | `query` | `unknown[]` | `client().find_symbols()` |
+| `list_skills` | — | `SkillInfo[]` | `merge_skills(app_skill_list, native_skill_list)` |
+| `read_skill` | `name` | `string` | `resolve_skill_path` + read |
+| `save_skill` | `name`, `content` | `SkillInfo` | write `<slug>.md` |
+| `delete_skill` | `name` | `bool` | remove `<slug>.md` |
+| `get_proxy_members` | `path` | `ProxyMemberDto[]` | `proxy_config::list_members` |
+| `add_proxy_member` | `path`, `name`, `role`, `password` | `void` | `proxy_config::add_member` |
+| `remove_proxy_member` | `path`, `name` | `void` | `proxy_config::remove_member` |
+| `git_branch` | `directory` | `string?` | `git::branch_for_dir` |
+| `git_log` | `limit?` | `RepoLog` | `git::overview` |
+| `git_commit_files` | `hash` | `CommitFile[]` | `git::commit_files` |
+| `git_branches` | — | `Branch[]` | `git::branches` |
+| `git_checkout` | `name` | `void` | `git::checkout` |
+| `git_status` | — | `Change[]` | `git::status` |
+| `git_show_file` | `path` | `HeadFile` | `git::show` |
+| `git_discard_file` | `path` | `void` | `git::discard_file` |
+| `write_file` | `path`, `content` | `void` | `files::write_text_file` |
 
-Arg names use snake_case; the JS side calls `invoke("send_message", { sessionId, text })`
-— **Tauri 2 converts camelCase JS keys to the snake_case Rust params**
-(`session_id` ⇄ `sessionId`). Keep this in mind for every command.
-
----
+`git_branch` is the one command that returns `Option<String>` directly (never an
+error). Arg names use snake_case; the JS side calls
+`invoke("send_message", { sessionId, text })` — **Tauri 2 converts camelCase JS
+keys to the snake_case Rust params** (`session_id` ⇄ `sessionId`). Keep this in
+mind for every command.
 
 ## 8. Frontend contract
 
@@ -316,158 +351,121 @@ Arg names use snake_case; the JS side calls `invoke("send_message", { sessionId,
 - Vite + React 18 + TypeScript **strict** (`noUnusedLocals`, `noUnusedParameters`).
 - `@tauri-apps/api` v2 (`invoke` from `.../core`, `listen` from `.../event`).
 - Monaco: `monaco-editor` + `@monaco-editor/react`, **bundled locally** (no CDN):
-  build workers with `?worker` imports and `loader.config({ monaco })`; Vite
-  `worker.format = "es"` (already set). Worker files: `editor.worker`,
-  `json.worker`, `ts.worker` (create the rest only if the language needs them).
+  build workers with `?worker` imports and `loader.config({ monaco })` in
+  `monaco/setup.ts`; Vite `worker.format = "es"`. `main.tsx` imports the setup
+  module before `App`.
 - State: hand-rolled store on `useSyncExternalStore` (`src/store.ts`) — **no
-  zustand/redux**. Core owns truth; the store caches the latest snapshot + the
-  latest raw message.
+  zustand/redux**. The core owns truth; the store caches the latest snapshot, a
+  bounded raw-event ring buffer (cap 500), and a per-session reducer over
+  `message.*` / `message.part.*` events.
 - Dev server strictly on port 1420.
 
 ### 8.2 Wire types
 
-`frontend/src/types.ts` mirrors the serde shapes (already written). Keep the
-`CoreMessage` union `{kind:"raw_event"|"state_snapshot"|"effect"}` and `Effect`
-`{effect:"finished"|"failed"|"approval"}` exactly.
+`frontend/src/types.ts` mirrors the serde shapes (capitalised abbreviations:
+`sessionID`, `parentID`, `messageID`, `permissionID`, `projectID`, `providerID`).
+Keep the `CoreMessage` union `{kind:"raw_event"|"state_snapshot"|"effect"}` and
+`Effect` `{effect:"finished"|"failed"|"approval"|"usage_limit"}` exactly.
 
 ### 8.3 Store contract (`store.ts`)
 
-- `store.setState(snapshot)` — used after `invoke("get_state")`.
-- `store.pushMessage(msg)` — folds `state_snapshot` into the cache, records
-  `last_event` for the raw stream.
-- Hooks: `useAppState(): AppStateSnapshot | null`, `useLastMessage(): CoreMessage | null`.
-- Extend with: `rawEvents` ring buffer (cap ~500) + `useRawEvents(sessionId?)`,
-  and selectors `useSessions()`, `usePendingPermissions()`. Keep it **small**.
+- `store` folds `state_snapshot` into the cached snapshot and `raw_event` into
+  the raw ring buffer + per-session stream reducer; derived arrays are cached and
+  only invalidated on mutation so `getSnapshot` returns stable references.
+- Hooks: `useAppState()`, `useSessions()`, `usePendingPermissions()`,
+  `useSessionStream(sessionId)`. `useLastMessage()` and `useRawEvents()` exist
+  but are currently **unused** (see §11 / `docs/AUDIT.md`).
+- Keep it **small**.
 
-### 8.4 Target component tree (AGENT 2 builds)
+### 8.4 Commands (`commands.ts`)
+
+Typed 1:1 `invoke` wrappers for all 46 Tauri commands, using camelCase argument
+keys. Server settings live in `serverConfig.ts`; the effective member identity in
+`identity.ts`; the selected skills store in `skills.ts` (`localStorage`).
+
+### 8.5 Component tree (high level)
 
 ```
 <App>
-├── <TopBar>                         connected dot, server version, root session
-├── <Workspace>                      CSS grid; collapsible panels
-│   ├── <AgentPanel>                 sub-agents of root (list_children + live)
-│   │   └── <AgentCard>              title, status chip, "open pane", abort btn
-│   ├── <PaneGrid>                   split panes (1 / 2-up / grid), each:
-│   │   ├── <AgentPane>              header(title,status) + <MessageStream>
-│   │   │   ├── <MessageStream>      renders parts from raw events for its session
-│   │   │   └── <FollowUpInput>      "re-instruct" -> send_message_async
-│   │   └── <ApprovalDialog>         modal on Effect::approval (once/always/reject)
-│   ├── <EditorPanel>                tabs: <FileTree> | <DiffViewer>
-│   │   ├── <FileTree>               list_files/read_file
-│   │   ├── <MonacoEditor>           open file content
-│   │   └── <DiffViewer>             get_diff -> Monaco DiffEditor (per file)
-│   ├── <NotificationsDrawer>        transient list of Effect events
-│   └── <ActivityBar>                composer toggle, pane layout, theme
-└── <Composer>                       terminal-style input -> send_message_async
+├── <TopBar>               connected dot, server version, root picker, identity/cowork, skills
+├── <Workspace>            resizable panels (agent panel · panes · editor)
+│   ├── <AgentPanel>/<AgentCard>/<StatusChip>   sub-agents of the root (live snapshot)
+│   ├── <PaneGrid>         split panes: <AgentPane> → <MessageStream> + <FollowUpInput>,
+│   │                      <ApprovalDialog>, skill tabs, diff tabs
+│   ├── <EditorPanel>      tabs: <FileTree>/<FileViewer>/<MonacoEditor>,
+│   │                      <DiffPanel> → git <DiffViewer>, <GitViewer>
+│   ├── <NotificationsDrawer>   transient Effect list
+│   └── <ActivityBar>      composer toggle, pane layout, theme
+├── <Composer>             terminal-style input → send_message_async
+└── dialogs                Settings, ProjectPicker, JoinWorkspace, Members, Welcome
 ```
 
 Status chip colors map 1:1 to `AgentUiStatus`. All buttons that mutate server
 state call commands and **do not** assume success (surface the `String` error).
 
-### 8.5 Streaming strategy
+### 8.6 Streaming strategy
 
 - `get_messages({session_id, limit})` hydrates a pane's history on open.
-- Afterwards, filter `rawEvents` whose payload is a `message.updated` /
-  `part.updated` for that `sessionID` and render incrementally. Drop
-  `part.removed`/`message.removed` accordingly.
+- Afterwards, `useSessionStream(sessionId)` folds `raw_event` frames whose
+  payload is a `message.updated` / `part.updated` for that `sessionID` and
+  renders incrementally. `part.removed`/`message.removed` are dropped.
 - Keep the DOM windowed (render the last N parts or use a virtual list) — streams
   can be long.
 
----
-
-## 9. Ordered implementation steps
-
-Each step lists **files**, an **acceptance command**, and **depends on**. `S1`–`S2`
-are already satisfied by the scaffold; AGENT 2 starts at `S3`.
-
-| # | Step | Files | Acceptance | Depends |
-|---|---|---|---|---|
-| S1 | Confirm scaffold builds | — | `bash scripts/verify-headless.sh` (core tests + frontend build green) | — |
-| S2 | Confirm manifest isolation | — | `(cd src-tauri && cargo metadata --format-version 1 >/dev/null)`; root `cargo metadata --no-deps` shows 1 member | — |
-| S3 | Store + types hardening | `frontend/src/store.ts`, `types.ts` | `npm run typecheck` | S1 |
-| S4 | Tauri command bindings | `frontend/src/commands.ts` (new) | `npm run typecheck` | S3 |
-| S5 | `AgentPanel` + `AgentCard` | `frontend/src/components/AgentPanel.tsx`, `AgentCard.tsx` | `npm run build` | S4 |
-| S6 | `Composer` | `frontend/src/components/Composer.tsx` | `npm run build` | S4 |
-| S7 | `AgentPane` + `MessageStream` + split grid | `.../AgentPane.tsx`, `MessageStream.tsx`, `PaneGrid.tsx` | `npm run build` | S4,S5 |
-| S8 | `ApprovalDialog` + notifications drawer | `.../ApprovalDialog.tsx`, `NotificationsDrawer.tsx` | `npm run build` | S4 |
-| S9 | File tree + Monaco editor + workers | `.../FileTree.tsx`, `MonacoEditor.tsx`, `monaco/setup.ts` | `npm run build` | S4 |
-| S10 | Diff viewer (Monaco DiffEditor) | `.../DiffViewer.tsx` | `npm run build` | S9 |
-| S11 | App wiring, layout, styles | `App.tsx`, `styles.css`, `components/*` | `npm run typecheck && npm run build` | S5–S10 |
-| S12 | Verify shell once deps are installed | `src-tauri/**` | `bash scripts/setup-system-deps.sh` then `cargo build` in `src-tauri` | S2, env |
-| S13 | Write implementation notes | `docs/IMPLEMENTATION_NOTES.md` | file exists, commands + deviations recorded | S11 |
-
-**Rules for every step**: no `todo!()`/`unimplemented!()` (audit gate §11); keep
-TypeScript strict-clean; do not add a state framework; do not touch `SPEC.md`.
-
----
-
-## 10. Verification matrix
+## 9. Verification matrix
 
 | Check | Command | Status here |
 |---|---|---|
-| Workspace resolves | `cargo metadata --no-deps --format-version 1` | PASS (1 member) |
+| Workspace resolves | `cargo metadata --no-deps --format-version 1` | PASS (2 members) |
 | Core compiles | `cargo check -p orquestador-core` | PASS |
-| Core tests | `cargo test -p orquestador-core` | PASS (37) |
-| Core lint | `cargo clippy -p orquestador-core --all-targets -- -D warnings` | PASS |
-| Formatting | `cargo fmt --all -- --check` | PASS |
-| Frontend install | `cd frontend && npm install` | PASS |
-| Frontend types | `cd frontend && npx tsc --noEmit` | PASS |
-| Frontend build | `cd frontend && npm run build` | PASS |
+| Core tests | `cargo test -p orquestador-core` | PASS (132) |
+| Proxy tests | `cargo test -p orquestador-proxy` | PASS (74: 56 unit + 18 integration) |
+| Core lint | `cargo clippy --workspace --all-targets -- -D warnings` | PASS (clean) |
+| Formatting | `cargo fmt --all -- --check` | **FAIL** — the local rustfmt would reformat several files (`backend.rs`, `client.rs`, `events.rs`, `skills.rs`, `authorize.rs`, `config.rs`); toolchain drift, not a logic defect |
+| Frontend types | `cd frontend && npx tsc --noEmit` | PASS (exit 0) |
+| Frontend build | `cd frontend && npm run build` | not run in this pass (writes `frontend/dist`) |
+| Tauri commands | `grep -c '#\[tauri::command\]' src-tauri/src/commands.rs` | 46 |
 | Shell manifests | `cd src-tauri && cargo metadata --format-version 1` | PASS (no compile) |
-| Shell compiles | `cd src-tauri && cargo build` | **BLOCKED** — needs `libwebkit2gtk-4.1-dev` (user runs `scripts/setup-system-deps.sh`) |
-| GUI smoke | `npx @tauri-apps/cli dev` | **BLOCKED** — same |
+| Shell compiles | `cd src-tauri && cargo build` | **NOT RUN** — `libayatana-appindicator3` absent + sudo needs a password; compile `webkit2gtk-4.1` is now present |
+| GUI smoke | `npx @tauri-apps/cli dev` | **NOT RUN** — same |
 
 `scripts/verify-headless.sh` runs the whole unblocked chain in one shot.
 
----
+## 10. Stub policy & audit gate
 
-## 11. Stub policy & audit gate
-
-- No `todo!()` / `unimplemented!()` may remain in `crates/` or `src-tauri/src/`.
-- Audit command (must print nothing / exit 0):
-  `grep -rnE 'todo!\(|unimplemented!\(' crates src-tauri/src`
+- No `todo!()` / `unimplemented!()` may remain in **production** code in
+  `crates/` or `src-tauri/src/`. The test scaffolding is exempt: the `#[cfg(test)]`
+  `FakeBackend` in `crates/orquestador-core/src/events.rs` uses `unimplemented!()`
+  for backend methods its tests do not exercise. Scope the audit to non-test
+  code, e.g. run `grep -rnE 'todo!\(|unimplemented!\(' crates src-tauri/src`
+  and confirm every hit falls inside a `#[cfg(test)]` module (in this tree the
+  only hits are in `events.rs`'s test module).
 - `console.log`/`eprintln!` allowed only for genuine error paths (prefix
   `[orquestador]`), never for state the UI already shows.
 
----
+## 11. Risks & open questions
 
-## 12. Risks & open questions
-
-1. **Unverifiable shell** — `src-tauri` cannot be compiled here. It is written to
-   compile but is unproven; the first `cargo build` after installing deps may
+1. **Unverifiable shell** — `src-tauri` has not been compiled here. It is written
+   to compile but is unproven; the first `cargo build` after installing deps may
    need small fixes (import paths, Tauri 2 API names). Expected, not a defect.
 2. **Tauri 2 arg casing** — JS must send camelCase keys for snake_case Rust
    params. Verify `respond_permission` (`permissionId`) and `send_message_async`
    on the first manual run.
 3. **Monaco workers** — wrong worker wiring shows "Could not create web worker".
    Use `?worker` imports + `loader.config({ monaco })`; do not load from CDN.
-4. **`remember` field** — accepted as optional; if the deployed server rejects
-   it, omit it (send only `{response}`).
-5. **Endpoint return shapes** — `POST /session/:id/command` is modelled as
+4. **Endpoint return shapes** — `POST /session/:id/command` is modelled as
    `MessageBundle`; `/find/symbol` as `unknown[]`. Confirm against a live server
    and adjust the client if needed.
-6. **Notification daemon** — absent D-Bus only logs; approvals also appear in the
+5. **Notification daemon** — absent D-Bus only logs; approvals also appear in the
    in-app drawer, so nothing is lost.
-7. **`/global/event` vs `/event`** — the hub supports both single-event and
+6. **`/global/event` vs `/event`** — the hub supports both single-event and
    enveloped payloads; if the server ever changes framing, extend
    `decode_payload` (it is unit-tested).
-8. **Base URL/auth** — confirm `OPENCODE_SERVER_BASE_URL` / `OPENCODE_SERVER_PASSWORD`
+7. **Base URL/auth** — confirm `OPENCODE_SERVER_BASE_URL` / `OPENCODE_SERVER_PASSWORD`
    behavior with the user's actual `opencode serve` invocation.
 
----
-
-## 13. Handoff to AGENT 2 / AGENT 3
-
-- AGENT 2: follow §9, then write `docs/IMPLEMENTATION_NOTES.md` (what was built,
-  deviations from this plan, exact verification output, how to run).
-- AGENT 3: audit against `SPEC.md` + this plan, re-run §10 checks headless, fix
-  only clearly-bounded defects, write `docs/AUDIT.md`, finalize `README.md` +
-  the "First run on this machine" RUNBOOK.
-- Neither agent commits; the orchestrator commits conventional messages on `main`.
-
-## 13. Skills (header panel)
+## 12. Skills (header panel)
 
 - **Core**: `crates/orquestador-core/src/skills.rs` (slugify, `SkillInfo { name, path, source, editable }`, `merge_skills`, `build_preamble`) — pure, unit-tested. Module declared in `lib.rs`.
 - **Shell (Tauri)**: commands `list_skills`, `read_skill`, `save_skill`, `delete_skill`; both `send_message` and `send_message_async` accept `skills: Option<Vec<String>>` and fold selected skills into `PromptBody.system` (appended, never replaces). Skills are **backend-aware**: the panel lists the connected backend's native skills (`AgentBackend::id()`; `opencode` → `~/.config/opencode/skills` + `~/.agents/skills`, `claude`/`codex` mapped) **plus** app-owned skills at `<app_config_dir>/skills/<slug>.md` (created on demand, the only editable ones). `apply_skills` resolves app-first then native; missing skills are skipped.
 - **Frontend**: `frontend/src/skills.ts` (selected-skills store, persisted to `localStorage["orquestador.skills"]`, `useSyncExternalStore`-compatible), `frontend/src/skillDrafts.ts` (per-tab editor drafts with baseline-based dirtiness), `frontend/src/components/SkillEditor.tsx`, `frontend/src/components/SkillSavePrompt.tsx`, and `SkillInfo` type in `types.ts`. TopBar adds Skills dropdown + `+` (New skill / Import `.md`). Skill tabs are dropped on layout restore; closing a dirty skill tab prompts Save/Discard/Cancel (non-skill tabs unaffected). Composer/FollowUpInput pass selected skills on every send.
-

@@ -40,7 +40,7 @@ function rootOptionLabel(snapshot: SessionSnapshot): string {
 /**
  * Left column: the orchestrator card plus every sub-agent, all fed live from the
  * cached snapshot (the bootstrap already lists every session, so no extra polling
- * is needed — see IMPLEMENTATION_NOTES).
+ * is needed).
  *
  * The root row is always rendered from the `isRoot` branch, which never receives
  * `onDismiss` — the orchestrator cannot be hidden even by state accident. It
