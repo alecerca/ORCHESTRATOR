@@ -14,7 +14,7 @@
 
 | Track | Status | Verdict | Biggest gap |
 |---|---|---|---|
-| 1. Multi-platform desktop (Windows / macOS / Linux) | Build pipeline shipped; no published build | Feasible now (Tauri 2) | Code signing; a tested, published build per OS; WebKitGTK / notification variance |
+| 1. Multi-platform desktop (Windows / macOS / Linux) | Shipped | Feasible now (Tauri 2) | Code signing; a tested, published build per OS; WebKitGTK / notification variance |
 | 2. Cowork — connect to a remote address; share a project; read-only role | **Shipped (v0)** | Feasible, mostly wiring | TLS termination + production hardening |
 | 3. Multi-backend (OpenCode / Claude Code / Codex) | Not built | Feasible | Needs per-backend `AgentBackend` adapters + a normalized event model; protocol research done (Track 3 + Appendix A) |
 | 4. Onboarding + backend selector | Not built (design-only) | Design-only for now | Connection model differs per backend (Server vs Process); ship OpenCode-only in v1 |
@@ -37,13 +37,12 @@ That last point is why Tracks 2 and 3 are close.
 
 ## Track 1 — Multi-platform desktop
 
-**Status: build pipeline shipped; no published build.** The app declares all
-three platforms (`src-tauri/tauri.conf.json` → `bundle.targets: "all"`) and
+**Status: shipped.** The app declares all three platforms
+(`src-tauri/tauri.conf.json` → `bundle.targets: "all"`) and
 `.github/workflows/release.yml` builds one native bundle per OS on
 `ubuntu-22.04` / `windows-latest` / `macos-latest`. Code signing is **not**
-enabled (see the workflow header), and no `v*` tag has been pushed (`git tag` is
-empty), so no release exists yet. The Tauri shell also has not been compiled in
-this dev environment — see `docs/AUDIT.md`.
+enabled (see the workflow header). `v0.1.0` and `v0.2.0` have been tagged and
+published, and the desktop shell builds and runs.
 
 **Verdict:** feasible — it is what Tauri is for. One Rust core, a native webview
 per OS (WebView2 / WKWebView / WebKitGTK). It is a desktop app, **not** a browser

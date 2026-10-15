@@ -3,21 +3,15 @@
 Orquestador is a desktop app for **Windows, macOS and Linux**. It also ships a
 headless CLI, **`orquestador-proxy`**. Choose one of the paths:
 
-- **From a release** — fastest, no toolchain needed (available once the first
-  release is published). Covers the GUI installers **and** the CLI binaries.
+- **From a release** — fastest, no toolchain needed. Covers the GUI installers
+  **and** the CLI binaries.
 - **One-line script** — Linux/macOS (`install.sh`) and Windows
-  (`install.ps1`); same release binaries, installed for you. Needs a published
-  release. Add `--cli` (or `-Cli` on Windows) to install the CLI instead of the
-  GUI.
-- **Build from source** — the path that works today while releases are not
-  published yet, or if you want to hack on the code.
+  (`install.ps1`); same release binaries, installed for you. Add `--cli` (or
+  `-Cli` on Windows) to install the CLI instead of the GUI.
+- **Build from source** — if you want to hack on the code, or need a platform
+  without a prebuilt bundle.
 
 ## Install from a release
-
-> **The first release is not published yet.** It will be built automatically
-> by the release workflow (`.github/workflows/release.yml`) the first time a
-> `v*` tag is pushed; the installers will appear on the GitHub
-> [Releases page](https://github.com/alecerca/ORCHESTRATOR/releases).
 
 Grab the installer for your platform from the GitHub **Releases** page.
 
@@ -39,9 +33,8 @@ architecture and put it on your `PATH`, or let a one-line script below do it.
 ## Install with the one-line script
 
 Prerequisites: `curl` and a POSIX shell on Linux/macOS; Windows PowerShell on
-Windows — nothing else. Like the release installers above, the scripts need a
-**published release** to download from. Until the first release exists they
-exit with a clear message pointing you back to this page.
+Windows — nothing else. Like the release installers above, the scripts
+download from the **latest published release**.
 
 ### Linux / macOS
 
@@ -111,9 +104,7 @@ add that directory to `PATH`:
 iex "& { $(irm https://raw.githubusercontent.com/alecerca/ORCHESTRATOR/main/scripts/install.ps1) } -Cli"
 ```
 
-Both forms accept `-Version v0.1.0` to install a specific release tag. Like the
-other paths, the script needs a published release and points at
-[build from source](#build-from-source) when none exists yet.
+Both forms accept `-Version v0.1.0` to install a specific release tag.
 
 ### Using the CLI (`orquestador-proxy`)
 
@@ -210,11 +201,6 @@ without touching the desktop shell.
 
 ## Troubleshooting
 
-- **The one-line script says there is no release yet** — the first release has
-  not been published; there is nothing to download. Install
-  [from source](#build-from-source) for now, or grab a release from the
-  [Releases page](https://github.com/alecerca/ORCHESTRATOR/releases) once one
-  is published.
 - **The one-line script fails with a rate-limit message** — the GitHub API is
   throttling unauthenticated requests from your IP. Wait a bit and retry, or
   install [from a release](#install-from-a-release) / [from

@@ -103,11 +103,6 @@ companion CLI, **`orquestador-proxy`**. Both come from the same
 [GitHub Release](https://github.com/alecerca/ORCHESTRATOR/releases). Full
 details, prerequisites and troubleshooting: [`docs/INSTALL.md`](docs/INSTALL.md).
 
-> The first release is **not published yet**. It will be built automatically by
-> the release workflow (`.github/workflows/release.yml`) the first time a `v*`
-> tag is pushed; the GUI installers and the CLI binaries will then appear on the
-> Releases page.
-
 **Desktop GUI — installer from a release** — grab the installer for your
 platform from the
 [Releases page](https://github.com/alecerca/ORCHESTRATOR/releases):
@@ -120,7 +115,7 @@ platform from the
 **CLI (`orquestador-proxy`) — one-line install** — `orquestador-proxy` is the
 headless binary: it serves the role-enforcing proxy and mints users
 (`adduser`). It is published for Linux/macOS/Windows from the same release, so
-once a release exists you install it with one command:
+you install it with one command:
 
 ```sh
 # Linux / macOS
@@ -138,9 +133,9 @@ line to add that directory to `PATH`. Run the same scripts without `--cli` / `-C
 the GUI bundle instead. Options, uninstall and troubleshooting:
 [`docs/INSTALL.md`](docs/INSTALL.md).
 
-**Build from source** — the path that works today; see
-[`docs/INSTALL.md`](docs/INSTALL.md) for the per-OS prerequisites and the
-exact commands.
+**Build from source** — for hacking on the code or a platform without a
+prebuilt bundle; see [`docs/INSTALL.md`](docs/INSTALL.md) for the per-OS
+prerequisites and the exact commands.
 
 ## Quick start
 
@@ -149,8 +144,7 @@ The short version for a user (full detail in [Installation](#installation) and
 
 1. **Install the desktop app** — from the
    [Releases page](https://github.com/alecerca/ORCHESTRATOR/releases) or the
-   one-line script above. No release is published yet, so the working path today
-   is [build from source](docs/INSTALL.md#build-from-source).
+   one-line script above.
 2. **Give it a server.** Orquestador is a client and does nothing on its own:
    run `opencode serve` (default `http://127.0.0.1:4096`), or point the app at a
    local, LAN or remote server from Settings, or with the

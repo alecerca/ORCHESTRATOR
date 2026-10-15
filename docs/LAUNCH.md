@@ -16,8 +16,9 @@ OpenCode orchestrator and you get five sub-agents working at once. The terminal
 shows one transcript at a time, and correcting one agent means interrupting all
 of them.
 
-The demand is public: OpenCode has an open request for exactly this (issue
-**#12463**, "Sub-agent status sidebar panel"), and a community TUI plugin,
+The demand is public: OpenCode's request for exactly this (issue **#12463**,
+"Sub-agent status sidebar panel", now closed) drew 23 reactions, and a community
+TUI plugin,
 [`giovannic96/opencode-subagents-view`](https://github.com/giovannic96/opencode-subagents-view),
 already fills part of it — in the terminal.
 
@@ -65,13 +66,22 @@ To update the demo later:
 
 ## Where to share it (in order)
 
-1. **OpenCode issue #12463** — say you built a desktop solution and link the
-   demo. It is the exact conversation, not spam.
+1. **OpenCode issues** — the demand is already written down: `#12463` (now
+   closed) drew 23 reactions. Join the open discussions that match the app
+   best, verified open on 2026-10-15:
+   - [#38966](https://github.com/anomalyco/opencode/issues/38966) — a running subagent cannot be steered, cancelled or aborted individually
+   - [#42670](https://github.com/anomalyco/opencode/issues/42670) — prompt and steer selected subagents
+   - [#51232](https://github.com/anomalyco/opencode/issues/51232) — show the child model beside subagent status
+   - [#48548](https://github.com/anomalyco/opencode/issues/48548) — sidebar missing when viewing a subagent session
+   - [#48837](https://github.com/anomalyco/opencode/issues/48837) — the V2 interface hurts multi-project/multi-agent workflows
+   - [#27110](https://github.com/anomalyco/opencode/issues/27110) — limit the max number of parallel subagents
+   - [#27511](https://github.com/anomalyco/opencode/issues/27511) — suspend/resume agent and subagent execution
+   - [#36423](https://github.com/anomalyco/opencode/issues/36423) — no cancellation support for background subagents
 2. **gentle-ai community + a direct message to the author**
    ([Gentleman-Programming](https://github.com/Gentleman-Programming)).
    Orquestador is a community tool for their ecosystem, and gentle-ai explicitly
    accommodates tools that live outside `opencode.json`. This is the
-   highest-leverage contact.
+   highest-leverage contact (7,797 stars).
 3. **r/opencode, r/LocalLLaMA, Hacker News (Show HN).**
 4. **X/Twitter** with the video, tagging OpenCode and gentle-ai.
 
@@ -89,13 +99,13 @@ exist:
   installers (deb/rpm/AppImage, msi/nsis, one universal dmg) on
   ubuntu/windows/macos **and** the headless `orquestador-proxy` CLI for
   Linux/macOS/Windows, publishing everything to the GitHub Releases page
-  whenever a `v*` tag is pushed. Nothing is published yet: the first `v*` tag
-  flips this from "build from source only" to "grab your installer".
+  whenever a `v*` tag is pushed. `v0.1.0` and `v0.2.0` have been published;
+  the latest release ships all GUI installers plus the CLI binaries for the
+  three platforms.
 - **One-line install** — `scripts/install.sh` (Linux/macOS) and
   `scripts/install.ps1` (Windows) download the right bundle from the latest
   release and install it; with `--cli` / `-Cli` they install the
-  `orquestador-proxy` binary instead. They need a published release to point at.
+  `orquestador-proxy` binary instead.
 
-So the funnel until the first tag: demo + repository + build-from-source docs
-([`INSTALL.md`](INSTALL.md)). After the first tag: releases page + the
-one-liners (GUI and CLI).
+The funnel now runs on the releases page and the one-line installers, with
+the demo video and the README at the top of it.
