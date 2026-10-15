@@ -27,6 +27,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 orquestador-core = { path = "../crates/orquestador-core" }
 tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
 # Rust-native desktop notifications (no Tauri plugin). On Linux this uses the
 # freedesktop D-Bus notification service via zbus (pure Rust, no libdbus link).
 notify-rust = "4"

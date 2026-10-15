@@ -22,6 +22,7 @@ pub const CORE_EVENT: &str = "core://message";
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Prefer the persisted server settings (written by the Settings
             // dialog); otherwise fall back to the environment / defaults.

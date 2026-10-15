@@ -195,6 +195,18 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings, onProjectCh
           ◆
         </span>
         <h1>Orquestador</h1>
+        <a
+          className="topbar__kofi"
+          href="https://ko-fi.com/Z1W828S9J8"
+          target="_blank"
+          rel="noreferrer"
+          title="Support me on Ko-fi"
+        >
+          <img
+            src="https://storage.ko-fi.com/cdn/kofi6.png?v=6"
+            alt="Support me on Ko-fi"
+          />
+        </a>
       </div>
       <div className="topbar__right">
         <PresenceStrip />

@@ -162,6 +162,25 @@ summary:focus-visible {
   margin: 0;
 }
 
+.topbar__kofi {
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
+}
+
+.topbar__kofi:hover,
+.topbar__kofi:focus-visible {
+  opacity: 1;
+}
+
+.topbar__kofi img {
+  display: block;
+  height: 28px;
+  border: 0;
+}
+
 .topbar__meta {
   display: flex;
   align-items: center;
