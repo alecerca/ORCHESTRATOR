@@ -48,7 +48,8 @@ that centralises the project (directory, files, git) in one place.
 Two things turned it from a personal tool into something shareable:
 
 - **Cowork** — shared orchestrator sessions for a small group: roles, a
-  whitelist, live presence, a pinned project. Docs: [`docs/COWORK.md`](docs/COWORK.md).
+  whitelist, live presence, a pinned project. Setup:
+  [`docs/COWORK-SETUP.md`](docs/COWORK-SETUP.md).
 - **Bring your own server** — the app connects to *your* OpenCode server. It
   does not need to be a process the app started: it can be a box on your LAN or
   a remote machine. Your agents, your machines, one control tower.

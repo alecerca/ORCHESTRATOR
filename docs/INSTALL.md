@@ -128,7 +128,8 @@ orquestador-proxy adduser <name> --role <editor|viewer>  # add a user (password 
 `serve` loads `proxy.json` (the path argument, or `ORQUESTADOR_PROXY_CONFIG`,
 or `./proxy.json`) and runs the reverse proxy. `adduser` appends an
 Argon2id-hashed user to `proxy.json` (use `--config <path>` to point elsewhere).
-See [`COWORK.md`](COWORK.md) for the full role-enforcement setup.
+See [`COWORK-SETUP.md`](COWORK-SETUP.md) for the full role-enforcement setup,
+and [`COWORK.md`](COWORK.md) for the reference.
 
 ### Uninstall
 
