@@ -43,9 +43,10 @@ Rule: pain first, relief second. Never open with a feature list.
 
 Status: **published.** The video is embedded in the README's **Demo** section
 through a GitHub user-attachments link — a `<video>` tag whose `src` is
-`https://github.com/user-attachments/assets/<uuid>` — with
-[`orquestador-demo.mp4`](../orquestador-demo.mp4) committed in the repo as a
-fallback for anyone who cannot play the inline embed. Screenshots are still
+`https://github.com/user-attachments/assets/<uuid>` — and the fallback for
+anyone who cannot play the inline embed is a **direct link to that same asset
+URL**, not a committed file. The render is deliberately **not** committed:
+tracking it added ~26 MB to every clone. Screenshots are still
 pending ([`screenshots/README.md`](screenshots/README.md)); the video is the
 hero instead.
 
@@ -60,9 +61,9 @@ To update the demo later:
    <video src="https://github.com/user-attachments/assets/<uuid>" controls playsinline width="900"></video>
    ```
 
-3. Commit the render as `orquestador-demo.mp4` so the fallback link stays
-   current, and verify the video plays inline on the rendered README before
-   sharing any link to the repo.
+3. Do **not** commit the render. Update the README's fallback link to the new
+   asset URL instead, and verify the video plays inline on the rendered README
+   before sharing any link to the repo.
 
 ## Where to share it (in order)
 

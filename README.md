@@ -29,9 +29,8 @@ If you prefer Spanish, see here:
   <video src="https://github.com/user-attachments/assets/2f828948-d58f-4cfd-8338-1ed5df10b8df" controls playsinline width="900"></video>
 </div>
 
-The renders are also committed in this repo:
-[`orquestador-demo.mp4`](orquestador-demo.mp4) (English) and
-[`orquestador-demo-es.mp4`](orquestador-demo-es.mp4) (Spanish) — 1920×1080, 60 fps, 3 min.
+Both renders are also available as direct links, for anyone who cannot play the
+inline embed: [English](https://github.com/user-attachments/assets/97e7b4b1-be6f-407a-bffe-911d73a3f416) · [Spanish](https://github.com/user-attachments/assets/2f828948-d58f-4cfd-8338-1ed5df10b8df) — 1920×1080, 60 fps, 3 min.
 
 
 ## Why

@@ -36,3 +36,7 @@ tmp/
 
 # ODD working docs (local development journal, not part of the published repo)
 odd/
+
+# Demo renders — served from GitHub user-attachments, not the repo (they were ~26 MB of every clone)
+orquestador-demo.mp4
+orquestador-demo-es.mp4
