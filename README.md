@@ -187,6 +187,14 @@ Verify headless with `bash scripts/verify-headless.sh`. Full architecture:
 See [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md): feature branches,
 Conventional Commits with scopes, headless verification, and the review flow.
 
+## Built with
+
+[![Built with Gentle-AI](https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/docs/assets/brand/built-with-gentle-ai.png)](https://github.com/Gentleman-Programming/gentle-ai)
+
+Orquestador is built to work with
+[gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) and
+[OpenCode](https://github.com/anomalyco/opencode) orchestrators.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
