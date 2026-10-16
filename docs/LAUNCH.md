@@ -46,9 +46,7 @@ through a GitHub user-attachments link — a `<video>` tag whose `src` is
 `https://github.com/user-attachments/assets/<uuid>` — and the fallback for
 anyone who cannot play the inline embed is a **direct link to that same asset
 URL**, not a committed file. The render is deliberately **not** committed:
-tracking it added ~26 MB to every clone. Screenshots are still
-pending ([`screenshots/README.md`](screenshots/README.md)); the video is the
-hero instead.
+tracking it added ~26 MB to every clone. The video is the hero.
 
 To update the demo later:
 

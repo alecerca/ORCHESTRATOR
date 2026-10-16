@@ -154,12 +154,6 @@ The short version for a user (full detail in [Installation](#installation) and
    Linux/macOS or `-Cli` on Windows) and follow
    [`docs/COWORK-SETUP.md`](docs/COWORK-SETUP.md).
 
-## Screenshots
-
-Screenshots have not been captured yet — the demo video above is the intended
-hero. The planned shot list lives in
-[`docs/screenshots/README.md`](docs/screenshots/README.md).
-
 ## How it works
 
 - **`crates/orquestador-core`** — Rust core: typed HTTP client, SSE event hub,
