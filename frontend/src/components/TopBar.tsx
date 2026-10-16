@@ -216,7 +216,7 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings, onProjectCh
             directory={serverConfig.directory ?? null}
             onChanged={(config) => onProjectChanged?.(config)}
           />
-          <ModelPicker />
+          <ModelPicker rootSessionId={rootId} />
           <div className="skills">
             <button
               type="button"

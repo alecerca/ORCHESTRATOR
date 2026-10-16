@@ -206,9 +206,19 @@ pub async fn get_agents(bridge: State<'_, AppBridge>) -> Result<Vec<Agent>, Stri
 /// provider, and the ids already authenticated. The typed DTO drops the
 /// credential-bearing `key`/`options` fields, so nothing secret reaches the
 /// webview.
+///
+/// Each provider is stamped with `usable` (already authenticated) and `hasAuth`
+/// (declares an auth method) so the model picker can mark — and refuse to offer
+/// — models from providers that cannot serve a request.
 #[tauri::command]
 pub async fn get_providers(bridge: State<'_, AppBridge>) -> Result<ProviderList, String> {
-    bridge.client().providers().await.map_err(stringify)
+    let client = bridge.client();
+    let mut list = client.providers().await.map_err(stringify)?;
+    // Best-effort: if `GET /provider/auth` fails, degrade to "no auth methods"
+    // so only the already-connected providers stay usable.
+    let auth = client.provider_auth().await.unwrap_or_default();
+    list.classify_usability(auth.keys().map(String::as_str));
+    Ok(list)
 }
 
 /// Supported auth methods per provider (`GET /provider/auth`), keyed by

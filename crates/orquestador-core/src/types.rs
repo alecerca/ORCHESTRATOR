@@ -16,7 +16,7 @@
 //! * All timestamps are epoch **milliseconds** (`number` in the OpenAPI spec).
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
 // Global / project
@@ -138,7 +138,7 @@ pub struct ModelRef {
 /// deserialized, logged, `Debug`-printed, or forwarded to the webview. serde
 /// ignores the unknown wire fields (crate convention) while the typed fields
 /// stay credential-free.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ProviderList {
     pub all: Vec<Provider>,
     /// Configured default model per provider (`providerID` → `modelID`).
@@ -149,9 +149,39 @@ pub struct ProviderList {
     pub connected: Vec<String>,
 }
 
+impl ProviderList {
+    /// True when a provider can serve a model right now: it is already
+    /// authenticated (a member of `connected` from `GET /provider`).
+    ///
+    /// A provider that is not connected cannot serve a model this app sends, so
+    /// its models must be marked rather than offered as ordinary choices. The
+    /// separate `has_auth` signal only tells the UI whether a sign-in path
+    /// exists; it never makes an unauthenticated provider usable.
+    pub fn is_usable(&self, provider_id: &str) -> bool {
+        self.connected.iter().any(|id| id == provider_id)
+    }
+
+    /// Stamp every provider with `usable` (from `connected`) and `has_auth`
+    /// (whether `auth_provider_ids` — the keys of `GET /provider/auth` — lists
+    /// it), so the webview gets the classification without re-deriving the rule.
+    pub fn classify_usability<'a, I>(&mut self, auth_provider_ids: I)
+    where
+        I: IntoIterator<Item = &'a str>,
+    {
+        let auth: HashSet<&str> = auth_provider_ids.into_iter().collect();
+        let connected: HashSet<&str> = self.connected.iter().map(String::as_str).collect();
+        for provider in &mut self.all {
+            provider.usable = connected.contains(provider.id.as_str());
+            provider.has_auth = auth.contains(provider.id.as_str());
+        }
+    }
+}
+
 /// One provider. `key` and `options` are intentionally omitted — see
 /// [`ProviderList`].
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+///
+/// `Eq` is intentionally not derived: models carry `f64` pricing.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Provider {
     pub id: String,
     pub name: String,
@@ -163,12 +193,40 @@ pub struct Provider {
     /// Models offered by this provider, keyed by model id.
     #[serde(default)]
     pub models: HashMap<String, ProviderModel>,
+    /// Whether this provider declares at least one auth method in
+    /// `GET /provider/auth`. Computed by the shell; **not** part of the
+    /// `/provider` wire payload (see [`ProviderList::classify_usability`]).
+    #[serde(default, skip_deserializing, rename = "hasAuth")]
+    pub has_auth: bool,
+    /// Whether this provider can serve a model right now (it is `connected`).
+    /// Computed by the shell; **not** part of the `/provider` wire payload.
+    #[serde(default, skip_deserializing)]
+    pub usable: bool,
 }
 
-/// One model offered by a provider. Only display/identity fields are modelled;
-/// the model-level `options` and `headers` (which may carry credentials) are
-/// deliberately omitted — see [`ProviderList`].
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Per-million-token pricing for a [`ProviderModel`]. Every component zero (and
+/// no `:free`/`-free` id suffix) means the model is free.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct ModelCost {
+    pub input: f64,
+    pub output: f64,
+    pub cache: CacheCost,
+}
+
+/// The nested `cache` pricing of a [`ModelCost`]. Modelled as its own object to
+/// match the wire shape rather than being flattened.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct CacheCost {
+    pub read: f64,
+    pub write: f64,
+}
+
+/// One model offered by a provider. Only display/identity and safe pricing
+/// fields are modelled; the model-level `options` and `headers` (which may carry
+/// credentials) are deliberately omitted — see [`ProviderList`].
+///
+/// `Eq` is intentionally not derived: `cost` holds `f64` values.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct ProviderModel {
     pub id: String,
     pub name: String,
@@ -176,6 +234,50 @@ pub struct ProviderModel {
     pub provider_id: String,
     #[serde(default)]
     pub family: Option<String>,
+    /// Token pricing, `None` when the catalogue omits it (a model with no cost
+    /// data is not free unless its id carries the explicit suffix).
+    #[serde(default)]
+    pub cost: Option<ModelCost>,
+    /// `"active"` | `"deprecated"` in the catalogue.
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+impl ProviderModel {
+    /// True when this model costs nothing: every `cost` component is zero, or
+    /// its id carries the explicit `:free` / `-free` suffix the catalogue uses.
+    ///
+    /// Single source of truth for the `free` tag; the computed flag is
+    /// serialized by the [`Serialize`] impl below.
+    pub fn is_free(&self) -> bool {
+        let zero_cost = self.cost.as_ref().is_some_and(|cost| {
+            cost.input == 0.0
+                && cost.output == 0.0
+                && cost.cache.read == 0.0
+                && cost.cache.write == 0.0
+        });
+        zero_cost || self.id.ends_with(":free") || self.id.ends_with("-free")
+    }
+}
+
+/// Serializes the wire-visible fields plus the computed `free` flag, so the
+/// webview never re-derives the rule.
+impl Serialize for ProviderModel {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ProviderModel", 7)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("name", &self.name)?;
+        state.serialize_field("providerID", &self.provider_id)?;
+        state.serialize_field("family", &self.family)?;
+        state.serialize_field("cost", &self.cost)?;
+        state.serialize_field("status", &self.status)?;
+        state.serialize_field("free", &self.is_free())?;
+        state.end()
+    }
 }
 
 /// `GET /provider/auth` → one supported auth method per provider.
@@ -1332,5 +1434,128 @@ mod tests {
         let out = serde_json::to_value(&b).unwrap();
         assert_eq!(out["info"]["role"], "user");
         assert_eq!(out["parts"][0]["type"], "text");
+    }
+
+    // -- provider cost / status / free (T11) --------------------------------
+
+    /// A model carrying the nested `cost` object and its `status`, as `GET
+    /// /provider` sends it (captured live: `cost.cache` is a nested object).
+    const MODEL_JSON: &str = r#"{
+        "id": "anthropic/claude-fable-5",
+        "name": "Claude Fable 5",
+        "providerID": "anthropic",
+        "family": "claude",
+        "status": "deprecated",
+        "cost": { "input": 3, "output": 15, "cache": { "read": 0.3, "write": 1.25 } }
+    }"#;
+
+    #[test]
+    fn provider_model_parses_nested_cost_and_status() {
+        let model: ProviderModel = serde_json::from_str(MODEL_JSON).expect("model parses");
+        let cost = model.cost.expect("cost is modelled");
+        assert_eq!(cost.input, 3.0);
+        assert_eq!(cost.output, 15.0);
+        assert_eq!(cost.cache.read, 0.3);
+        assert_eq!(cost.cache.write, 1.25);
+        assert_eq!(model.status.as_deref(), Some("deprecated"));
+    }
+
+    #[test]
+    fn provider_model_is_free_from_zero_cost_or_id_suffix() {
+        // Every cost component zero → free, regardless of the id.
+        let zero: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/zero","name":"Zero","providerID":"a","status":"active",
+                "cost":{"input":0,"output":0,"cache":{"read":0,"write":0}}}"#,
+        )
+        .unwrap();
+        assert!(zero.is_free(), "all-zero cost must be free");
+
+        // Any non-zero component (including the nested cache) → not free.
+        let paid_input: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/paid","name":"Paid","providerID":"a","status":"active",
+                "cost":{"input":1,"output":0,"cache":{"read":0,"write":0}}}"#,
+        )
+        .unwrap();
+        assert!(!paid_input.is_free(), "non-zero input must not be free");
+
+        let paid_cache: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/paid-cache","name":"Paid Cache","providerID":"a","status":"active",
+                "cost":{"input":0,"output":0,"cache":{"read":0,"write":2}}}"#,
+        )
+        .unwrap();
+        assert!(
+            !paid_cache.is_free(),
+            "non-zero nested cache cost must not be free"
+        );
+
+        // The explicit `:free` / `-free` id suffixes mark a model free even when
+        // the catalogue reports a non-zero cost.
+        let suffix_colon: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/x:free","name":"X","providerID":"a","status":"active",
+                "cost":{"input":9,"output":9,"cache":{"read":9,"write":9}}}"#,
+        )
+        .unwrap();
+        assert!(suffix_colon.is_free(), "`:free` id suffix must be free");
+
+        let suffix_dash: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/y-free","name":"Y","providerID":"a","status":"active",
+                "cost":{"input":9,"output":9,"cache":{"read":9,"write":9}}}"#,
+        )
+        .unwrap();
+        assert!(suffix_dash.is_free(), "`-free` id suffix must be free");
+    }
+
+    #[test]
+    fn provider_model_serializes_the_free_flag_for_the_webview() {
+        let zero: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/zero","name":"Zero","providerID":"a","status":"active",
+                "cost":{"input":0,"output":0,"cache":{"read":0,"write":0}}}"#,
+        )
+        .unwrap();
+        let out = serde_json::to_value(&zero).unwrap();
+        assert_eq!(out["free"], serde_json::json!(true));
+        assert_eq!(out["cost"]["cache"]["read"], serde_json::json!(0.0));
+        assert_eq!(out["providerID"], "a");
+    }
+
+    // -- provider usability (T11) -------------------------------------------
+
+    const PROVIDER_LIST_JSON: &str = r#"{
+        "all": [
+            {"id":"opencode","name":"OpenCode","source":"custom","env":[],"models":{}},
+            {"id":"anthropic","name":"Anthropic","source":"env","env":[],"models":{}},
+            {"id":"openai","name":"OpenAI","source":"env","env":[],"models":{}},
+            {"id":"nearai","name":"NearAI","source":"env","env":[],"models":{}}
+        ],
+        "default": {},
+        "connected": ["opencode", "anthropic"]
+    }"#;
+
+    #[test]
+    fn provider_list_classifies_usable_providers_from_connected_and_auth() {
+        let mut list: ProviderList =
+            serde_json::from_str(PROVIDER_LIST_JSON).expect("provider list parses");
+
+        // Usability comes from `connected`: an unauthenticated provider cannot
+        // serve a model this app sends, even when a sign-in path exists.
+        assert!(list.is_usable("opencode"));
+        assert!(list.is_usable("anthropic"));
+        assert!(
+            !list.is_usable("openai"),
+            "has-auth is not enough on its own"
+        );
+        assert!(!list.is_usable("nearai"));
+
+        // `classify_usability` stamps both signals per provider so the webview
+        // gets them without re-deriving the rule.
+        list.classify_usability(["openai"].into_iter());
+        let by_id = |id: &str| list.all.iter().find(|p| p.id == id).unwrap();
+        assert!(by_id("opencode").usable);
+        assert!(!by_id("opencode").has_auth);
+        assert!(by_id("anthropic").usable);
+        assert!(!by_id("openai").usable);
+        assert!(by_id("openai").has_auth);
+        assert!(!by_id("nearai").usable);
+        assert!(!by_id("nearai").has_auth);
     }
 }
