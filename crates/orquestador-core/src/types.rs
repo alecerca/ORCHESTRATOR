@@ -1227,6 +1227,25 @@ mod tests {
     }
 
     #[test]
+    fn prompt_body_serializes_model_when_present() {
+        let mut body = PromptBody::text("hello");
+        body.model = Some(ModelRef {
+            provider_id: "anthropic".to_string(),
+            model_id: "claude-3-5-sonnet".to_string(),
+        });
+        let v = serde_json::to_value(&body).unwrap();
+        assert_eq!(v["model"]["providerID"], "anthropic");
+        assert_eq!(v["model"]["modelID"], "claude-3-5-sonnet");
+    }
+
+    #[test]
+    fn prompt_body_omits_model_when_none() {
+        let body = PromptBody::text("hello");
+        let v = serde_json::to_value(&body).unwrap();
+        assert!(v.get("model").is_none(), "model must be absent when None");
+    }
+
+    #[test]
     fn permission_request_parses_the_list_payload_and_folds_into_a_permission() {
         // Shape captured live from `GET /permission` on 2026-10-10.
         let json = r#"{

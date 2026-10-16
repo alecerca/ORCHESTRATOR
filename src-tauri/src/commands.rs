@@ -311,9 +311,11 @@ pub async fn send_message(
     text: String,
     agent: Option<String>,
     skills: Option<Vec<String>>,
+    model: Option<orquestador_core::types::ModelRef>,
 ) -> Result<MessageBundle, String> {
     let mut body = PromptBody::text(text);
     body.agent = agent;
+    body.model = model;
     apply_skills(&app, &mut body, skills);
     let result = bridge.client().prompt(&session_id, &body).await;
     if let Err(error) = &result {
@@ -330,9 +332,11 @@ pub async fn send_message_async(
     text: String,
     agent: Option<String>,
     skills: Option<Vec<String>>,
+    model: Option<orquestador_core::types::ModelRef>,
 ) -> Result<(), String> {
     let mut body = PromptBody::text(text);
     body.agent = agent;
+    body.model = model;
     apply_skills(&app, &mut body, skills);
     let result = bridge.client().prompt_async(&session_id, &body).await;
     if let Err(error) = &result {

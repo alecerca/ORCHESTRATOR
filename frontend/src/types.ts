@@ -232,6 +232,11 @@ export interface ProviderModel {
   family?: string | null;
 }
 
+export interface ModelRef {
+  providerID: string;
+  modelID: string;
+}
+
 /**
  * One AI provider. The credential-bearing wire fields (`key`, `options`) are
  * deliberately omitted by the shell and must never be shown.

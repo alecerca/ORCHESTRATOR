@@ -14,6 +14,7 @@ import type { ServerConfig, SkillInfo } from "../types";
 import { describeError, shortId } from "../utils";
 import { PresenceStrip } from "./PresenceStrip";
 import { ProjectPicker } from "./ProjectPicker";
+import { ModelPicker } from "./ModelPicker";
 
 interface Props {
   /** Effective orchestrator root (persisted pick, else `root_session_id`). */
@@ -215,6 +216,7 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings, onProjectCh
             directory={serverConfig.directory ?? null}
             onChanged={(config) => onProjectChanged?.(config)}
           />
+          <ModelPicker />
           <div className="skills">
             <button
               type="button"

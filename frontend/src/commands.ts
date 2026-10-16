@@ -56,18 +56,39 @@ export const getTodos = (sessionId: string) =>
   invoke<Todo[]>("get_todos", { sessionId });
 
 // -- instructions ------------------------------------------------------------
+export type ModelRef = {
+  providerID: string;
+  modelID: string;
+};
+
 export const sendMessage = (
   sessionId: string,
   text: string,
   agent?: string,
   skills?: string[],
-) => invoke<MessageBundle>("send_message", { sessionId, text, agent, skills });
+  model?: ModelRef | null,
+) =>
+  invoke<MessageBundle>("send_message", {
+    sessionId,
+    text,
+    agent,
+    skills,
+    model,
+  });
 export const sendMessageAsync = (
   sessionId: string,
   text: string,
   agent?: string,
   skills?: string[],
-) => invoke<void>("send_message_async", { sessionId, text, agent, skills });
+  model?: ModelRef | null,
+) =>
+  invoke<void>("send_message_async", {
+    sessionId,
+    text,
+    agent,
+    skills,
+    model,
+  });
 export const sendCommand = (
   sessionId: string,
   command: string,
