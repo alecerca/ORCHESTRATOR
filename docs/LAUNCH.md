@@ -43,10 +43,14 @@ Rule: pain first, relief second. Never open with a feature list.
 
 Status: **published.** The video is embedded in the README's **Demo** section
 through a GitHub user-attachments link — a `<video>` tag whose `src` is
-`https://github.com/user-attachments/assets/<uuid>` — and the fallback for
-anyone who cannot play the inline embed is a **direct link to that same asset
-URL**, not a committed file. The render is deliberately **not** committed:
-tracking it added ~26 MB to every clone. The video is the hero.
+`https://github.com/user-attachments/assets/<uuid>`. That embed plays inline for
+anonymous visitors, but the **raw asset URL does not**: GitHub serves the file
+only through a signed `private-user-images.githubusercontent.com` URL, so a
+plain link to the asset 404s for anyone who is not logged in. The fallback for
+anyone who cannot play the inline embed is therefore a **YouTube link**
+(`https://youtu.be/7CgfHGHYCKM`), never the asset URL. The render is
+deliberately **not** committed: tracking it added ~26 MB to every clone. The
+video is the hero.
 
 To update the demo later:
 
@@ -59,8 +63,9 @@ To update the demo later:
    <video src="https://github.com/user-attachments/assets/<uuid>" controls playsinline width="900"></video>
    ```
 
-3. Do **not** commit the render. Update the README's fallback link to the new
-   asset URL instead, and verify the video plays inline on the rendered README
+3. Do **not** commit the render. Upload the new cut to YouTube and point the
+   README's fallback link there — **never** at the raw asset URL, which 404s
+   for anonymous visitors. Verify the video plays inline on the rendered README
    before sharing any link to the repo.
 
 ## Where to share it (in order)
