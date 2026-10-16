@@ -21,6 +21,8 @@ import type {
   PermissionResponse,
   PresenceEntry,
   Project,
+  ProviderAuthMethod,
+  ProviderList,
   ProxyMember,
   ServerConfig,
   Session,
@@ -34,6 +36,9 @@ export const getState = () => invoke<AppStateSnapshot>("get_state");
 // -- health / discovery ------------------------------------------------------
 export const getHealth = () => invoke<Health>("get_health");
 export const getAgents = () => invoke<Agent[]>("get_agents");
+export const getProviders = () => invoke<ProviderList>("get_providers");
+export const getProviderAuth = () =>
+  invoke<Record<string, ProviderAuthMethod[]>>("get_provider_auth");
 export const sessionStatuses = () =>
   invoke<Record<string, SessionStatus>>("session_statuses");
 

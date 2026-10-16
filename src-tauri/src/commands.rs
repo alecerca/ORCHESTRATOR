@@ -10,8 +10,8 @@ use orquestador_core::state::Effect;
 use orquestador_core::client::ClientConfig;
 use orquestador_core::types::{
     Agent, CommandBody, CreateSessionBody, FileContent, FileNode, FileStatus, Health,
-    MessageBundle, PermissionResponse, PresenceEntry, Project, PromptBody, Session, SessionStatus,
-    Todo,
+    MessageBundle, PermissionResponse, PresenceEntry, Project, PromptBody, ProviderAuthMethod,
+    ProviderList, Session, SessionStatus, Todo,
 };
 use orquestador_core::skills::merge_skills;
 use orquestador_core::{build_preamble, slugify, CoreError, SkillInfo};
@@ -200,6 +200,24 @@ pub async fn set_project_directory(
 #[tauri::command]
 pub async fn get_agents(bridge: State<'_, AppBridge>) -> Result<Vec<Agent>, String> {
     bridge.client().agents().await.map_err(stringify)
+}
+
+/// Available AI providers, their models, the configured default model per
+/// provider, and the ids already authenticated. The typed DTO drops the
+/// credential-bearing `key`/`options` fields, so nothing secret reaches the
+/// webview.
+#[tauri::command]
+pub async fn get_providers(bridge: State<'_, AppBridge>) -> Result<ProviderList, String> {
+    bridge.client().providers().await.map_err(stringify)
+}
+
+/// Supported auth methods per provider (`GET /provider/auth`), keyed by
+/// provider id.
+#[tauri::command]
+pub async fn get_provider_auth(
+    bridge: State<'_, AppBridge>,
+) -> Result<HashMap<String, Vec<ProviderAuthMethod>>, String> {
+    bridge.client().provider_auth().await.map_err(stringify)
 }
 
 /// Online members of the shared workspace. Backends without presence (a direct

@@ -565,6 +565,27 @@ impl OpenCodeClient {
     }
 
     // -----------------------------------------------------------------------
+    // Providers
+    // -----------------------------------------------------------------------
+
+    /// `GET /provider` → available providers, their models, the configured
+    /// default model per provider, and the ids already authenticated.
+    ///
+    /// The typed [`ProviderList`] deliberately drops the credential-bearing
+    /// `key`/`options` fields (see its docs); nothing secret leaves this call.
+    pub async fn providers(&self) -> Result<ProviderList, CoreError> {
+        self.get_json("/provider").await
+    }
+
+    /// `GET /provider/auth` → the supported auth methods per provider, keyed by
+    /// provider id.
+    pub async fn provider_auth(
+        &self,
+    ) -> Result<HashMap<String, Vec<ProviderAuthMethod>>, CoreError> {
+        self.get_json("/provider/auth").await
+    }
+
+    // -----------------------------------------------------------------------
     // SSE
     // -----------------------------------------------------------------------
 
@@ -1459,5 +1480,79 @@ mod tests {
         let client = server.client(None).await;
         let scope = client.workspace_scope().await.expect("never errors");
         assert!(scope.is_none());
+    }
+
+    #[tokio::test]
+    async fn provider_list_parses_and_ignores_credential_fields() {
+        // `key`/`options` are present on the wire and deliberately NOT populated
+        // here; the DTO must not model them, and serde must ignore the extras.
+        let body = r#"{
+            "all": [{
+                "id": "anthropic",
+                "name": "Anthropic",
+                "source": "env",
+                "env": ["ANTHROPIC_API_KEY"],
+                "key": "",
+                "options": {},
+                "models": {
+                    "claude-sonnet-4": {
+                        "id": "claude-sonnet-4",
+                        "providerID": "anthropic",
+                        "name": "Claude Sonnet 4",
+                        "family": "claude-sonnet"
+                    }
+                }
+            }],
+            "default": {"anthropic": "claude-sonnet-4"},
+            "connected": ["anthropic"]
+        }"#;
+        let server = MockServer::start("200 OK", body).await;
+        let client = server.client(None).await;
+        let providers = client.providers().await.unwrap();
+
+        assert_eq!(providers.all.len(), 1);
+        let p = &providers.all[0];
+        assert_eq!(p.id, "anthropic");
+        assert_eq!(p.name, "Anthropic");
+        assert_eq!(p.source, "env");
+        assert_eq!(p.env, vec!["ANTHROPIC_API_KEY".to_string()]);
+        let model = &p.models["claude-sonnet-4"];
+        assert_eq!(model.id, "claude-sonnet-4");
+        assert_eq!(model.name, "Claude Sonnet 4");
+        assert_eq!(model.provider_id, "anthropic");
+        assert_eq!(model.family.as_deref(), Some("claude-sonnet"));
+        assert_eq!(
+            providers
+                .default_models
+                .get("anthropic")
+                .map(String::as_str),
+            Some("claude-sonnet-4")
+        );
+        assert_eq!(providers.connected, vec!["anthropic".to_string()]);
+
+        let req = server.request_text().await;
+        assert!(req.starts_with("GET /provider HTTP/1.1"), "got: {req}");
+    }
+
+    #[tokio::test]
+    async fn provider_auth_parses_the_method_map() {
+        let body = r#"{
+            "anthropic": [{"type": "api", "label": "API Key"}],
+            "openai": [
+                {"type": "oauth", "label": "ChatGPT Pro/Plus"},
+                {"type": "api", "label": "API Key"}
+            ]
+        }"#;
+        let server = MockServer::start("200 OK", body).await;
+        let client = server.client(None).await;
+        let methods = client.provider_auth().await.unwrap();
+
+        assert_eq!(methods["anthropic"].len(), 1);
+        assert_eq!(methods["anthropic"][0].auth_type, "api");
+        assert_eq!(methods["anthropic"][0].label, "API Key");
+        assert_eq!(methods["openai"].len(), 2);
+
+        let req = server.request_text().await;
+        assert!(req.starts_with("GET /provider/auth HTTP/1.1"), "got: {req}");
     }
 }

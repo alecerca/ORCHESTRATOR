@@ -98,6 +98,8 @@ pub fn run() {
             commands::current_project,
             commands::set_project_directory,
             commands::get_agents,
+            commands::get_providers,
+            commands::get_provider_auth,
             commands::get_presence,
             commands::get_workspace_scope,
             commands::session_statuses,

@@ -126,6 +126,72 @@ pub struct ModelRef {
     pub model_id: String,
 }
 
+// ---------------------------------------------------------------------------
+// Providers (OpenCode `GET /provider`)
+// ---------------------------------------------------------------------------
+
+/// `GET /provider` → everything the UI needs to list providers and their models.
+///
+/// SECURITY: the live `/provider` response embeds credential material inside
+/// each provider's `key` and `options` (and, per model, `options` / `headers`).
+/// Those fields are deliberately **not** modelled here, so they can never be
+/// deserialized, logged, `Debug`-printed, or forwarded to the webview. serde
+/// ignores the unknown wire fields (crate convention) while the typed fields
+/// stay credential-free.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderList {
+    pub all: Vec<Provider>,
+    /// Configured default model per provider (`providerID` → `modelID`).
+    #[serde(default, rename = "default")]
+    pub default_models: HashMap<String, String>,
+    /// Provider ids that are already authenticated — the per-provider auth status.
+    #[serde(default)]
+    pub connected: Vec<String>,
+}
+
+/// One provider. `key` and `options` are intentionally omitted — see
+/// [`ProviderList`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Provider {
+    pub id: String,
+    pub name: String,
+    pub source: String,
+    /// Environment variable **names** this provider can read a credential from
+    /// (e.g. `ANTHROPIC_API_KEY`) — names only, never values.
+    #[serde(default)]
+    pub env: Vec<String>,
+    /// Models offered by this provider, keyed by model id.
+    #[serde(default)]
+    pub models: HashMap<String, ProviderModel>,
+}
+
+/// One model offered by a provider. Only display/identity fields are modelled;
+/// the model-level `options` and `headers` (which may carry credentials) are
+/// deliberately omitted — see [`ProviderList`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderModel {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "providerID")]
+    pub provider_id: String,
+    #[serde(default)]
+    pub family: Option<String>,
+}
+
+/// `GET /provider/auth` → one supported auth method per provider.
+///
+/// `type` is `"oauth"` or `"api"`. `prompts` are the UI prompt definitions the
+/// server expects for an interactive login flow; they are kept as opaque JSON
+/// (they never carry credential *values*).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderAuthMethod {
+    #[serde(rename = "type")]
+    pub auth_type: String,
+    pub label: String,
+    #[serde(default)]
+    pub prompts: Vec<serde_json::Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TokenUsage {
     pub input: i64,

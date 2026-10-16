@@ -218,6 +218,57 @@ export interface SkillInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Providers (OpenCode `GET /provider` / `GET /provider/auth`)
+// ---------------------------------------------------------------------------
+
+/**
+ * One model offered by a provider. Credential-bearing wire fields (`options`,
+ * `headers`) are deliberately omitted by the shell and must never be shown.
+ */
+export interface ProviderModel {
+  id: string;
+  name: string;
+  providerID: string;
+  family?: string | null;
+}
+
+/**
+ * One AI provider. The credential-bearing wire fields (`key`, `options`) are
+ * deliberately omitted by the shell and must never be shown.
+ */
+export interface Provider {
+  id: string;
+  name: string;
+  source: string;
+  /** Environment variable names this provider can read a credential from. */
+  env: string[];
+  /** Models offered by this provider, keyed by model id. */
+  models: Record<string, ProviderModel>;
+}
+
+/**
+ * Response of the `get_providers` command: `connected` holds the provider ids
+ * that are already authenticated (the per-provider auth status), and `default`
+ * maps `providerID` → configured default `modelID`.
+ */
+export interface ProviderList {
+  all: Provider[];
+  default: Record<string, string>;
+  connected: string[];
+}
+
+/**
+ * One supported auth method for a provider. `type` is `"oauth"` or `"api"`.
+ * `prompts` are opaque server-side UI prompt definitions (never credential
+ * values).
+ */
+export interface ProviderAuthMethod {
+  type: string;
+  label: string;
+  prompts: unknown[];
+}
+
+// ---------------------------------------------------------------------------
 // Server config
 // ---------------------------------------------------------------------------
 
