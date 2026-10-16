@@ -3,9 +3,11 @@ import { gitBranch } from "../commands";
 
 /**
  * Module-level cache keyed by directory. Every card and tab that shares a
- * directory issues at most one `git_branch` call per app run. The branch is
- * informational only, so it is fetched once and never re-polled — except when
- * [`invalidateGitBranches`] drops the cache after a checkout switched it.
+ * directory issues at most one `git_branch` call per read. The branch is
+ * informational only, so it is never polled: it is re-read when
+ * [`invalidateGitBranches`] drops the cache after a checkout switched it, and by
+ * [`refreshGitBranches`] whenever the window regains focus, because a checkout
+ * run outside the app (a terminal, another tool) is otherwise invisible to it.
  */
 const cache = new Map<string, string | null>();
 
@@ -24,8 +26,18 @@ function notify(): void {
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
+  // Focus is the only signal that a checkout happened outside the app: the cache
+  // cannot observe `.git/HEAD`, and the server's file-watcher event is
+  // display-only. Tied to the subscriber lifetime so no listener lingers once
+  // the last chip unmounts.
+  if (listeners.size === 1) {
+    window.addEventListener("focus", onWindowFocus);
+  }
   return () => {
     listeners.delete(listener);
+    if (listeners.size === 0) {
+      window.removeEventListener("focus", onWindowFocus);
+    }
   };
 }
 
@@ -44,10 +56,52 @@ export function invalidateGitBranches(): void {
 }
 
 /**
+ * Re-read every directory already in the cache and notify only when a value
+ * actually changed. The known values stay in place, so a chip is never blanked
+ * while the re-read is in flight — unlike [`invalidateGitBranches`], which drops
+ * them and makes every mounted hook re-fetch.
+ *
+ * Bound to window focus: a checkout run outside the app (a terminal, another
+ * tool) cannot be observed directly, because the cache cannot see `.git/HEAD`
+ * and the server's file-watcher event is display-only.
+ */
+export async function refreshGitBranches(): Promise<void> {
+  const directories = [...cache.keys()];
+  const results = await Promise.all(
+    directories.map(async (directory) => {
+      let next: string | null = null;
+      try {
+        next = await gitBranch(directory);
+      } catch {
+        next = null;
+      }
+      return [directory, next] as const;
+    }),
+  );
+
+  let changed = false;
+  for (const [directory, next] of results) {
+    if (cache.get(directory) !== next) {
+      cache.set(directory, next);
+      changed = true;
+    }
+  }
+  // Notify only on a real change: an unchanged re-read must not re-render every
+  // chip on every focus.
+  if (changed) notify();
+}
+
+/** Window-focus handler: re-read the branches that are already on screen. */
+function onWindowFocus(): void {
+  void refreshGitBranches();
+}
+
+/**
  * The git branch of `directory`, or `null` when unknown (empty directory, not a
  * repository, git unavailable, or the request failed). Fetches once per
  * directory, caches the result, and ignores a stale in-flight response after
- * `directory` changes. Re-reads after [`invalidateGitBranches`].
+ * `directory` changes. Re-reads after [`invalidateGitBranches`] and on window
+ * focus, so a checkout made outside the app shows up.
  */
 export function useGitBranch(directory: string): string | null {
   // Subscribe to the cache version so an invalidation re-runs the effect below.
