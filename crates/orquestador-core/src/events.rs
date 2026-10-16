@@ -1097,6 +1097,16 @@ mod tests {
             Ok(Vec::new())
         }
 
+        async fn providers(&self) -> Result<crate::types::ProviderList, CoreError> {
+            unimplemented!("FakeBackend::providers")
+        }
+
+        async fn provider_auth(
+            &self,
+        ) -> Result<HashMap<String, Vec<crate::types::ProviderAuthMethod>>, CoreError> {
+            unimplemented!("FakeBackend::provider_auth")
+        }
+
         async fn projects(&self) -> Result<Vec<crate::types::Project>, CoreError> {
             Ok(Vec::new())
         }

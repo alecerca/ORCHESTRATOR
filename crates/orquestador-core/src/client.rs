@@ -703,6 +703,14 @@ impl AgentBackend for OpenCodeClient {
         OpenCodeClient::agents(self).await
     }
 
+    async fn providers(&self) -> Result<ProviderList, CoreError> {
+        OpenCodeClient::providers(self).await
+    }
+
+    async fn provider_auth(&self) -> Result<HashMap<String, Vec<ProviderAuthMethod>>, CoreError> {
+        OpenCodeClient::provider_auth(self).await
+    }
+
     async fn projects(&self) -> Result<Vec<Project>, CoreError> {
         OpenCodeClient::projects(self).await
     }

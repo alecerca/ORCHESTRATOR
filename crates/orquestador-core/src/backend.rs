@@ -58,6 +58,18 @@ pub trait AgentBackend: Send + Sync {
     async fn health(&self) -> Result<Health, CoreError>;
     async fn agents(&self) -> Result<Vec<Agent>, CoreError>;
 
+    // providers / models
+    /// `GET /provider` — the providers the server knows, their models, the
+    /// configured default model per provider, and the ids already authenticated.
+    ///
+    /// The typed [`ProviderList`] deliberately drops the credential-bearing
+    /// `key`/`options` fields the raw response carries.
+    async fn providers(&self) -> Result<ProviderList, CoreError>;
+
+    /// `GET /provider/auth` — the auth methods each provider supports, keyed by
+    /// provider id.
+    async fn provider_auth(&self) -> Result<HashMap<String, Vec<ProviderAuthMethod>>, CoreError>;
+
     // projects (one server can serve several; the client scopes each request)
     async fn projects(&self) -> Result<Vec<Project>, CoreError>;
     async fn current_project(&self) -> Result<Project, CoreError>;
