@@ -18,7 +18,7 @@ Grab the installer for your platform from the GitHub **Releases** page.
 | Platform | Artifact | Notes |
 | --- | --- | --- |
 | Windows 10/11 | `.msi` or `.exe` | WebView2 runtime is built into Windows 10/11. Unsigned builds trigger SmartScreen: *More info → Run anyway* |
-| macOS | `.dmg` | Intel and Apple Silicon; right-click → *Open* on first launch to clear Gatekeeper |
+| macOS | `.dmg` | Intel and Apple Silicon; the first launch needs a Gatekeeper override — see *Troubleshooting* |
 | Linux | `.deb` (Debian/Ubuntu), `.rpm` (Fedora/openSUSE), `.AppImage` (any distro) | Make the AppImage executable with `chmod +x` |
 
 No additional runtime needs to be installed: the app ships everything except
@@ -209,8 +209,14 @@ without touching the desktop shell.
   library is missing or too old; re-run `scripts/setup-system-deps.sh`.
 - **Linux: AppImage does not start** — some distros need `libfuse2` for older
   AppImage formats, or use `--appimage-extract-and-run`.
-- **macOS: "unidentified developer"** — right-click the app → *Open* once;
-  Gatekeeper remembers the exception.
+- **macOS: "unidentified developer", or the app "is damaged"** — release
+  builds are neither code-signed nor notarized, so Gatekeeper blocks the first
+  launch. Since macOS Sequoia (15) the old right-click → *Open* shortcut no
+  longer works. Instead: try to open the app, dismiss the warning, then go to
+  **System Settings → Privacy & Security**, scroll to *Security* and click
+  **Open Anyway** — macOS asks for your admin password and remembers the
+  exception. If it reports the app as *damaged*, clear the quarantine flag
+  instead: `xattr -dr com.apple.quarantine /Applications/Orquestador.app`.
 - **Windows: SmartScreen warning** — unsigned builds trigger it; *More
   info → Run anyway*.
 - **The app runs but shows no sessions** — the OpenCode server is not
