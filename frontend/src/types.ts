@@ -114,6 +114,8 @@ export interface AppStateSnapshot {
   root_session_id?: string | null;
   sessions: SessionSnapshot[];
   permissions: Permission[];
+  /** Clarification batches waiting for answers (sorted by request id). */
+  questions: QuestionRequest[];
   agents: Agent[];
   todos: Record<string, Todo[]>;
 }
@@ -128,7 +130,8 @@ export type Effect =
       permission_id: string;
       title: string;
     }
-  | { effect: "usage_limit"; session_id: string; title: string; message: string };
+  | { effect: "usage_limit"; session_id: string; title: string; message: string }
+  | { effect: "question"; session_id: string; request_id: string; title: string };
 
 // `CoreMessage` is internally tagged on `kind` (serde `tag = "kind"`).
 export type CoreMessage =
@@ -302,6 +305,102 @@ export interface ProviderAuthMethod {
   type: string;
   label: string;
   prompts: unknown[];
+}
+
+// ---------------------------------------------------------------------------
+// OpenCode surface: OAuth / config / MCP / commands (T5–T9)
+// ---------------------------------------------------------------------------
+
+/** `POST /provider/:id/oauth/authorize` — how to complete a connect. */
+export interface ProviderAuthAuthorization {
+  url: string;
+  /** `"auto"` → open the URL and re-poll; `"code"` → paste a code back. */
+  method: string;
+  instructions: string;
+}
+
+/**
+ * Read-only view of `GET /config`. Credential-bearing sections are dropped by
+ * the shell DTO and never reach the webview. Wire names are mixed per the
+ * upstream schema (`logLevel` camel, `small_model` / `default_agent` snake) —
+ * do not normalise them.
+ */
+export interface OpencodeConfig {
+  shell?: string | null;
+  logLevel?: string | null;
+  snapshot?: boolean | null;
+  share?: string | null;
+  autoshare?: boolean | null;
+  model?: string | null;
+  small_model?: string | null;
+  default_agent?: string | null;
+  instructions?: string[] | null;
+}
+
+/** Body of `PATCH /config` — only fields present are sent; the server merges. */
+export interface ConfigPatch {
+  shell?: string;
+  logLevel?: string;
+  snapshot?: boolean;
+  share?: string;
+  autoshare?: boolean;
+  model?: string;
+  small_model?: string;
+  default_agent?: string;
+}
+
+/** One MCP server's status (`GET /mcp`), internally tagged on `status`. */
+export type McpStatus =
+  | { status: "connected" | "disabled" | "needs_auth" | "unknown" }
+  | { status: "failed" | "needs_client_registration"; error: string };
+
+/** One slash command (`GET /command`). */
+export interface SlashCommand {
+  name: string;
+  description?: string | null;
+  agent?: string | null;
+  model?: string | null;
+  source?: string | null;
+  template: string;
+  hints: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Clarifications (T11 — question batches)
+// ---------------------------------------------------------------------------
+
+export interface QuestionOption {
+  label: string;
+  description: string;
+}
+
+/**
+ * One question inside a pending batch; the whole batch is answered in one
+ * pause. `custom` absent → server default (free text allowed). `recommended`
+ * does not exist on the wire today — rendered only when present, never
+ * invented as a preselection.
+ */
+export interface QuestionInfo {
+  question: string;
+  header: string;
+  options: QuestionOption[];
+  multiple?: boolean;
+  custom?: boolean;
+  recommended?: string;
+}
+
+/** The tool call that triggered a batch (message/call correlation). */
+export interface QuestionToolRef {
+  messageID: string;
+  callID: string;
+}
+
+/** One pending clarification batch (`GET /question`, `question.*.asked`). */
+export interface QuestionRequest {
+  id: string;
+  sessionID: string;
+  questions: QuestionInfo[];
+  tool?: QuestionToolRef | null;
 }
 
 // ---------------------------------------------------------------------------

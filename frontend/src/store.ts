@@ -17,6 +17,7 @@ import type {
   MessageBundle,
   Part,
   Permission,
+  QuestionRequest,
   SessionSnapshot,
 } from "./types";
 
@@ -31,11 +32,13 @@ const EMPTY_SNAPSHOT: AppStateSnapshot = {
   root_session_id: null,
   sessions: [],
   permissions: [],
+  questions: [],
   agents: [],
   todos: {},
 };
 const EMPTY_SESSIONS: SessionSnapshot[] = [];
 const EMPTY_PERMISSIONS: Permission[] = [];
+const EMPTY_QUESTIONS: QuestionRequest[] = [];
 const EMPTY_STREAM: StreamMessage[] = [];
 const EMPTY_RAW_EVENTS: unknown[] = [];
 
@@ -302,6 +305,12 @@ export function useSessions(): SessionSnapshot[] {
 export function usePendingPermissions(): Permission[] {
   const state = useSyncExternalStore(subscribe, getAppSnapshot, getAppSnapshot);
   return state.permissions.length > 0 ? state.permissions : EMPTY_PERMISSIONS;
+}
+
+/** Clarification batches waiting for answers (the Rust core's registry). */
+export function usePendingQuestions(): QuestionRequest[] {
+  const state = useSyncExternalStore(subscribe, getAppSnapshot, getAppSnapshot);
+  return state.questions.length > 0 ? state.questions : EMPTY_QUESTIONS;
 }
 
 export function useSessionStream(sessionId: string | null): StreamMessage[] {

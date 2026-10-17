@@ -16,6 +16,8 @@ function describe(effect: Effect): string {
       return `⏳ approval needed: ${effect.title}`;
     case "usage_limit":
       return `⚠ usage limit reached — ${effect.message}`;
+    case "question":
+      return `❓ answer needed: ${effect.title}`;
   }
 }
 

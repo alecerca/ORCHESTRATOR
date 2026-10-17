@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   Agent,
   AppStateSnapshot,
+  ConfigPatch,
   FileContent,
   FileNode,
   FileStatus,
@@ -17,17 +18,21 @@ import type {
   GitLog,
   HeadFile,
   Health,
+  McpStatus,
   MessageBundle,
   ModelRef,
+  OpencodeConfig,
   PermissionResponse,
   PresenceEntry,
   Project,
+  ProviderAuthAuthorization,
   ProviderAuthMethod,
   ProviderList,
   ProxyMember,
   ServerConfig,
   Session,
   SessionStatus,
+  SlashCommand,
   SkillInfo,
   Todo,
 } from "./types";
@@ -48,6 +53,18 @@ export const getProviderAuth = () =>
  */
 export const setProviderApiKey = (providerId: string, key: string) =>
   invoke<boolean>("set_provider_api_key", { providerId, key });
+/** Remove the stored credential (`DELETE /auth/:providerID`). Value-free. */
+export const deleteProviderApiKey = (providerId: string) =>
+  invoke<boolean>("delete_provider_api_key", { providerId });
+/**
+ * Start an OAuth connect. `method` indexes the provider's array from
+ * `getProviderAuth` (the original index, oauth entries included).
+ */
+export const oauthAuthorize = (providerId: string, method: number) =>
+  invoke<ProviderAuthAuthorization>("oauth_authorize", { providerId, method });
+/** Finish an OAuth connect with the code the user pasted back. */
+export const oauthCallback = (providerId: string, method: number, code: string) =>
+  invoke<boolean>("oauth_callback", { providerId, method, code });
 export const sessionStatuses = () =>
   invoke<Record<string, SessionStatus>>("session_statuses");
 
@@ -269,4 +286,30 @@ export const gitShowFile = (path: string) =>
  */
 export const gitDiscardFile = (path: string) =>
   invoke<void>("git_discard_file", { path });
+
+// -- OpenCode config / MCP / commands (T6/T7/T9) ------------------------------
+/** Read the safe scalars of `GET /config`; credential sections never arrive. */
+export const getOpencodeConfig = () => invoke<OpencodeConfig>("get_opencode_config");
+/**
+ * Apply the scalar allowlist patch (`PATCH /config`). Only the fields present
+ * in `patch` are sent; the server merges, so the rest is preserved.
+ */
+export const patchOpencodeConfig = (patch: ConfigPatch) =>
+  invoke<OpencodeConfig>("patch_opencode_config", { patch });
+/** MCP server statuses (`GET /mcp`), keyed by server name. */
+export const getMcpStatus = () => invoke<Record<string, McpStatus>>("get_mcp_status");
+/** Slash commands the server and skills define (`GET /command`). */
+export const listCommands = () => invoke<SlashCommand[]>("list_commands");
+
+// -- clarifications (T11) -----------------------------------------------------
+/**
+ * Answer a whole clarification batch at once (`POST /question/:id/reply`): one
+ * entry per question in order, `[]` for a question left unanswered (partial
+ * answers resume the task).
+ */
+export const replyQuestion = (requestId: string, answers: string[][]) =>
+  invoke<boolean>("reply_question", { requestId, answers });
+/** Dismiss a clarification batch without answering. */
+export const rejectQuestion = (requestId: string) =>
+  invoke<boolean>("reject_question", { requestId });
 
