@@ -2,6 +2,7 @@ import { useState } from "react";
 import { sendMessageAsync } from "../commands";
 import { getSelectedNames } from "../skills";
 import { getModel } from "../model";
+import { useAppState } from "../store";
 import { describeError } from "../utils";
 
 interface Props {
@@ -11,7 +12,9 @@ interface Props {
 
 /** Terminal-style instruction box for the orchestrator. */
 export function Composer({ sessionId }: Props) {
+  const agents = useAppState().agents;
   const [text, setText] = useState("");
+  const [agent, setAgent] = useState(""); // "" = server default agent
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,7 +29,7 @@ export function Composer({ sessionId }: Props) {
       await sendMessageAsync(
         sessionId,
         value,
-        undefined,
+        agent || undefined,
         getSelectedNames(),
         getModel(),
       );
@@ -62,6 +65,23 @@ export function Composer({ sessionId }: Props) {
           }
         }}
       />
+      {agents.length > 0 && (
+        <select
+          className="composer__agent"
+          aria-label="Run as agent"
+          title="Agent for this message (model is chosen in the top bar)"
+          value={agent}
+          disabled={!sessionId}
+          onChange={(event) => setAgent(event.target.value)}
+        >
+          <option value="">default agent</option>
+          {agents.map((entry) => (
+            <option key={entry.name} value={entry.name}>
+              {entry.name}
+            </option>
+          ))}
+        </select>
+      )}
       <button
         type="button"
         className="btn btn--primary"

@@ -332,6 +332,202 @@ impl ProviderAuthMethod {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Provider OAuth connect (T5)
+// ---------------------------------------------------------------------------
+
+/// Response of `POST /provider/:providerID/oauth/authorize`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderAuthAuthorization {
+    pub url: String,
+    /// `"auto"` → open the URL in a browser and re-poll the auth status;
+    /// `"code"` → the server expects a pasted authorization code back.
+    pub method: String,
+    pub instructions: String,
+}
+
+// ---------------------------------------------------------------------------
+// Config read / patch (T6)
+// ---------------------------------------------------------------------------
+
+/// Read-only view of `GET /config`.
+///
+/// SECURITY: same convention as [`ProviderList`] — `provider`, `server`,
+/// `command`, … are credential-bearing or unbounded sections and are
+/// deliberately **not** modelled. The server may send them; serde drops them,
+/// so they can never be deserialized, Debug-printed, or forwarded to the
+/// webview. Only the safe scalars below are kept.
+///
+/// Wire names differ per field (`logLevel` camelCase, `small_model` /
+/// `default_agent` snake_case) — the renames mirror the upstream schema.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OpencodeConfig {
+    #[serde(default)]
+    pub shell: Option<String>,
+    #[serde(default, rename = "logLevel")]
+    pub log_level: Option<String>,
+    #[serde(default)]
+    pub snapshot: Option<bool>,
+    #[serde(default)]
+    pub share: Option<String>,
+    #[serde(default)]
+    pub autoshare: Option<bool>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub small_model: Option<String>,
+    #[serde(default)]
+    pub default_agent: Option<String>,
+    #[serde(default)]
+    pub instructions: Option<Vec<String>>,
+}
+
+/// Body of `PATCH /config` — the **allowlist** of scalar fields this app is
+/// willing to change. Every field omits itself when `None`, so a partial patch
+/// serializes to exactly the touched scalars; the server merges the patch into
+/// the existing config (upstream `mergeDeep`), so omitted fields are preserved
+/// rather than replaced. Credential-bearing sections are not expressible here
+/// at all — they cannot ride along even by accident.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConfigPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "logLevel")]
+    pub log_level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub share: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autoshare: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub small_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_agent: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// MCP status (T7)
+// ---------------------------------------------------------------------------
+
+/// One entry of `GET /mcp` — status of a named MCP server.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum McpStatus {
+    Connected,
+    Disabled,
+    Failed {
+        error: String,
+    },
+    NeedsAuth,
+    NeedsClientRegistration {
+        error: String,
+    },
+    /// A future server status — tolerated so one unknown server cannot break
+    /// parsing of the whole map.
+    #[serde(other)]
+    Unknown,
+}
+
+// ---------------------------------------------------------------------------
+// Slash commands (T9)
+// ---------------------------------------------------------------------------
+
+/// One entry of `GET /command`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SlashCommand {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Restrict the command to one agent (e.g. `plan`); None → all agents.
+    #[serde(default)]
+    pub agent: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// `"command" | "skill" | ...` — where the definition came from.
+    #[serde(default)]
+    pub source: Option<String>,
+    pub template: String,
+    #[serde(default)]
+    pub hints: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Clarifications (T11 — question batches)
+// ---------------------------------------------------------------------------
+
+/// One selectable option of a clarification question.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuestionOption {
+    pub label: String,
+    pub description: String,
+}
+
+/// One question inside a pending batch. The whole batch is presented at once
+/// (one pause, one reply covering every question). `multiple` marks
+/// multi-select; `custom` (absent → server default `true`) whether a free-text
+/// answer is allowed. `recommended` does not exist on the wire today
+/// (opencode 1.18.35) — modelled for a future revision and rendered only when
+/// present; the UI never invents a preselection.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuestionInfo {
+    pub question: String,
+    pub header: String,
+    #[serde(default)]
+    pub options: Vec<QuestionOption>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multiple: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommended: Option<String>,
+}
+
+/// The tool call that triggered a batch (message/call correlation).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuestionToolRef {
+    #[serde(rename = "messageID")]
+    pub message_id: String,
+    #[serde(rename = "callID")]
+    pub call_id: String,
+}
+
+/// One pending clarification batch — both the `GET /question` list entry and
+/// the `properties` payload of `question.asked` / `question.v2.asked`
+/// (identical shapes on the wire).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuestionRequest {
+    pub id: String,
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    pub questions: Vec<QuestionInfo>,
+    #[serde(default)]
+    pub tool: Option<QuestionToolRef>,
+}
+
+/// `properties` of `question.replied` / `question.v2.replied`. One answer
+/// entry per question, in question order; a multi-select answer holds several
+/// labels; an unanswered/partial question carries `[]`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuestionRepliedProp {
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    #[serde(rename = "requestID")]
+    pub request_id: String,
+    pub answers: Vec<Vec<String>>,
+}
+
+/// `properties` of `question.rejected` / `question.v2.rejected`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QuestionRejectedProp {
+    #[serde(rename = "sessionID")]
+    pub session_id: String,
+    #[serde(rename = "requestID")]
+    pub request_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TokenUsage {
     pub input: i64,
@@ -1123,6 +1319,19 @@ pub enum Event {
     PermissionUpdated { properties: Permission },
     #[serde(rename = "permission.replied")]
     PermissionReplied { properties: PermissionRepliedProp },
+    // clarifications (T11) — v1 and v2 wire revisions share the shapes
+    #[serde(rename = "question.asked")]
+    QuestionAsked { properties: QuestionRequest },
+    #[serde(rename = "question.v2.asked")]
+    QuestionV2Asked { properties: QuestionRequest },
+    #[serde(rename = "question.replied")]
+    QuestionReplied { properties: QuestionRepliedProp },
+    #[serde(rename = "question.v2.replied")]
+    QuestionV2Replied { properties: QuestionRepliedProp },
+    #[serde(rename = "question.rejected")]
+    QuestionRejected { properties: QuestionRejectedProp },
+    #[serde(rename = "question.v2.rejected")]
+    QuestionV2Rejected { properties: QuestionRejectedProp },
     // misc
     #[serde(rename = "todo.updated")]
     TodoUpdated { properties: TodoProp },
@@ -1726,5 +1935,132 @@ mod tests {
         // Wire in: the same value also parses from the server's `id` spelling.
         let wire = serde_json::json!({ "id": "claude-fable-5", "providerID": "anthropic" });
         assert_eq!(serde_json::from_value::<ModelRef>(wire).unwrap(), model);
+    }
+
+    // -- questions (T11: batch clarifications) ------------------------------
+
+    /// One `question.asked` frame, both wire revisions (v1 and v2 carry the
+    /// same `properties` shape).
+    fn question_asked_event(kind: &str) -> Event {
+        serde_json::from_str(&format!(
+            r#"{{
+                "type": "{kind}",
+                "properties": {{
+                    "id": "que_1",
+                    "sessionID": "ses_a",
+                    "questions": [
+                        {{
+                            "question": "Which environment?",
+                            "header": "Environment",
+                            "options": [
+                                {{"label": "staging", "description": "Staging cluster"}},
+                                {{"label": "prod", "description": "Production"}}
+                            ],
+                            "multiple": true,
+                            "custom": false
+                        }},
+                        {{
+                            "question": "Anything else to add?",
+                            "header": "Notes",
+                            "options": []
+                        }}
+                    ],
+                    "tool": {{"messageID": "msg_1", "callID": "call_1"}}
+                }}
+            }}"#
+        ))
+        .expect("question.asked event parses")
+    }
+
+    #[test]
+    fn question_asked_events_parse_in_both_wire_revisions() {
+        for kind in ["question.asked", "question.v2.asked"] {
+            let event = question_asked_event(kind);
+            let properties = match &event {
+                Event::QuestionAsked { properties } | Event::QuestionV2Asked { properties } => {
+                    properties
+                }
+                other => panic!("expected a question.asked variant, got {other:?}"),
+            };
+            assert_eq!(properties.id, "que_1");
+            assert_eq!(properties.session_id, "ses_a");
+            assert_eq!(properties.questions.len(), 2, "the whole batch is kept");
+
+            let first = &properties.questions[0];
+            assert_eq!(first.header, "Environment");
+            assert_eq!(first.options[0].label, "staging");
+            assert_eq!(first.multiple, Some(true));
+            assert_eq!(first.custom, Some(false));
+            // No `recommended` exists on the wire today (opencode 1.18): the
+            // field is modelled for a future revision and must default to None.
+            assert_eq!(first.recommended, None);
+            assert_eq!(first.custom.unwrap_or(true), false);
+
+            let second = &properties.questions[1];
+            assert_eq!(second.multiple, None);
+            // Omitted `custom` means free text is allowed (server default true).
+            assert_eq!(second.custom.unwrap_or(true), true);
+
+            let tool = properties.tool.as_ref().expect("tool ref is carried");
+            assert_eq!(tool.message_id, "msg_1");
+            assert_eq!(tool.call_id, "call_1");
+        }
+    }
+
+    #[test]
+    fn question_replied_carries_answers_and_rejected_carries_only_ids() {
+        let replied: Event = serde_json::from_str(
+            r#"{"type":"question.replied","properties":{"sessionID":"ses_a","requestID":"que_1","answers":[["staging"],["note"]]}}"#,
+        )
+        .expect("question.replied parses");
+        match replied {
+            Event::QuestionReplied { properties } => {
+                assert_eq!(properties.request_id, "que_1");
+                assert_eq!(
+                    properties.answers,
+                    vec![vec!["staging".to_string()], vec!["note".to_string()]]
+                );
+            }
+            other => panic!("expected QuestionReplied, got {other:?}"),
+        }
+
+        let v2_replied: Event = serde_json::from_str(
+            r#"{"type":"question.v2.replied","properties":{"sessionID":"ses_a","requestID":"que_1","answers":[["a","b"]]}}"#,
+        )
+        .expect("question.v2.replied parses");
+        assert!(matches!(
+            v2_replied,
+            Event::QuestionV2Replied { properties } if properties.answers[0].len() == 2
+        ));
+
+        for kind in ["question.rejected", "question.v2.rejected"] {
+            let rejected: Event = serde_json::from_str(&format!(
+                r#"{{"type":"{kind}","properties":{{"sessionID":"ses_a","requestID":"que_1"}}}}"#
+            ))
+            .expect("question.rejected parses");
+            match rejected {
+                Event::QuestionRejected { properties }
+                | Event::QuestionV2Rejected { properties } => {
+                    assert_eq!(properties.request_id, "que_1");
+                    assert_eq!(properties.session_id, "ses_a");
+                }
+                other => panic!("expected a rejected variant, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn question_info_round_trips_without_inventing_a_recommended_choice() {
+        let wire = r#"{
+            "question": "Pick one",
+            "header": "Pick",
+            "options": [{"label": "a", "description": "first"}]
+        }"#;
+        let info: QuestionInfo = serde_json::from_str(wire).expect("parses");
+        assert_eq!(info.recommended, None);
+        let out = serde_json::to_value(&info).unwrap();
+        assert_eq!(out["recommended"], serde_json::Value::Null);
+        // The options keep their required `description` for the UI.
+        assert_eq!(out["options"][0]["description"], "first");
     }
 }

@@ -625,6 +625,97 @@ impl OpenCodeClient {
         self.send_json(reqwest::Method::PUT, &path, &body).await
     }
 
+    /// `DELETE /auth/:providerID` — remove the stored credential for
+    /// `provider_id`. Answers a JSON boolean on success.
+    pub async fn delete_provider_auth(&self, provider_id: &str) -> Result<bool, CoreError> {
+        let path = format!("/auth/{}", Self::seg(provider_id));
+        // The route takes no meaningful body; `{}` matches the `abort` precedent.
+        self.send_json(reqwest::Method::DELETE, &path, &serde_json::json!({}))
+            .await
+    }
+
+    /// `POST /provider/:providerID/oauth/authorize` → the authorization URL and
+    /// how to complete it. `method` is the index of the chosen auth method.
+    pub async fn oauth_authorize(
+        &self,
+        provider_id: &str,
+        method: u32,
+    ) -> Result<ProviderAuthAuthorization, CoreError> {
+        let path = format!("/provider/{}/oauth/authorize", Self::seg(provider_id));
+        let body = serde_json::json!({ "method": method });
+        self.send_json(reqwest::Method::POST, &path, &body).await
+    }
+
+    /// `POST /provider/:providerID/oauth/callback` → completes the connect with
+    /// the authorization code the user pasted back. Answers a JSON boolean.
+    pub async fn oauth_callback(
+        &self,
+        provider_id: &str,
+        method: u32,
+        code: &str,
+    ) -> Result<bool, CoreError> {
+        let path = format!("/provider/{}/oauth/callback", Self::seg(provider_id));
+        // Typed struct: field order is the schema's, independent of map ordering.
+        #[derive(Serialize)]
+        struct CallbackBody<'a> {
+            method: u32,
+            code: &'a str,
+        }
+        let body = CallbackBody { method, code };
+        self.send_json(reqwest::Method::POST, &path, &body).await
+    }
+
+    /// `GET /config` → the safe scalar view (see [`OpencodeConfig`]); the
+    /// credential-bearing sections the server may send are dropped.
+    pub async fn get_config(&self) -> Result<OpencodeConfig, CoreError> {
+        self.get_json("/config").await
+    }
+
+    /// `PATCH /config` → applies the scalar allowlist and returns the resulting
+    /// config. Only the fields set on `patch` are serialized; the server merges
+    /// the patch into the existing config (upstream `mergeDeep`), so omitted
+    /// fields are preserved rather than replaced.
+    pub async fn patch_config(&self, patch: &ConfigPatch) -> Result<OpencodeConfig, CoreError> {
+        self.send_json(reqwest::Method::PATCH, "/config", patch)
+            .await
+    }
+
+    /// `GET /mcp` → server name → status (see [`McpStatus`]).
+    pub async fn mcp_status(&self) -> Result<HashMap<String, McpStatus>, CoreError> {
+        self.get_json("/mcp").await
+    }
+
+    /// `GET /command` → the slash commands the server and skills define.
+    pub async fn list_commands(&self) -> Result<Vec<SlashCommand>, CoreError> {
+        self.get_json("/command").await
+    }
+
+    /// `GET /question` → clarification batches still waiting for answers.
+    pub async fn pending_questions(&self) -> Result<Vec<QuestionRequest>, CoreError> {
+        self.get_json("/question").await
+    }
+
+    /// `POST /question/:requestID/reply` → answers the whole batch at once.
+    /// One entry per question, in question order; an unanswered/partial
+    /// question carries an empty entry.
+    pub async fn reply_question(
+        &self,
+        request_id: &str,
+        answers: &[Vec<String>],
+    ) -> Result<bool, CoreError> {
+        let path = format!("/question/{}/reply", Self::seg(request_id));
+        let body = serde_json::json!({ "answers": answers });
+        self.send_json(reqwest::Method::POST, &path, &body).await
+    }
+
+    /// `POST /question/:requestID/reject` → dismisses the batch without
+    /// answering. Answers a JSON boolean.
+    pub async fn reject_question(&self, request_id: &str) -> Result<bool, CoreError> {
+        let path = format!("/question/{}/reject", Self::seg(request_id));
+        self.send_json(reqwest::Method::POST, &path, &serde_json::json!({}))
+            .await
+    }
+
     // -----------------------------------------------------------------------
     // SSE
     // -----------------------------------------------------------------------
@@ -661,19 +752,22 @@ impl OpenCodeClient {
     /// error ends the stream with [`CoreError::Stream`] so the hub reconnects.
     pub async fn stream_events(&self) -> Result<EventStream, CoreError> {
         let response = self.event_stream().await?;
-        let stream = response.bytes_stream().eventsource().filter_map(|frame| async move {
-            let frame = match frame {
-                Ok(frame) => frame,
-                Err(e) => return Some(Err(CoreError::Stream(e.to_string()))),
-            };
-            let event_name = if frame.event.is_empty() {
-                None
-            } else {
-                Some(frame.event.as_str())
-            };
-            let (event, raw) = decode_payload(&frame.data, event_name)?;
-            Some(Ok(BackendEvent { event, raw }))
-        });
+        let stream = response
+            .bytes_stream()
+            .eventsource()
+            .filter_map(|frame| async move {
+                let frame = match frame {
+                    Ok(frame) => frame,
+                    Err(e) => return Some(Err(CoreError::Stream(e.to_string()))),
+                };
+                let event_name = if frame.event.is_empty() {
+                    None
+                } else {
+                    Some(frame.event.as_str())
+                };
+                let (event, raw) = decode_payload(&frame.data, event_name)?;
+                Some(Ok(BackendEvent { event, raw }))
+            });
         Ok(Box::pin(stream))
     }
 }
@@ -753,6 +847,59 @@ impl AgentBackend for OpenCodeClient {
 
     async fn set_provider_api_key(&self, provider_id: &str, key: &str) -> Result<bool, CoreError> {
         OpenCodeClient::set_provider_api_key(self, provider_id, key).await
+    }
+
+    async fn delete_provider_auth(&self, provider_id: &str) -> Result<bool, CoreError> {
+        OpenCodeClient::delete_provider_auth(self, provider_id).await
+    }
+
+    async fn oauth_authorize(
+        &self,
+        provider_id: &str,
+        method: u32,
+    ) -> Result<ProviderAuthAuthorization, CoreError> {
+        OpenCodeClient::oauth_authorize(self, provider_id, method).await
+    }
+
+    async fn oauth_callback(
+        &self,
+        provider_id: &str,
+        method: u32,
+        code: &str,
+    ) -> Result<bool, CoreError> {
+        OpenCodeClient::oauth_callback(self, provider_id, method, code).await
+    }
+
+    async fn get_config(&self) -> Result<OpencodeConfig, CoreError> {
+        OpenCodeClient::get_config(self).await
+    }
+
+    async fn patch_config(&self, patch: &ConfigPatch) -> Result<OpencodeConfig, CoreError> {
+        OpenCodeClient::patch_config(self, patch).await
+    }
+
+    async fn mcp_status(&self) -> Result<HashMap<String, McpStatus>, CoreError> {
+        OpenCodeClient::mcp_status(self).await
+    }
+
+    async fn list_commands(&self) -> Result<Vec<SlashCommand>, CoreError> {
+        OpenCodeClient::list_commands(self).await
+    }
+
+    async fn pending_questions(&self) -> Result<Vec<QuestionRequest>, CoreError> {
+        OpenCodeClient::pending_questions(self).await
+    }
+
+    async fn reply_question(
+        &self,
+        request_id: &str,
+        answers: &[Vec<String>],
+    ) -> Result<bool, CoreError> {
+        OpenCodeClient::reply_question(self, request_id, answers).await
+    }
+
+    async fn reject_question(&self, request_id: &str) -> Result<bool, CoreError> {
+        OpenCodeClient::reject_question(self, request_id).await
     }
 
     async fn projects(&self) -> Result<Vec<Project>, CoreError> {
@@ -1708,5 +1855,291 @@ mod tests {
 
         let req = server.request_text().await;
         assert!(req.starts_with("GET /provider/auth HTTP/1.1"), "got: {req}");
+    }
+
+    // -- T4 (remove): DELETE /auth/:providerID -------------------------------
+
+    #[tokio::test]
+    async fn delete_provider_auth_sends_delete_and_parses_the_boolean() {
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        let removed = client.delete_provider_auth("anthropic").await.unwrap();
+        assert!(removed);
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("DELETE /auth/anthropic HTTP/1.1"),
+            "got: {req}"
+        );
+    }
+
+    // -- T5: OAuth connect ---------------------------------------------------
+
+    #[tokio::test]
+    async fn oauth_authorize_posts_the_method_index_and_parses_the_redirect() {
+        let body = r#"{
+            "url": "https://example.test/authorize?state=abc",
+            "method": "auto",
+            "instructions": "Open the URL in a browser."
+        }"#;
+        let server = MockServer::start("200 OK", body).await;
+        let client = server.client(None).await;
+        let auth = client.oauth_authorize("openai", 0).await.unwrap();
+        assert_eq!(auth.url, "https://example.test/authorize?state=abc");
+        assert_eq!(auth.method, "auto");
+        assert!(!auth.instructions.is_empty());
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("POST /provider/openai/oauth/authorize HTTP/1.1"),
+            "got: {req}"
+        );
+        assert!(req.contains(r#"{"method":0}"#), "got: {req}");
+    }
+
+    #[tokio::test]
+    async fn oauth_callback_posts_the_pasted_code() {
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        let connected = client
+            .oauth_callback("openai", 0, "authcode-123")
+            .await
+            .unwrap();
+        assert!(connected);
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("POST /provider/openai/oauth/callback HTTP/1.1"),
+            "got: {req}"
+        );
+        // Parse the body instead of asserting key order (house style — serde_json
+        // map order is not part of the contract).
+        let body = req.split("\r\n\r\n").nth(1).unwrap_or_default();
+        let parsed: serde_json::Value =
+            serde_json::from_str(body.trim()).expect("the body is JSON");
+        assert_eq!(parsed["method"], 0, "the auth-method index must ride along");
+        assert_eq!(
+            parsed["code"].as_str(),
+            Some("authcode-123"),
+            "the pasted code must be sent verbatim"
+        );
+        assert_eq!(
+            parsed.as_object().map(|o| o.len()),
+            Some(2),
+            "the schema allows exactly method/code"
+        );
+    }
+
+    // -- T6: config read / patch --------------------------------------------
+
+    #[tokio::test]
+    async fn config_read_keeps_the_safe_scalars_and_drops_the_credentials() {
+        let body = r#"{
+            "logLevel": "INFO",
+            "model": "anthropic/claude-sonnet-4",
+            "small_model": "anthropic/claude-haiku",
+            "default_agent": "build",
+            "snapshot": true,
+            "autoshare": false,
+            "share": "manual",
+            "shell": "bash",
+            "provider": {"openai": {"options": {"apiKey": "sk-secret"}}},
+            "server": {"port": 4096},
+            "command": {"x": {"template": "/x"}}
+        }"#;
+        let server = MockServer::start("200 OK", body).await;
+        let client = server.client(None).await;
+        let config = client.get_config().await.unwrap();
+
+        assert_eq!(config.log_level.as_deref(), Some("INFO"));
+        assert_eq!(config.model.as_deref(), Some("anthropic/claude-sonnet-4"));
+        assert_eq!(config.default_agent.as_deref(), Some("build"));
+        assert_eq!(config.shell.as_deref(), Some("bash"));
+
+        // Secret hygiene: the credential-bearing sections are not modelled, so
+        // they can neither serialize out nor appear in a Debug print.
+        let out = serde_json::to_value(&config).unwrap();
+        assert!(
+            out.get("provider").is_none(),
+            "provider must not be modelled"
+        );
+        assert!(out.get("server").is_none());
+        assert!(out.get("command").is_none());
+        assert!(!format!("{config:?}").contains("sk-secret"));
+
+        let req = server.request_text().await;
+        assert!(req.starts_with("GET /config HTTP/1.1"), "got: {req}");
+    }
+
+    #[tokio::test]
+    async fn config_patch_sends_only_the_allowlisted_scalars() {
+        let server = MockServer::start("200 OK", r#"{"logLevel":"DEBUG"}"#).await;
+        let client = server.client(None).await;
+        let patch = ConfigPatch {
+            log_level: Some("DEBUG".to_string()),
+            ..ConfigPatch::default()
+        };
+        let config = client.patch_config(&patch).await.unwrap();
+        assert_eq!(config.log_level.as_deref(), Some("DEBUG"));
+
+        let req = server.request_text().await;
+        assert!(req.starts_with("PATCH /config HTTP/1.1"), "got: {req}");
+        assert!(req.contains(r#"{"logLevel":"DEBUG"}"#), "got: {req}");
+        // The body type is the allowlist: an absent field cannot ride along,
+        // and no credential-bearing section is expressible at all.
+        assert!(!req.contains("provider"), "got: {req}");
+        assert!(!req.contains("server"), "got: {req}");
+    }
+
+    // -- T7: MCP -------------------------------------------------------------
+
+    #[tokio::test]
+    async fn mcp_status_parses_every_variant_and_tolerates_unknown_ones() {
+        let body = r#"{
+            "docs": {"status": "connected"},
+            "old": {"status": "disabled"},
+            "broken": {"status": "failed", "error": "connection refused"},
+            "guarded": {"status": "needs_auth"},
+            "reg": {"status": "needs_client_registration", "error": "pending"},
+            "future": {"status": "something_new"}
+        }"#;
+        let server = MockServer::start("200 OK", body).await;
+        let client = server.client(None).await;
+        let mcp = client.mcp_status().await.unwrap();
+
+        assert_eq!(mcp.len(), 6);
+        assert!(matches!(mcp["docs"], McpStatus::Connected));
+        assert!(matches!(mcp["old"], McpStatus::Disabled));
+        assert!(matches!(mcp["guarded"], McpStatus::NeedsAuth));
+        match &mcp["broken"] {
+            McpStatus::Failed { error } => assert_eq!(error, "connection refused"),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        match &mcp["reg"] {
+            McpStatus::NeedsClientRegistration { error } => assert_eq!(error, "pending"),
+            other => panic!("expected NeedsClientRegistration, got {other:?}"),
+        }
+        assert!(
+            matches!(mcp["future"], McpStatus::Unknown),
+            "an unknown future status must not break the whole map"
+        );
+
+        let req = server.request_text().await;
+        assert!(req.starts_with("GET /mcp HTTP/1.1"), "got: {req}");
+    }
+
+    // -- T9: slash commands --------------------------------------------------
+
+    #[tokio::test]
+    async fn command_list_parses_names_descriptions_and_sources() {
+        let body = r#"[{
+            "name": "review",
+            "description": "Review the diff",
+            "agent": "plan",
+            "source": "command",
+            "template": "/review",
+            "hints": []
+        },{
+            "name": "help",
+            "description": "List available tools",
+            "source": "skill",
+            "template": "/help",
+            "hints": ["hint"]
+        }]"#;
+        let server = MockServer::start("200 OK", body).await;
+        let client = server.client(None).await;
+        let commands = client.list_commands().await.unwrap();
+
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[0].name, "review");
+        assert_eq!(commands[0].agent.as_deref(), Some("plan"));
+        assert_eq!(commands[0].source.as_deref(), Some("command"));
+        assert_eq!(commands[1].name, "help");
+        assert_eq!(commands[1].agent, None);
+
+        let req = server.request_text().await;
+        assert!(req.starts_with("GET /command HTTP/1.1"), "got: {req}");
+    }
+
+    // -- T11: pending clarification batches ----------------------------------
+
+    #[tokio::test]
+    async fn pending_questions_parse_the_batch_shape() {
+        let body = r#"[{
+            "id": "que_1",
+            "sessionID": "ses_a",
+            "questions": [
+                {
+                    "question": "Which env?",
+                    "header": "Environment",
+                    "options": [
+                        {"label": "staging", "description": "Staging cluster"},
+                        {"label": "prod", "description": "Production"}
+                    ],
+                    "multiple": true
+                },
+                {
+                    "question": "Own answer?",
+                    "header": "Note",
+                    "options": []
+                }
+            ],
+            "tool": {"messageID": "msg_1", "callID": "call_1"}
+        }]"#;
+        let server = MockServer::start("200 OK", body).await;
+        let client = server.client(None).await;
+        let questions = client.pending_questions().await.unwrap();
+
+        assert_eq!(questions.len(), 1);
+        let batch = &questions[0];
+        assert_eq!(batch.id, "que_1");
+        assert_eq!(batch.session_id, "ses_a");
+        assert_eq!(batch.questions.len(), 2, "the batch is presented at once");
+        assert_eq!(batch.questions[0].multiple, Some(true));
+        assert_eq!(batch.questions[0].recommended, None);
+        assert_eq!(
+            batch.questions[1].custom, None,
+            "omitted → free text allowed"
+        );
+        assert!(batch.tool.is_some());
+
+        let req = server.request_text().await;
+        assert!(req.starts_with("GET /question HTTP/1.1"), "got: {req}");
+    }
+
+    #[tokio::test]
+    async fn reply_question_posts_answers_in_question_order() {
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        let answers = vec![
+            vec!["staging".to_string()],
+            vec!["a".to_string(), "b".to_string()],
+        ];
+        let ok = client.reply_question("que_1", &answers).await.unwrap();
+        assert!(ok);
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("POST /question/que_1/reply HTTP/1.1"),
+            "got: {req}"
+        );
+        assert!(
+            req.contains(r#"{"answers":[["staging"],["a","b"]]}"#),
+            "got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reject_question_posts_to_the_reject_route() {
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        let ok = client.reject_question("que_1").await.unwrap();
+        assert!(ok);
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("POST /question/que_1/reject HTTP/1.1"),
+            "got: {req}"
+        );
     }
 }

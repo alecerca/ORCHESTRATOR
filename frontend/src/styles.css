@@ -2220,6 +2220,10 @@ html[data-theme="light"] .drop-indicator {
   border-color: var(--warning);
 }
 
+.notification--question {
+  border-color: var(--warning);
+}
+
 .notification__text {
   flex: 1;
   word-break: break-word;
@@ -2785,4 +2789,382 @@ html[data-theme="light"] .drop-indicator {
   padding: 10px 16px;
   color: var(--error);
   font-size: 14px;
+}
+
+/* -- OpenCode dialog (T2/T4–T9) -------------------------------------------- */
+
+.oc-dialog {
+  width: min(760px, 94vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* head + tabs pinned; only .oc-body scrolls */
+}
+
+.oc-dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.oc-dialog__head .approval__title {
+  margin-bottom: 0;
+}
+
+.oc-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.oc-tab {
+  padding: 5px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.oc-tab:hover {
+  color: var(--text);
+  background: var(--surface-alt);
+}
+
+.oc-tab.is-active {
+  color: var(--brand-text);
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.oc-toolbar {
+  margin-bottom: 10px;
+}
+
+.oc-toolbar .settings-input {
+  width: 100%;
+}
+
+.oc-body {
+  min-height: 120px;
+  overflow-y: auto;
+}
+
+.oc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.oc-row {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.oc-row--static {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.oc-row__main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.oc-row__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.oc-row__name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.oc-row__id {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.oc-row__count {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.oc-row__chevron {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.oc-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.oc-row__hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.oc-row__tpl {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  max-height: 72px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.oc-models {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.oc-models li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.oc-models__name {
+  color: var(--text);
+}
+
+.oc-free {
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+}
+
+.oc-empty {
+  list-style: none;
+  margin: 0;
+  padding: 8px 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.oc-note {
+  margin: 0 0 8px;
+  color: var(--brand);
+  font-size: 13px;
+}
+
+.oc-oauth {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 12px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.oc-oauth__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.oc-oauth__steps {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.oc-oauth__link {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--secondary);
+  word-break: break-all;
+}
+
+.oc-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.oc-config__ro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.oc-config__ro pre {
+  margin: 0;
+  padding: 8px;
+  max-height: 120px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+}
+
+.oc-config input[type="checkbox"] {
+  width: auto;
+}
+
+/* -- clarification dialog (T11) -------------------------------------------- */
+
+.clarify {
+  width: min(640px, 94vw);
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+.clarify__list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.clarify__question {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.clarify__text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.clarify__options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.clarify__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.clarify__option:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.clarify__option.is-selected {
+  border-color: var(--brand);
+}
+
+.clarify__option.is-selected .clarify__option-label {
+  color: var(--brand);
+}
+
+.clarify__option:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.clarify__option-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.clarify__option-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.clarify__free {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.clarify__hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* -- composer agent selector (T8) ------------------------------------------ */
+
+.composer__agent {
+  height: 36px;
+  max-width: 180px;
+  padding: 0 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+}
+
+.composer__agent:focus {
+  border-color: var(--brand);
 }

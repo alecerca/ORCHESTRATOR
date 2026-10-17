@@ -9,9 +9,10 @@ use orquestador_core::state::AppStateSnapshot;
 use orquestador_core::state::Effect;
 use orquestador_core::client::ClientConfig;
 use orquestador_core::types::{
-    Agent, CommandBody, CreateSessionBody, FileContent, FileNode, FileStatus, Health,
-    MessageBundle, PermissionResponse, PresenceEntry, Project, PromptBody, ProviderAuthMethod,
-    ProviderList, Session, SessionStatus, Todo,
+    Agent, CommandBody, ConfigPatch, CreateSessionBody, FileContent, FileNode, FileStatus, Health,
+    McpStatus, MessageBundle, OpencodeConfig, PermissionResponse, PresenceEntry, Project,
+    PromptBody, ProviderAuthAuthorization, ProviderAuthMethod, ProviderList, Session,
+    SessionStatus, SlashCommand, Todo,
 };
 use orquestador_core::skills::merge_skills;
 use orquestador_core::{build_preamble, slugify, CoreError, SkillInfo};
@@ -488,6 +489,143 @@ pub async fn respond_permission(
                 .write()
                 .await
                 .remove_permission(&permission_id);
+            bridge.push_snapshot().await;
+            Ok(false)
+        }
+        Err(err) => Err(stringify(err)),
+    }
+}
+
+// -- provider connect (T4/T5) ------------------------------------------------
+
+/// Remove the stored credential for `provider_id` (`DELETE /auth/:providerID`).
+#[tauri::command]
+pub async fn delete_provider_api_key(
+    bridge: State<'_, AppBridge>,
+    provider_id: String,
+) -> Result<bool, String> {
+    bridge
+        .client()
+        .delete_provider_auth(&provider_id)
+        .await
+        .map_err(stringify)
+}
+
+/// Start an OAuth connect (`POST /provider/:providerID/oauth/authorize`).
+/// `method` is the index of the chosen auth method from `get_provider_auth`.
+/// Returns the authorization URL plus how to complete it: `method: "auto"` →
+/// open the URL in a browser, then re-poll the auth status; `method: "code"` →
+/// ask the user for the code and finish with [`oauth_callback`].
+#[tauri::command]
+pub async fn oauth_authorize(
+    bridge: State<'_, AppBridge>,
+    provider_id: String,
+    method: u32,
+) -> Result<ProviderAuthAuthorization, String> {
+    bridge
+        .client()
+        .oauth_authorize(&provider_id, method)
+        .await
+        .map_err(stringify)
+}
+
+/// Complete an OAuth connect with the authorization code the user pasted back.
+#[tauri::command]
+pub async fn oauth_callback(
+    bridge: State<'_, AppBridge>,
+    provider_id: String,
+    method: u32,
+    code: String,
+) -> Result<bool, String> {
+    bridge
+        .client()
+        .oauth_callback(&provider_id, method, &code)
+        .await
+        .map_err(stringify)
+}
+
+// -- config / MCP / commands (T6/T7/T9) -------------------------------------
+
+/// Read the app-relevant scalars of `GET /config`. Credential-bearing sections
+/// are dropped by the typed DTO and never reach the webview.
+#[tauri::command]
+pub async fn get_opencode_config(bridge: State<'_, AppBridge>) -> Result<OpencodeConfig, String> {
+    bridge.client().get_config().await.map_err(stringify)
+}
+
+/// Apply the scalar allowlist patch (`PATCH /config`). The server merges the
+/// patch, so omitted fields are preserved; only fields present on `patch` are
+/// sent.
+#[tauri::command]
+pub async fn patch_opencode_config(
+    bridge: State<'_, AppBridge>,
+    patch: ConfigPatch,
+) -> Result<OpencodeConfig, String> {
+    bridge
+        .client()
+        .patch_config(&patch)
+        .await
+        .map_err(stringify)
+}
+
+/// MCP server statuses (`GET /mcp`), keyed by server name.
+#[tauri::command]
+pub async fn get_mcp_status(
+    bridge: State<'_, AppBridge>,
+) -> Result<HashMap<String, McpStatus>, String> {
+    bridge.client().mcp_status().await.map_err(stringify)
+}
+
+/// Slash commands the server and skills define (`GET /command`).
+#[tauri::command]
+pub async fn list_commands(bridge: State<'_, AppBridge>) -> Result<Vec<SlashCommand>, String> {
+    bridge.client().list_commands().await.map_err(stringify)
+}
+
+// -- clarifications (T11) ----------------------------------------------------
+
+/// Answer a whole clarification batch at once (`POST /question/:requestID/reply`).
+/// One entry per question, in order; an unanswered/partial question carries an
+/// empty entry.
+#[tauri::command]
+pub async fn reply_question(
+    bridge: State<'_, AppBridge>,
+    request_id: String,
+    answers: Vec<Vec<String>>,
+) -> Result<bool, String> {
+    let result = bridge.client().reply_question(&request_id, &answers).await;
+    settle_question(&bridge, &request_id, result).await
+}
+
+/// Dismiss a clarification batch without answering
+/// (`POST /question/:requestID/reject`).
+#[tauri::command]
+pub async fn reject_question(
+    bridge: State<'_, AppBridge>,
+    request_id: String,
+) -> Result<bool, String> {
+    let result = bridge.client().reject_question(&request_id).await;
+    settle_question(&bridge, &request_id, result).await
+}
+
+/// Shared settle path for [`reply_question`] / [`reject_question`]: drop the
+/// batch locally and push the snapshot instead of waiting for the settle event
+/// (which can be missed), so the dialog closes deterministically. A `404` means
+/// the batch is already gone server-side — drop the phantom and treat it as
+/// handled rather than surfacing the raw error.
+async fn settle_question(
+    bridge: &AppBridge,
+    request_id: &str,
+    result: Result<bool, CoreError>,
+) -> Result<bool, String> {
+    match result {
+        Ok(settled) => {
+            bridge.state().write().await.remove_question(request_id);
+            bridge.push_snapshot().await;
+            Ok(settled)
+        }
+        Err(err) if err.is_not_found() => {
+            bridge.state().write().await.remove_question(request_id);
             bridge.push_snapshot().await;
             Ok(false)
         }

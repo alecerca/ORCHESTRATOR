@@ -15,6 +15,8 @@ import { describeError, shortId } from "../utils";
 import { PresenceStrip } from "./PresenceStrip";
 import { ProjectPicker } from "./ProjectPicker";
 import { ModelPicker } from "./ModelPicker";
+import { OpenCodeDialog } from "./OpenCodeDialog";
+import { ClarificationDialog } from "./ClarificationDialog";
 
 interface Props {
   /** Effective orchestrator root (persisted pick, else `root_session_id`). */
@@ -77,6 +79,7 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings, onProjectCh
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [ocOpen, setOcOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const actionsRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -217,6 +220,14 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings, onProjectCh
             onChanged={(config) => onProjectChanged?.(config)}
           />
           <ModelPicker rootSessionId={rootId} />
+          <button
+            type="button"
+            className="topbar__btn"
+            title="OpenCode surface: providers, agents, MCP, commands, config"
+            onClick={() => setOcOpen(true)}
+          >
+            OpenCode
+          </button>
           <div className="skills">
             <button
               type="button"
@@ -344,6 +355,8 @@ export function TopBar({ rootSessionId, onOpenSkill, onOpenSettings, onProjectCh
           </button>
         </div>
       </div>
+      {ocOpen && <OpenCodeDialog open onClose={() => setOcOpen(false)} />}
+      <ClarificationDialog />
     </header>
   );
 }

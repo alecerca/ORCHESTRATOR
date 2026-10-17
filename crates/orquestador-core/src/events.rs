@@ -132,7 +132,10 @@ pub enum BootstrapOutcome {
 /// Never panics and never propagates transport errors: a stopped
 /// `opencode serve` must leave the app usable (it shows "disconnected" and the
 /// event hub keeps retrying).
-pub async fn bootstrap(client: &dyn AgentBackend, state: &Arc<RwLock<AppState>>) -> BootstrapOutcome {
+pub async fn bootstrap(
+    client: &dyn AgentBackend,
+    state: &Arc<RwLock<AppState>>,
+) -> BootstrapOutcome {
     let health = match client.health().await {
         Ok(h) => h,
         Err(e) => {
@@ -152,6 +155,10 @@ pub async fn bootstrap(client: &dyn AgentBackend, state: &Arc<RwLock<AppState>>)
     // event adds while it is in flight is not dropped as "withdrawn".
     let permission_fetch_started = crate::state::now_ms();
     let permissions = client.pending_permissions().await.ok();
+    // A clarification batch asked while the stream was down is equally invisible
+    // to SSE; same race protection as permissions (own start, fetched after).
+    let question_fetch_started = crate::state::now_ms();
+    let questions = client.pending_questions().await.ok();
 
     // Reuse the newest root session; create one only when there is nothing.
     let root = match pick_root(&sessions) {
@@ -190,6 +197,11 @@ pub async fn bootstrap(client: &dyn AgentBackend, state: &Arc<RwLock<AppState>>)
     if let Some(permissions) = permissions {
         // Bootstrap has no broadcast channel yet; the snapshot carries them.
         st.apply_pending_permissions_at(permissions, permission_fetch_started);
+    }
+    if let Some(questions) = questions {
+        // Same as permissions: the pause surfaces through the first snapshot
+        // (no notification effect channel exists yet at bootstrap time).
+        st.apply_pending_questions_at(questions, question_fetch_started);
     }
     if let Some(root) = &root {
         st.set_root_session(root.clone());
@@ -380,6 +392,17 @@ impl EventHub {
                 let _ = self.tx.send(CoreMessage::Effect { effect });
             }
         }
+        let question_fetch_started = crate::state::now_ms();
+        if let Ok(questions) = self.client.pending_questions().await {
+            let effects = self
+                .state
+                .write()
+                .await
+                .apply_pending_questions_at(questions, question_fetch_started);
+            for effect in effects {
+                let _ = self.tx.send(CoreMessage::Effect { effect });
+            }
+        }
         self.publish_snapshot().await;
     }
 
@@ -413,6 +436,17 @@ async fn reconcile_once(
             .write()
             .await
             .apply_pending_permissions_at(permissions, permission_fetch_started);
+        for effect in effects {
+            let _ = tx.send(CoreMessage::Effect { effect });
+        }
+    }
+    let question_fetch_started = crate::state::now_ms();
+    let questions = client.pending_questions().await;
+    if let Ok(questions) = questions {
+        let effects = state
+            .write()
+            .await
+            .apply_pending_questions_at(questions, question_fetch_started);
         for effect in effects {
             let _ = tx.send(CoreMessage::Effect { effect });
         }
@@ -462,6 +496,18 @@ mod tests {
         ));
         assert!(changes_state(
             &crate::client::decode_payload(r#"{"type":"permission.updated","properties":{"id":"p","type":"edit","sessionID":"s","messageID":"m","title":"t","metadata":{},"time":{"created":1}}}"#, None).unwrap().0
+        ));
+        // Clarification pauses must republish the snapshot too (deny-list rule).
+        assert!(changes_state(
+            &crate::client::decode_payload(r#"{"type":"question.asked","properties":{"id":"q","sessionID":"s","questions":[]}}"#, None).unwrap().0
+        ));
+        assert!(changes_state(
+            &crate::client::decode_payload(
+                r#"{"type":"question.rejected","properties":{"sessionID":"s","requestID":"q"}}"#,
+                None
+            )
+            .unwrap()
+            .0
         ));
     }
 
@@ -1075,6 +1121,8 @@ mod tests {
         member_name: Option<String>,
         /// Title of the last session bootstrap asked the backend to create.
         created_title: std::sync::Mutex<Option<String>>,
+        /// Clarification batches `GET /question` would return (empty by default).
+        questions: Vec<crate::types::QuestionRequest>,
     }
 
     #[async_trait::async_trait]
@@ -1114,6 +1162,53 @@ mod tests {
             _key: &str,
         ) -> Result<bool, CoreError> {
             unimplemented!("FakeBackend::set_provider_api_key")
+        }
+
+        async fn delete_provider_auth(&self, _provider_id: &str) -> Result<bool, CoreError> {
+            unimplemented!("FakeBackend::delete_provider_auth")
+        }
+        async fn oauth_authorize(
+            &self,
+            _provider_id: &str,
+            _method: u32,
+        ) -> Result<crate::types::ProviderAuthAuthorization, CoreError> {
+            unimplemented!("FakeBackend::oauth_authorize")
+        }
+        async fn oauth_callback(
+            &self,
+            _provider_id: &str,
+            _method: u32,
+            _code: &str,
+        ) -> Result<bool, CoreError> {
+            unimplemented!("FakeBackend::oauth_callback")
+        }
+        async fn get_config(&self) -> Result<crate::types::OpencodeConfig, CoreError> {
+            unimplemented!("FakeBackend::get_config")
+        }
+        async fn patch_config(
+            &self,
+            _patch: &crate::types::ConfigPatch,
+        ) -> Result<crate::types::OpencodeConfig, CoreError> {
+            unimplemented!("FakeBackend::patch_config")
+        }
+        async fn mcp_status(&self) -> Result<HashMap<String, crate::types::McpStatus>, CoreError> {
+            unimplemented!("FakeBackend::mcp_status")
+        }
+        async fn list_commands(&self) -> Result<Vec<crate::types::SlashCommand>, CoreError> {
+            unimplemented!("FakeBackend::list_commands")
+        }
+        async fn pending_questions(&self) -> Result<Vec<crate::types::QuestionRequest>, CoreError> {
+            Ok(self.questions.clone())
+        }
+        async fn reply_question(
+            &self,
+            _request_id: &str,
+            _answers: &[Vec<String>],
+        ) -> Result<bool, CoreError> {
+            unimplemented!("FakeBackend::reply_question")
+        }
+        async fn reject_question(&self, _request_id: &str) -> Result<bool, CoreError> {
+            unimplemented!("FakeBackend::reject_question")
         }
 
         async fn projects(&self) -> Result<Vec<crate::types::Project>, CoreError> {
@@ -1258,10 +1353,7 @@ mod tests {
         ) -> Result<Vec<String>, CoreError> {
             unimplemented!("FakeBackend::find_files")
         }
-        async fn find_symbols(
-            &self,
-            _query: &str,
-        ) -> Result<Vec<serde_json::Value>, CoreError> {
+        async fn find_symbols(&self, _query: &str) -> Result<Vec<serde_json::Value>, CoreError> {
             unimplemented!("FakeBackend::find_symbols")
         }
         async fn find_by_pattern(&self, _pattern: &str) -> Result<Vec<String>, CoreError> {
@@ -1275,6 +1367,7 @@ mod tests {
             events: Vec::new(),
             member_name: Some("fake".to_string()),
             created_title: std::sync::Mutex::new(None),
+            questions: Vec::new(),
         };
         let state = test_state();
 
@@ -1297,11 +1390,54 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn bootstrap_surfaces_a_pending_question_batch_without_an_sse_event() {
+        // A clarification pause must survive an app restart: the batch was
+        // asked while nothing was listening, so only `GET /question` sees it.
+        let backend = FakeBackend {
+            events: Vec::new(),
+            member_name: None,
+            created_title: std::sync::Mutex::new(None),
+            questions: vec![serde_json::from_value(serde_json::json!({
+                "id": "que_boot",
+                "sessionID": "fake-root",
+                "questions": [
+                    {"question": "Which env?", "header": "Environment",
+                     "options": [{"label": "staging", "description": "Staging"}]}
+                ]
+            }))
+            .expect("question fixture parses")],
+        };
+        let state = test_state();
+
+        let outcome = bootstrap(&backend, &state).await;
+        assert!(
+            matches!(outcome, BootstrapOutcome::Connected { .. }),
+            "a pending question must not disconnect the app"
+        );
+
+        let snapshot = state.read().await.snapshot();
+        assert_eq!(snapshot.questions.len(), 1);
+        assert_eq!(snapshot.questions[0].id, "que_boot");
+        assert_eq!(snapshot.sessions.len(), 1);
+        assert_eq!(
+            snapshot.sessions[0].status,
+            crate::state::AgentUiStatus::WaitingApproval,
+            "the session is visibly paused waiting for the answers"
+        );
+    }
+
     #[test]
     fn attributed_title_prefixes_only_when_member_is_present() {
         assert_eq!(attributed_title(None, DEFAULT_ROOT_TITLE), "Orchestrator");
-        assert_eq!(attributed_title(Some(""), DEFAULT_ROOT_TITLE), "Orchestrator");
-        assert_eq!(attributed_title(Some("  "), DEFAULT_ROOT_TITLE), "Orchestrator");
+        assert_eq!(
+            attributed_title(Some(""), DEFAULT_ROOT_TITLE),
+            "Orchestrator"
+        );
+        assert_eq!(
+            attributed_title(Some("  "), DEFAULT_ROOT_TITLE),
+            "Orchestrator"
+        );
         assert_eq!(
             attributed_title(Some("alice"), "New session"),
             "[alice] New session"
@@ -1321,6 +1457,7 @@ mod tests {
             events: vec![BackendEvent { event, raw }],
             member_name: None,
             created_title: std::sync::Mutex::new(None),
+            questions: Vec::new(),
         });
         let state = test_state();
         let (tx, mut rx) = broadcast::channel::<CoreMessage>(super::EVENT_BUFFER);

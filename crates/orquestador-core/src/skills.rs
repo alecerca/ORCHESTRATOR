@@ -123,9 +123,16 @@ mod tests {
         ];
         let merged = merge_skills(app, native);
 
-        assert_eq!(merged.len(), 3, "the colliding native entry must be dropped");
+        assert_eq!(
+            merged.len(),
+            3,
+            "the colliding native entry must be dropped"
+        );
         let shared = merged.iter().find(|s| s.name == "shared").unwrap();
-        assert_eq!(shared.source, "app", "app must shadow a same-named native skill");
+        assert_eq!(
+            shared.source, "app",
+            "app must shadow a same-named native skill"
+        );
         assert!(shared.editable);
     }
 
@@ -143,7 +150,10 @@ mod tests {
     #[test]
     fn merge_skills_sorts_output_by_name() {
         let app = vec![skill("zeta", "app", true)];
-        let native = vec![skill("alpha", "opencode", false), skill("mid", "opencode", false)];
+        let native = vec![
+            skill("alpha", "opencode", false),
+            skill("mid", "opencode", false),
+        ];
         let merged = merge_skills(app, native);
 
         let names: Vec<&str> = merged.iter().map(|s| s.name.as_str()).collect();
@@ -189,7 +199,10 @@ mod tests {
         let first = preamble.find("### Skill: first").unwrap();
         let second = preamble.find("### Skill: second").unwrap();
         assert!(first < second, "skills must keep their given order");
-        assert!(!preamble.contains("### Skill: blank"), "empty skills must be skipped");
+        assert!(
+            !preamble.contains("### Skill: blank"),
+            "empty skills must be skipped"
+        );
     }
 
     #[test]

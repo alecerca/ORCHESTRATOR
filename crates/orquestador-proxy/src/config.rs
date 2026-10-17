@@ -369,8 +369,7 @@ mod tests {
 
     #[test]
     fn upstream_password_env_wins_over_config() {
-        let picked =
-            pick_upstream_password(Some("from-env".into()), Some("from-config".into()));
+        let picked = pick_upstream_password(Some("from-env".into()), Some("from-config".into()));
         assert_eq!(picked.as_deref(), Some("from-env"));
     }
 

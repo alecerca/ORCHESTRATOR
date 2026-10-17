@@ -28,6 +28,7 @@ fn effect_kind(effect: &Effect) -> &'static str {
         Effect::Failed { .. } => "failed",
         Effect::Approval { .. } => "approval",
         Effect::UsageLimit { .. } => "usage_limit",
+        Effect::Question { .. } => "question",
     }
 }
 
@@ -52,6 +53,14 @@ pub fn handle_effect(effect: &Effect) {
                 format!("Waiting before retrying: {message}")
             } else {
                 format!("{title}: waiting before retrying ({message}).")
+            },
+        ),
+        Effect::Question { title, .. } => (
+            "Answer needed".to_string(),
+            if title.trim().is_empty() {
+                "A question is waiting for your answer.".to_string()
+            } else {
+                format!("{title} is waiting for your answer.")
             },
         ),
     };

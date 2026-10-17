@@ -7,7 +7,9 @@
 //! All HTTP lives in [`crate::client`]; all orchestration in [`crate::events`].
 
 use crate::error::{is_usage_limit, is_usage_limit_message};
-use crate::types::{Agent, Event, Permission, PermissionRequest, Session, SessionStatus, Todo};
+use crate::types::{
+    Agent, Event, Permission, PermissionRequest, QuestionRequest, Session, SessionStatus, Todo,
+};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
@@ -26,7 +28,8 @@ pub enum AgentUiStatus {
     Done,
     /// Server says `busy` or `retry`.
     Running,
-    /// A `permission.updated` is waiting for the human.
+    /// A `permission.updated` or a clarification batch is waiting for the
+    /// human.
     WaitingApproval,
     /// A `session.error` arrived and no new run has started since.
     Error,
@@ -58,6 +61,13 @@ pub enum Effect {
         title: String,
         message: String,
     },
+    /// A sub-agent is blocked waiting for the human to answer a clarification
+    /// batch. Emitted once per batch (`question.asked`), never per question.
+    Question {
+        session_id: String,
+        request_id: String,
+        title: String,
+    },
 }
 
 /// Serializable mirror of [`AppState`] pushed to the webview.
@@ -73,6 +83,9 @@ pub struct AppStateSnapshot {
     pub sessions: Vec<SessionSnapshot>,
     /// Permissions still waiting for an answer.
     pub permissions: Vec<Permission>,
+    /// Clarification batches (`question.asked`) still waiting for answers,
+    /// sorted by request id (deterministic — asserted by tests).
+    pub questions: Vec<QuestionRequest>,
     pub agents: Vec<Agent>,
     pub todos: HashMap<String, Vec<Todo>>,
 }
@@ -129,6 +142,10 @@ pub struct AppState {
     pending: HashMap<String, Permission>,
     /// Origin / last-seen of every `pending` entry (see [`PendingSource`]).
     pending_source: HashMap<String, PendingSource>,
+    /// Clarification batches not answered yet, keyed by request id.
+    questions: HashMap<String, QuestionRequest>,
+    /// Origin / last-seen of every `questions` entry (see [`PendingSource`]).
+    question_source: HashMap<String, PendingSource>,
     todos: HashMap<String, Vec<Todo>>,
     agents: Vec<Agent>,
     /// Last derived status seen per session (to detect transitions).
@@ -148,6 +165,19 @@ fn is_run_status(status: AgentUiStatus) -> bool {
         status,
         AgentUiStatus::Running | AgentUiStatus::WaitingApproval
     )
+}
+
+/// Short human title for a clarification batch: the first question's header,
+/// else its text — the whole batch is one pause, so one title covers it.
+fn question_title(request: &QuestionRequest) -> String {
+    let Some(first) = request.questions.first() else {
+        return "question".to_string();
+    };
+    if !first.header.trim().is_empty() {
+        first.header.clone()
+    } else {
+        first.question.clone()
+    }
 }
 
 /// Wall clock in epoch ms. `AppState` is pure apart from this single read; the
@@ -318,6 +348,85 @@ impl AppState {
         true
     }
 
+    // -- clarification batches (T11) ----------------------------------------
+
+    /// Merge a completed `GET /question` fetch into the registry, keyed by the
+    /// `que_…` id the reply/reject calls need.
+    ///
+    /// Same contract as [`Self::apply_pending_permissions`]: a successful list
+    /// fetch is authoritative for everything it could have seen — a tracked
+    /// batch the response omits is dropped (answered elsewhere or lost to a
+    /// dead stream) — while a batch that arrived over `question.asked` *after*
+    /// the fetch started survives the race. Removals never emit an effect and
+    /// an already-tracked batch is left untouched (no duplicate pause).
+    /// Returns one [`Effect::Question`] per newly discovered batch.
+    pub fn apply_pending_questions(&mut self, requests: Vec<QuestionRequest>) -> Vec<Effect> {
+        self.apply_pending_questions_at(requests, now_ms())
+    }
+
+    /// [`Self::apply_pending_questions`] with the explicit instant the fetch
+    /// was sent (tests use fixed clocks, the event hub passes the real start).
+    pub fn apply_pending_questions_at(
+        &mut self,
+        requests: Vec<QuestionRequest>,
+        fetched_at_ms: i64,
+    ) -> Vec<Effect> {
+        let listed: HashSet<&str> = requests.iter().map(|r| r.id.as_str()).collect();
+        let stale: Vec<String> = self
+            .questions
+            .keys()
+            .filter(|id| !listed.contains(id.as_str()))
+            .filter(|id| match self.question_source.get(id.as_str()) {
+                Some(PendingSource::Event { seen_at_ms }) => *seen_at_ms <= fetched_at_ms,
+                Some(PendingSource::List) | None => true,
+            })
+            .cloned()
+            .collect();
+        for id in stale {
+            if let Some(question) = self.questions.remove(&id) {
+                self.question_source.remove(&id);
+                self.observe(&question.session_id, fetched_at_ms);
+            }
+        }
+
+        let mut effects = Vec::new();
+        for request in requests {
+            let id = request.id.clone();
+            if self.questions.contains_key(&id) {
+                // Server-confirmed: it is safe to remove on a future fetch.
+                self.question_source.insert(id, PendingSource::List);
+                continue;
+            }
+            let session_id = request.session_id.clone();
+            effects.push(Effect::Question {
+                session_id: session_id.clone(),
+                request_id: id.clone(),
+                title: question_title(&request),
+            });
+            self.questions.insert(id.clone(), request);
+            self.question_source.insert(id, PendingSource::List);
+            self.observe(&session_id, fetched_at_ms);
+        }
+        effects
+    }
+
+    /// Drop a batch because it was settled (the reply/reject succeeded, or the
+    /// SSE settle event arrived). Emits no effects; returns `true` when the
+    /// batch was present.
+    pub fn remove_question(&mut self, id: &str) -> bool {
+        self.remove_question_at(id, now_ms())
+    }
+
+    /// [`Self::remove_question`] with an explicit clock (tests).
+    pub fn remove_question_at(&mut self, id: &str, now_ms: i64) -> bool {
+        let Some(question) = self.questions.remove(id) else {
+            return false;
+        };
+        self.question_source.remove(id);
+        self.observe(&question.session_id, now_ms);
+        true
+    }
+
     // -- reads --------------------------------------------------------------
 
     pub fn session(&self, id: &str) -> Option<&Session> {
@@ -352,7 +461,9 @@ impl AppState {
 
     /// Derived status for one session (see [`AgentUiStatus`]).
     pub fn agent_status(&self, session_id: &str) -> AgentUiStatus {
-        if self.pending.values().any(|p| p.session_id == session_id) {
+        if self.has_pending_permission(session_id)
+            || self.questions.values().any(|q| q.session_id == session_id)
+        {
             return AgentUiStatus::WaitingApproval;
         }
         if let Some(msg) = self.errored.get(session_id) {
@@ -403,6 +514,9 @@ impl AppState {
                 self.pending.retain(|_, p| p.session_id != id);
                 let live: HashSet<String> = self.pending.keys().cloned().collect();
                 self.pending_source.retain(|pid, _| live.contains(pid));
+                self.questions.retain(|_, q| q.session_id != id);
+                let live_q: HashSet<String> = self.questions.keys().cloned().collect();
+                self.question_source.retain(|qid, _| live_q.contains(qid));
                 self.forget(&id);
                 if self.root_session_id.as_deref() == Some(id.as_str()) {
                     self.root_session_id = None;
@@ -477,6 +591,31 @@ impl AppState {
                 self.pending.remove(&properties.permission_id);
                 self.pending_source.remove(&properties.permission_id);
                 self.observe(&properties.session_id, now_ms);
+            }
+            // Clarifications: one batch → one pause; any settle (reply or
+            // reject, either wire revision) resumes the session.
+            Event::QuestionAsked { properties } | Event::QuestionV2Asked { properties } => {
+                let id = properties.id.clone();
+                let is_new = !self.questions.contains_key(&id);
+                self.questions.insert(id.clone(), properties.clone());
+                // Record when the stream saw it: a later list fetch started
+                // before this instant must not drop it as "withdrawn".
+                self.question_source
+                    .insert(id.clone(), PendingSource::Event { seen_at_ms: now_ms });
+                if is_new {
+                    effects.push(Effect::Question {
+                        session_id: properties.session_id.clone(),
+                        request_id: id,
+                        title: question_title(properties),
+                    });
+                }
+                self.observe(&properties.session_id, now_ms);
+            }
+            Event::QuestionReplied { properties } | Event::QuestionV2Replied { properties } => {
+                self.remove_question_at(&properties.request_id, now_ms);
+            }
+            Event::QuestionRejected { properties } | Event::QuestionV2Rejected { properties } => {
+                self.remove_question_at(&properties.request_id, now_ms);
             }
             Event::TodoUpdated { properties } => {
                 self.todos
@@ -624,12 +763,16 @@ impl AppState {
         let mut permissions: Vec<Permission> = self.pending.values().cloned().collect();
         permissions.sort_by_key(|p| p.time.created);
 
+        let mut questions: Vec<QuestionRequest> = self.questions.values().cloned().collect();
+        questions.sort_by(|a, b| a.id.cmp(&b.id));
+
         AppStateSnapshot {
             connected: self.connected,
             server_version: self.server_version.clone(),
             root_session_id: self.root_session_id.clone(),
             sessions,
             permissions,
+            questions,
             agents: self.agents.clone(),
             todos: self.todos.clone(),
         }
@@ -1046,6 +1189,150 @@ mod tests {
             .apply_pending_permissions_at(Vec::new(), 2_000)
             .is_empty());
         assert!(st.pending_permissions().is_empty());
+    }
+
+    // -- questions (T11: one batch → one pause → resume) --------------------
+
+    /// A `question.asked` event whose batch holds `count` questions.
+    fn question_asked(id: &str, count: usize) -> Event {
+        let questions: Vec<String> = (0..count)
+            .map(|i| {
+                format!(
+                    r#"{{"question":"Question {i}?","header":"Q{i}","options":[
+                        {{"label":"yes","description":"Yes"}},
+                        {{"label":"no","description":"No"}}]}}"#
+                )
+            })
+            .collect();
+        event(&format!(
+            r#"{{"type":"question.asked","properties":{{"id":"{id}","sessionID":"a","questions":[{}]}}}}"#,
+            questions.join(",")
+        ))
+    }
+
+    /// A `GET /question` list entry (same shape as the event properties).
+    fn question_request(id: &str) -> crate::types::QuestionRequest {
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "sessionID": "a",
+            "questions": [{"question":"Which?","header":"Env","options":[
+                {"label":"staging","description":"Staging"}]}]
+        }))
+        .expect("question request fixture parses")
+    }
+
+    #[test]
+    fn a_question_batch_pauses_the_session_once_and_answers_resume_it() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_statuses(
+            [("a".to_string(), SessionStatus::Busy)]
+                .into_iter()
+                .collect(),
+        );
+
+        // The agent asks TWO questions in ONE batch → one effect, one pause.
+        let ask = question_asked("que_1", 2);
+        let fx = st.apply_event(&ask);
+        assert_eq!(fx.len(), 1, "one batch must notify exactly once");
+        assert!(
+            matches!(&fx[0], Effect::Question { request_id, session_id, .. }
+                if request_id == "que_1" && session_id == "a")
+        );
+        assert_eq!(st.agent_status("a"), AgentUiStatus::WaitingApproval);
+        let snapshot = st.snapshot();
+        assert_eq!(snapshot.questions.len(), 1);
+        assert_eq!(
+            snapshot.questions[0].questions.len(),
+            2,
+            "both questions ride in the single paused batch"
+        );
+
+        // Server re-send of the same batch (reconnect) → no duplicate pause.
+        assert!(st.apply_event(&ask).is_empty());
+        assert_eq!(st.agent_status("a"), AgentUiStatus::WaitingApproval);
+
+        // Answered → the batch clears and the still-busy run resumes.
+        st.apply_event(&event(
+            r#"{"type":"question.replied","properties":{"sessionID":"a","requestID":"que_1","answers":[["yes"],["no"]]}}"#,
+        ));
+        assert!(st.snapshot().questions.is_empty());
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Running);
+    }
+
+    #[test]
+    fn the_v2_question_wire_spelling_drives_the_same_pause() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        let fx = st.apply_event(&event(
+            r#"{"type":"question.v2.asked","properties":{"id":"que_v2","sessionID":"a","questions":[{"question":"Q?","header":"H","options":[{"label":"a","description":"d"}]}]}}"#,
+        ));
+        assert_eq!(fx.len(), 1);
+        assert!(st.snapshot().questions[0].id == "que_v2");
+    }
+
+    #[test]
+    fn a_rejected_question_clears_the_pause_without_answering() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_event(&question_asked("que_1", 1));
+        assert_eq!(st.agent_status("a"), AgentUiStatus::WaitingApproval);
+
+        st.apply_event(&event(
+            r#"{"type":"question.rejected","properties":{"sessionID":"a","requestID":"que_1"}}"#,
+        ));
+        assert!(st.snapshot().questions.is_empty());
+        // Never busy/idle known → falls back to Idle, never terminates the run.
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Idle);
+    }
+
+    #[test]
+    fn a_list_fetch_is_authoritative_for_questions_with_the_racing_exception() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+
+        // Listed → confirmed by a later fetch → dropped when absent.
+        st.apply_pending_questions_at(vec![question_request("que_1")], 1_000);
+        assert_eq!(st.snapshot().questions.len(), 1);
+        st.apply_pending_questions_at(vec![question_request("que_1")], 2_000);
+        assert_eq!(st.snapshot().questions.len(), 1, "still listed, kept");
+        assert!(st.apply_pending_questions_at(Vec::new(), 3_000).is_empty());
+        assert!(
+            st.snapshot().questions.is_empty(),
+            "answered elsewhere → gone"
+        );
+
+        // An event-sourced batch that raced in AFTER the fetch started survives.
+        st.apply_event_at(&question_asked("que_race", 1), 5_000);
+        assert!(st.apply_pending_questions_at(Vec::new(), 4_000).is_empty());
+        assert_eq!(
+            st.snapshot().questions.len(),
+            1,
+            "a batch newer than the fetch must not be dropped"
+        );
+
+        // A batch already answered over SSE is not resurrected by the list.
+        st.apply_event_at(
+            &event(
+                r#"{"type":"question.replied","properties":{"sessionID":"a","requestID":"que_race","answers":[["yes"]]}}"#,
+            ),
+            6_000,
+        );
+        assert!(st.snapshot().questions.is_empty());
+        assert!(st.apply_pending_questions_at(Vec::new(), 7_000).is_empty());
+        assert!(st.snapshot().questions.is_empty());
+    }
+
+    #[test]
+    fn a_removed_session_drops_its_pending_question_batch() {
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_event(&question_asked("que_1", 1));
+        st.apply_event(&event(
+            r#"{"type":"session.deleted","properties":{"info":{"id":"a","projectID":"p","directory":"/d","title":"t","version":"1","time":{"created":1,"updated":1}}}}"#,
+        ));
+        assert!(st.snapshot().questions.is_empty());
+        assert_eq!(st.agent_status("a"), AgentUiStatus::Pending);
     }
 
     #[test]

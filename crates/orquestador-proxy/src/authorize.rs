@@ -8,7 +8,10 @@ use crate::config::Role;
 
 /// Is `method` a safe, side-effect-free HTTP method (`GET`/`HEAD`/`OPTIONS`)?
 pub fn is_safe_method(method: &str) -> bool {
-    matches!(method.to_ascii_uppercase().as_str(), "GET" | "HEAD" | "OPTIONS")
+    matches!(
+        method.to_ascii_uppercase().as_str(),
+        "GET" | "HEAD" | "OPTIONS"
+    )
 }
 
 /// May `role` issue `method`? `viewer` = safe methods; `editor` = everything.
