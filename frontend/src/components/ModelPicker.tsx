@@ -208,13 +208,21 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
 
     const filtered: { provider: Provider; models: ProviderModel[] }[] = [];
     for (const provider of list.all) {
-      // With an empty query, only providers that can actually serve a request.
-      if (q === "" && !provider.usable) continue;
+      // A provider that is not connected but accepts an API key can be fixed
+      // from here, so it belongs in the default list: hiding it is what made
+      // the connect action unreachable without knowing to search.
+      const connectable = !provider.usable && provider.offersApiKey;
+      if (q === "" && !provider.usable && !connectable) continue;
       const providerMatches = matches(q, provider.name, provider.id);
-      const models = Object.values(provider.models).filter(
-        (m) => matches(q, m.id, m.name) || providerMatches,
-      );
-      if (models.length === 0) continue;
+      // Nothing in an unconnected provider is selectable, so with no query show
+      // its group for the connect action without its (disabled) model rows.
+      const connectOnly = q === "" && !provider.usable;
+      const models = connectOnly
+        ? []
+        : Object.values(provider.models).filter(
+            (m) => matches(q, m.id, m.name) || providerMatches,
+          );
+      if (models.length === 0 && !connectOnly) continue;
       filtered.push({ provider, models });
     }
 
@@ -403,7 +411,9 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
                 <p className="skills-popover__empty">
                   {q !== ""
                     ? `No matches for “${query.trim()}”.`
-                    : "No usable models available."}
+                    : groups.visible.length > 0
+                      ? "No connected providers yet — add an API key above to get started."
+                      : "No usable models available."}
                 </p>
               )}
               {groups.hidden > 0 && (
