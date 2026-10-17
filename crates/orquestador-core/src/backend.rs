@@ -70,6 +70,13 @@ pub trait AgentBackend: Send + Sync {
     /// provider id.
     async fn provider_auth(&self) -> Result<HashMap<String, Vec<ProviderAuthMethod>>, CoreError>;
 
+    /// `PUT /auth/:providerID` — store an API key for a provider so it can serve
+    /// requests. Returns the server's JSON boolean.
+    ///
+    /// SECURITY: the key is **write-only**. It is never logged, echoed, or
+    /// returned; a rejected key surfaces only the server's reason.
+    async fn set_provider_api_key(&self, provider_id: &str, key: &str) -> Result<bool, CoreError>;
+
     // projects (one server can serve several; the client scopes each request)
     async fn projects(&self) -> Result<Vec<Project>, CoreError>;
     async fn current_project(&self) -> Result<Project, CoreError>;

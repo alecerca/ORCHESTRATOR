@@ -100,6 +100,7 @@ pub fn run() {
             commands::get_agents,
             commands::get_providers,
             commands::get_provider_auth,
+            commands::set_provider_api_key,
             commands::get_presence,
             commands::get_workspace_scope,
             commands::session_statuses,

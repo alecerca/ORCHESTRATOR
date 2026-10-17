@@ -218,6 +218,7 @@ pub async fn get_providers(bridge: State<'_, AppBridge>) -> Result<ProviderList,
     // so only the already-connected providers stay usable.
     let auth = client.provider_auth().await.unwrap_or_default();
     list.classify_usability(auth.keys().map(String::as_str));
+    list.classify_api_key_auth(&auth);
     Ok(list)
 }
 
@@ -228,6 +229,25 @@ pub async fn get_provider_auth(
     bridge: State<'_, AppBridge>,
 ) -> Result<HashMap<String, Vec<ProviderAuthMethod>>, String> {
     bridge.client().provider_auth().await.map_err(stringify)
+}
+
+/// Store an API key for `provider_id` (`PUT /auth/:providerID`) so the provider
+/// can serve requests, returning the server's JSON boolean.
+///
+/// SECURITY: the key is **write-only**. This command never logs, echoes, or
+/// returns it — a rejected key surfaces only the server's reason. The key is
+/// held only for the duration of the call.
+#[tauri::command]
+pub async fn set_provider_api_key(
+    bridge: State<'_, AppBridge>,
+    provider_id: String,
+    key: String,
+) -> Result<bool, String> {
+    bridge
+        .client()
+        .set_provider_api_key(&provider_id, &key)
+        .await
+        .map_err(stringify)
 }
 
 /// Online members of the shared workspace. Backends without presence (a direct

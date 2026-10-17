@@ -603,6 +603,28 @@ impl OpenCodeClient {
         self.get_json("/provider/auth").await
     }
 
+    /// `PUT /auth/:providerID` — store an API key for `provider_id` so it can
+    /// serve requests. Answers a JSON boolean on success.
+    ///
+    /// The body is the `ApiAuth` variant of the `Auth` `anyOf`:
+    /// `{"type":"api","key":<key>}`. Its schema is `additionalProperties:
+    /// false`, so no other field may be sent — the key is never wrapped in a
+    /// richer shape.
+    ///
+    /// SECURITY: the key is **write-only**. It is never logged, echoed,
+    /// `Debug`-printed, included in an error, or returned to the caller; a
+    /// rejected key surfaces only the server's reason (see
+    /// [`CoreError::from_response`]).
+    pub async fn set_provider_api_key(
+        &self,
+        provider_id: &str,
+        key: &str,
+    ) -> Result<bool, CoreError> {
+        let path = format!("/auth/{}", Self::seg(provider_id));
+        let body = serde_json::json!({ "type": "api", "key": key });
+        self.send_json(reqwest::Method::PUT, &path, &body).await
+    }
+
     // -----------------------------------------------------------------------
     // SSE
     // -----------------------------------------------------------------------
@@ -727,6 +749,10 @@ impl AgentBackend for OpenCodeClient {
 
     async fn provider_auth(&self) -> Result<HashMap<String, Vec<ProviderAuthMethod>>, CoreError> {
         OpenCodeClient::provider_auth(self).await
+    }
+
+    async fn set_provider_api_key(&self, provider_id: &str, key: &str) -> Result<bool, CoreError> {
+        OpenCodeClient::set_provider_api_key(self, provider_id, key).await
     }
 
     async fn projects(&self) -> Result<Vec<Project>, CoreError> {
@@ -1090,6 +1116,73 @@ mod tests {
         assert!(
             !req.contains("modelID"),
             "the v2 body must not send the canonical `modelID` spelling, got: {req}"
+        );
+    }
+
+    /// A stand-in key for the write-only `PUT /auth/:providerID` body. It is
+    /// fake and MUST never be printed by a test assertion.
+    const TEST_PROVIDER_KEY: &str = "sk-test-not-a-real-secret";
+
+    #[tokio::test]
+    async fn set_provider_api_key_puts_the_exact_api_auth_shape() {
+        // `PUT /auth/:providerID` takes the `ApiAuth` variant of the `Auth`
+        // anyOf: exactly `{ "type": "api", "key": <key> }`. The schema is
+        // `additionalProperties: false`, so nothing else may ride along. It
+        // answers a JSON boolean.
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        let ok = client
+            .set_provider_api_key("nearai", TEST_PROVIDER_KEY)
+            .await
+            .unwrap();
+        assert!(ok, "the server's JSON boolean must be returned");
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("PUT /auth/nearai HTTP/1.1"),
+            "the call must be a PUT to /auth/<providerID>"
+        );
+
+        // Parse just the request body and assert its exact field set.
+        let body = req.split("\r\n\r\n").nth(1).unwrap_or_default();
+        let parsed: serde_json::Value =
+            serde_json::from_str(body.trim()).expect("the body is JSON");
+        let object = parsed.as_object().expect("the body is a JSON object");
+        let mut fields: Vec<&str> = object.keys().map(String::as_str).collect();
+        fields.sort_unstable();
+        assert_eq!(
+            fields,
+            ["key", "type"],
+            "the schema is additionalProperties: false — only type/key may be sent"
+        );
+        assert_eq!(
+            object.get("type").and_then(serde_json::Value::as_str),
+            Some("api"),
+            "the auth method must be the ApiAuth `api` variant"
+        );
+        assert_eq!(
+            object.get("key").and_then(serde_json::Value::as_str),
+            Some(TEST_PROVIDER_KEY),
+            "the key must be sent verbatim"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_provider_api_key_sends_the_key_exactly_once() {
+        // Security: the key is write-only. It must appear in the request body
+        // exactly once — no other serialized field may carry a copy of it.
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        client
+            .set_provider_api_key("openai", TEST_PROVIDER_KEY)
+            .await
+            .unwrap();
+
+        let req = server.request_text().await;
+        assert_eq!(
+            req.matches(TEST_PROVIDER_KEY).count(),
+            1,
+            "the key must appear exactly once in the request"
         );
     }
 

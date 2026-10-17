@@ -1108,6 +1108,14 @@ mod tests {
             unimplemented!("FakeBackend::provider_auth")
         }
 
+        async fn set_provider_api_key(
+            &self,
+            _provider_id: &str,
+            _key: &str,
+        ) -> Result<bool, CoreError> {
+            unimplemented!("FakeBackend::set_provider_api_key")
+        }
+
         async fn projects(&self) -> Result<Vec<crate::types::Project>, CoreError> {
             Ok(Vec::new())
         }

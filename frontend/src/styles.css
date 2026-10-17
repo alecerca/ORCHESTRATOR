@@ -591,6 +591,28 @@ summary:focus-visible {
   color: var(--error);
 }
 
+.model-picker__connect {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+  line-height: 18px;
+  color: var(--brand);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.model-picker__connect:hover {
+  background: var(--surface-raised);
+}
+
+.model-picker__connect:focus-visible {
+  outline: 2px solid var(--secondary);
+  outline-offset: 1px;
+}
+
 .model-picker__item.is-unusable {
   color: var(--muted);
   cursor: not-allowed;
@@ -1838,6 +1860,18 @@ html[data-theme="light"] .drop-indicator {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.api-key-dialog__lead {
+  margin: 0 0 14px;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.api-key-dialog__lead code {
+  font-family: var(--mono);
+  font-size: 13px;
 }
 
 /* -- settings dialog -------------------------------------------------------- */

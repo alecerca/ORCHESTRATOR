@@ -185,6 +185,20 @@ impl ProviderList {
             provider.has_auth = auth.contains(provider.id.as_str());
         }
     }
+
+    /// Stamp every provider with `offers_api_key`: whether `GET /provider/auth`
+    /// lists an `api`-type method for it, so the picker knows which unusable
+    /// providers can be connected by entering a key.
+    ///
+    /// This is deliberately narrower than `has_auth`: an OAuth-only provider has
+    /// auth but no key entry, so it must not advertise one.
+    pub fn classify_api_key_auth(&mut self, methods: &HashMap<String, Vec<ProviderAuthMethod>>) {
+        for provider in &mut self.all {
+            provider.offers_api_key = methods
+                .get(&provider.id)
+                .is_some_and(|entries| entries.iter().any(ProviderAuthMethod::is_api_key));
+        }
+    }
 }
 
 /// One provider. `key` and `options` are intentionally omitted — see
@@ -212,6 +226,12 @@ pub struct Provider {
     /// Computed by the shell; **not** part of the `/provider` wire payload.
     #[serde(default, skip_deserializing)]
     pub usable: bool,
+    /// Whether `GET /provider/auth` lists an `api`-type method for this
+    /// provider — i.e. the user can connect it by entering an API key. False
+    /// for a provider that offers only OAuth (or no auth method at all).
+    /// Computed by the shell; **not** part of the `/provider` wire payload.
+    #[serde(default, skip_deserializing, rename = "offersApiKey")]
+    pub offers_api_key: bool,
 }
 
 /// Per-million-token pricing for a [`ProviderModel`]. Every component zero (and
@@ -302,6 +322,14 @@ pub struct ProviderAuthMethod {
     pub label: String,
     #[serde(default)]
     pub prompts: Vec<serde_json::Value>,
+}
+
+impl ProviderAuthMethod {
+    /// True when this method lets the user supply an API key directly
+    /// (`type: "api"`), as opposed to an OAuth sign-in (`type: "oauth"`).
+    pub fn is_api_key(&self) -> bool {
+        self.auth_type == "api"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1567,6 +1595,84 @@ mod tests {
         assert!(by_id("openai").has_auth);
         assert!(!by_id("nearai").usable);
         assert!(!by_id("nearai").has_auth);
+    }
+
+    #[test]
+    fn provider_list_classifies_api_key_support_from_auth_methods() {
+        let mut list: ProviderList =
+            serde_json::from_str(PROVIDER_LIST_JSON).expect("provider list parses");
+
+        let method = |kind: &str| ProviderAuthMethod {
+            auth_type: kind.to_string(),
+            label: format!("{kind} method"),
+            prompts: Vec::new(),
+        };
+        let methods: HashMap<String, Vec<ProviderAuthMethod>> = HashMap::from([
+            // Offers an API key alongside OAuth.
+            ("openai".to_string(), vec![method("oauth"), method("api")]),
+            // API key only.
+            ("anthropic".to_string(), vec![method("api")]),
+            // OAuth only — has auth, but no key entry.
+            ("opencode".to_string(), vec![method("oauth")]),
+            // Declares auth but with no methods (defensive).
+            ("nearai".to_string(), Vec::new()),
+        ]);
+
+        list.classify_api_key_auth(&methods);
+        let by_id = |id: &str| list.all.iter().find(|p| p.id == id).unwrap();
+        assert!(by_id("openai").offers_api_key, "api among oauth counts");
+        assert!(by_id("anthropic").offers_api_key);
+        assert!(
+            !by_id("opencode").offers_api_key,
+            "an oauth-only provider must not advertise a key entry"
+        );
+        assert!(!by_id("nearai").offers_api_key);
+    }
+
+    #[test]
+    fn provider_auth_method_is_api_key_only_for_the_api_type() {
+        let api = ProviderAuthMethod {
+            auth_type: "api".to_string(),
+            label: "API Key".to_string(),
+            prompts: Vec::new(),
+        };
+        let oauth = ProviderAuthMethod {
+            auth_type: "oauth".to_string(),
+            label: "ChatGPT Pro/Plus".to_string(),
+            prompts: Vec::new(),
+        };
+        assert!(api.is_api_key());
+        assert!(!oauth.is_api_key());
+    }
+
+    #[test]
+    fn provider_serializes_offers_api_key_in_camel_case() {
+        // The picker reads `provider.offersApiKey`; lock the serialized name so
+        // a field rename cannot silently strand the connect affordance.
+        let provider: Provider = serde_json::from_value(serde_json::json!({
+            "id": "anthropic",
+            "name": "Anthropic",
+            "source": "env",
+            "models": {},
+        }))
+        .expect("a minimal provider parses");
+        let value = serde_json::to_value(&provider).expect("provider serializes");
+        let object = value.as_object().expect("provider serializes to an object");
+        assert!(
+            object.contains_key("offersApiKey"),
+            "the field must serialize as `offersApiKey` for the frontend"
+        );
+        assert!(
+            !object.contains_key("offers_api_key"),
+            "the snake_case name must never reach the wire"
+        );
+        assert_eq!(
+            object
+                .get("offersApiKey")
+                .and_then(serde_json::Value::as_bool),
+            Some(false),
+            "an unclassified provider defaults to offering no key entry"
+        );
     }
 
     // -- session effective model (carried from the wire) --------------------

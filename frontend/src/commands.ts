@@ -40,6 +40,14 @@ export const getAgents = () => invoke<Agent[]>("get_agents");
 export const getProviders = () => invoke<ProviderList>("get_providers");
 export const getProviderAuth = () =>
   invoke<Record<string, ProviderAuthMethod[]>>("get_provider_auth");
+/**
+ * Store an API key for a provider (`PUT /auth/:providerID`) so it can serve
+ * requests. The key is write-only: it is sent straight to the shell, never
+ * persisted in the webview, and never returned. Rejects with the server's
+ * reason when the key is refused.
+ */
+export const setProviderApiKey = (providerId: string, key: string) =>
+  invoke<boolean>("set_provider_api_key", { providerId, key });
 export const sessionStatuses = () =>
   invoke<Record<string, SessionStatus>>("session_statuses");
 

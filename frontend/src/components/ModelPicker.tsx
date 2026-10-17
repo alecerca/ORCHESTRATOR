@@ -6,7 +6,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { getProviders, setSessionModel } from "../commands";
+import { getProviders, setProviderApiKey, setSessionModel } from "../commands";
 import {
   getBaseline,
   getModel,
@@ -17,6 +17,7 @@ import {
 } from "../model";
 import { useAppState } from "../store";
 import type { ModelRef, Provider, ProviderList, ProviderModel } from "../types";
+import { ApiKeyDialog } from "./ApiKeyDialog";
 
 interface Props {
   className?: string;
@@ -51,9 +52,15 @@ function resolveModelName(
 
 /** Why a provider's models cannot be chosen right now. */
 function unavailableReason(provider: Provider): string {
-  return provider.hasAuth
-    ? `${provider.name} is not connected — authentication is required before it can serve a request.`
-    : `${provider.name} is not available: it provides no authentication method.`;
+  // A key-capable provider can be connected from here: point at the button.
+  if (provider.offersApiKey) {
+    return `${provider.name} is not connected — add an API key to use it.`;
+  }
+  // OAuth-only: the key entry cannot help; the CLI owns the sign-in flow.
+  if (provider.hasAuth) {
+    return `${provider.name} is not connected — sign in through the OpenCode CLI to use it.`;
+  }
+  return `${provider.name} is not available: it provides no authentication method.`;
 }
 
 export function ModelPicker({ className = "", rootSessionId }: Props) {
@@ -67,6 +74,13 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  // Provider whose API-key dialog is open (null when closed). The dialog owns
+  // the write-only key; the popover stays open behind it.
+  const [keyProvider, setKeyProvider] = useState<Provider | null>(null);
+  // While the dialog is open, Escape closes it alone — the popover's own
+  // Escape listener must not fire. A ref keeps the effect's deps stable.
+  const keyProviderRef = useRef<Provider | null>(null);
+  keyProviderRef.current = keyProvider;
 
   const current = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
@@ -121,6 +135,8 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
     searchRef.current?.focus();
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key !== "Escape") return;
+      // The API-key dialog handles its own Escape.
+      if (keyProviderRef.current !== null) return;
       setOpen(false);
     }
     function onPointerDown(event: PointerEvent): void {
@@ -170,6 +186,19 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
       },
     );
   }
+
+  // Store the entered key and reload: on success the provider becomes usable
+  // and its models can be chosen. A rejected key surfaces the server's reason
+  // in the dialog, which stays open for a retry.
+  const submitApiKey = useCallback(
+    async (key: string) => {
+      const provider = keyProviderRef.current;
+      if (provider === null) return;
+      await setProviderApiKey(provider.id, key);
+      await refresh();
+    },
+    [refresh],
+  );
 
   const q = query.trim().toLowerCase();
 
@@ -311,6 +340,16 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
                             unavailable
                           </span>
                         )}
+                        {unavailable && provider.offersApiKey && (
+                          <button
+                            type="button"
+                            className="model-picker__connect"
+                            title={`Add an API key for ${provider.name}`}
+                            onClick={() => setKeyProvider(provider)}
+                          >
+                            Add API key
+                          </button>
+                        )}
                       </div>
                       <ul className="model-picker__provider-models">
                         {models.map((m) => {
@@ -381,6 +420,15 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
             </div>
           )}
         </div>
+      )}
+      {keyProvider && (
+        <ApiKeyDialog
+          open
+          providerId={keyProvider.id}
+          providerName={keyProvider.name}
+          onSubmit={submitApiKey}
+          onClose={() => setKeyProvider(null)}
+        />
       )}
     </div>
   );

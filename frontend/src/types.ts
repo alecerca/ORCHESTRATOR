@@ -274,6 +274,12 @@ export interface Provider {
   hasAuth: boolean;
   /** Can serve a model right now (already authenticated). */
   usable: boolean;
+  /**
+   * Offers an `api`-type auth method (`GET /provider/auth`), so the user can
+   * connect it by entering an API key. Narrower than {@link hasAuth}: an
+   * OAuth-only provider has auth but no key entry.
+   */
+  offersApiKey: boolean;
 }
 
 /**
