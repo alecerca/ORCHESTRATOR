@@ -77,6 +77,45 @@ pub trait AgentBackend: Send + Sync {
     /// returned; a rejected key surfaces only the server's reason.
     async fn set_provider_api_key(&self, provider_id: &str, key: &str) -> Result<bool, CoreError>;
 
+    /// `DELETE /auth/:providerID` — remove a stored credential for a provider.
+    /// Returns the server's JSON boolean.
+    async fn delete_provider_auth(&self, provider_id: &str) -> Result<bool, CoreError>;
+
+    /// `POST /provider/:providerID/oauth/authorize` — start an OAuth connect.
+    /// `method` is the index of the chosen auth method in
+    /// [`AgentBackend::provider_auth`]. Returns the authorization URL and how
+    /// to complete it (`method: "auto"` → open the URL; `"code"` → paste a code
+    /// back into [`AgentBackend::oauth_callback`]).
+    async fn oauth_authorize(
+        &self,
+        provider_id: &str,
+        method: u32,
+    ) -> Result<ProviderAuthAuthorization, CoreError>;
+
+    /// `POST /provider/:providerID/oauth/callback` — complete the connect with
+    /// the authorization code the user pasted back.
+    async fn oauth_callback(
+        &self,
+        provider_id: &str,
+        method: u32,
+        code: &str,
+    ) -> Result<bool, CoreError>;
+
+    // config (T6) — read-only view of `GET /config`; see [`OpencodeConfig`] for
+    // the credential-hygiene rule (provider/server/... are not modelled).
+    async fn get_config(&self) -> Result<OpencodeConfig, CoreError>;
+
+    /// `PATCH /config` — apply the scalar allowlist [`ConfigPatch`]. The server
+    /// merges the patch into the existing config, so omitted fields are
+    /// preserved. Returns the resulting config.
+    async fn patch_config(&self, patch: &ConfigPatch) -> Result<OpencodeConfig, CoreError>;
+
+    // MCP (T7) — server name → status, from `GET /mcp`.
+    async fn mcp_status(&self) -> Result<HashMap<String, McpStatus>, CoreError>;
+
+    // slash commands (T9) — `GET /command`.
+    async fn list_commands(&self) -> Result<Vec<SlashCommand>, CoreError>;
+
     // projects (one server can serve several; the client scopes each request)
     async fn projects(&self) -> Result<Vec<Project>, CoreError>;
     async fn current_project(&self) -> Result<Project, CoreError>;
@@ -133,6 +172,22 @@ pub trait AgentBackend: Send + Sync {
         response: PermissionResponse,
         remember: Option<bool>,
     ) -> Result<bool, CoreError>;
+
+    // clarifications (T11)
+    /// `GET /question` — clarification batches waiting for answers.
+    async fn pending_questions(&self) -> Result<Vec<QuestionRequest>, CoreError>;
+
+    /// `POST /question/:requestID/reply` — answer a whole batch at once. One
+    /// entry per question in order; a multi-select answer holds several labels;
+    /// an unanswered/partial question carries an empty entry.
+    async fn reply_question(
+        &self,
+        request_id: &str,
+        answers: &[Vec<String>],
+    ) -> Result<bool, CoreError>;
+
+    /// `POST /question/:requestID/reject` — dismiss the batch without answering.
+    async fn reject_question(&self, request_id: &str) -> Result<bool, CoreError>;
 
     // files / diffs
     async fn diff(&self, id: &str, message_id: Option<&str>) -> Result<Vec<FileDiff>, CoreError>;
