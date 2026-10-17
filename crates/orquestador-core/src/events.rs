@@ -480,6 +480,7 @@ mod tests {
                 compacting: None,
             },
             summary: None,
+            model: None,
         };
         let sessions = vec![
             mk("old_root", None, 10),
@@ -1097,6 +1098,24 @@ mod tests {
             Ok(Vec::new())
         }
 
+        async fn providers(&self) -> Result<crate::types::ProviderList, CoreError> {
+            unimplemented!("FakeBackend::providers")
+        }
+
+        async fn provider_auth(
+            &self,
+        ) -> Result<HashMap<String, Vec<crate::types::ProviderAuthMethod>>, CoreError> {
+            unimplemented!("FakeBackend::provider_auth")
+        }
+
+        async fn set_provider_api_key(
+            &self,
+            _provider_id: &str,
+            _key: &str,
+        ) -> Result<bool, CoreError> {
+            unimplemented!("FakeBackend::set_provider_api_key")
+        }
+
         async fn projects(&self) -> Result<Vec<crate::types::Project>, CoreError> {
             Ok(Vec::new())
         }
@@ -1124,6 +1143,7 @@ mod tests {
                     compacting: None,
                 },
                 summary: None,
+                model: None,
             })
         }
 
@@ -1161,6 +1181,13 @@ mod tests {
         }
         async fn rename_session(&self, _id: &str, _title: &str) -> Result<Session, CoreError> {
             unimplemented!("FakeBackend::rename_session")
+        }
+        async fn set_session_model(
+            &self,
+            _id: &str,
+            _model: &crate::types::ModelRef,
+        ) -> Result<(), CoreError> {
+            unimplemented!("FakeBackend::set_session_model")
         }
         async fn todos(&self, _id: &str) -> Result<Vec<Todo>, CoreError> {
             unimplemented!("FakeBackend::todos")

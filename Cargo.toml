@@ -4,7 +4,8 @@ members = ["crates/*"]
 
 # NOTE: `src-tauri` is intentionally NOT a workspace member. It carries its own
 # empty `[workspace]` table so that root `cargo check` / `cargo test` never
-# compiles tauri/wry/webkit code (webkit2gtk-4.1 is not installed here).
+# compiles tauri/wry/webkit code. The app crate therefore needs its own gate:
+#   cargo check --manifest-path src-tauri/Cargo.toml
 
 [workspace.package]
 version = "0.2.0"

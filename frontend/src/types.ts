@@ -27,6 +27,14 @@ export interface Session {
   title: string;
   version: string;
   time: SessionTime;
+  /**
+   * Effective model for this session, as the server reports it. This is the
+   * only authoritative source of the model the session uses (the app-level
+   * config carries none). The shell maps the server's `id` field into
+   * {@link ModelRef.modelID}, so this is the canonical `{ providerID, modelID }`
+   * shape — the same one the composer sends.
+   */
+  model?: ModelRef | null;
 }
 
 export type SessionStatus =
@@ -215,6 +223,85 @@ export interface SkillInfo {
   path: string;
   source: string;
   editable: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Providers (OpenCode `GET /provider` / `GET /provider/auth`)
+// ---------------------------------------------------------------------------
+
+/**
+ * One model offered by a provider. Credential-bearing wire fields (`options`,
+ * `headers`) are deliberately omitted by the shell and must never be shown.
+ */
+export interface ProviderModel {
+  id: string;
+  name: string;
+  providerID: string;
+  family?: string | null;
+  /** Token pricing; `null` when the catalogue omits it. */
+  cost?: ModelCost | null;
+  /** `"active"` | `"deprecated"`. */
+  status?: string | null;
+  /** Computed in core: every cost component zero, or a `:free`/`-free` id. */
+  free: boolean;
+}
+
+/** Per-million-token pricing; the nested `cache` object is kept nested. */
+export interface ModelCost {
+  input: number;
+  output: number;
+  cache: { read: number; write: number };
+}
+
+export interface ModelRef {
+  providerID: string;
+  modelID: string;
+}
+
+/**
+ * One AI provider. The credential-bearing wire fields (`key`, `options`) are
+ * deliberately omitted by the shell and must never be shown.
+ */
+export interface Provider {
+  id: string;
+  name: string;
+  source: string;
+  /** Environment variable names this provider can read a credential from. */
+  env: string[];
+  /** Models offered by this provider, keyed by model id. */
+  models: Record<string, ProviderModel>;
+  /** Declares at least one auth method (`GET /provider/auth`). */
+  hasAuth: boolean;
+  /** Can serve a model right now (already authenticated). */
+  usable: boolean;
+  /**
+   * Offers an `api`-type auth method (`GET /provider/auth`), so the user can
+   * connect it by entering an API key. Narrower than {@link hasAuth}: an
+   * OAuth-only provider has auth but no key entry.
+   */
+  offersApiKey: boolean;
+}
+
+/**
+ * Response of the `get_providers` command: `connected` holds the provider ids
+ * that are already authenticated (the per-provider auth status), and `default`
+ * maps `providerID` → configured default `modelID`.
+ */
+export interface ProviderList {
+  all: Provider[];
+  default: Record<string, string>;
+  connected: string[];
+}
+
+/**
+ * One supported auth method for a provider. `type` is `"oauth"` or `"api"`.
+ * `prompts` are opaque server-side UI prompt definitions (never credential
+ * values).
+ */
+export interface ProviderAuthMethod {
+  type: string;
+  label: string;
+  prompts: unknown[];
 }
 
 // ---------------------------------------------------------------------------

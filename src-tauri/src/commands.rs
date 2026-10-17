@@ -10,8 +10,8 @@ use orquestador_core::state::Effect;
 use orquestador_core::client::ClientConfig;
 use orquestador_core::types::{
     Agent, CommandBody, CreateSessionBody, FileContent, FileNode, FileStatus, Health,
-    MessageBundle, PermissionResponse, PresenceEntry, Project, PromptBody, Session, SessionStatus,
-    Todo,
+    MessageBundle, PermissionResponse, PresenceEntry, Project, PromptBody, ProviderAuthMethod,
+    ProviderList, Session, SessionStatus, Todo,
 };
 use orquestador_core::skills::merge_skills;
 use orquestador_core::{build_preamble, slugify, CoreError, SkillInfo};
@@ -202,6 +202,54 @@ pub async fn get_agents(bridge: State<'_, AppBridge>) -> Result<Vec<Agent>, Stri
     bridge.client().agents().await.map_err(stringify)
 }
 
+/// Available AI providers, their models, the configured default model per
+/// provider, and the ids already authenticated. The typed DTO drops the
+/// credential-bearing `key`/`options` fields, so nothing secret reaches the
+/// webview.
+///
+/// Each provider is stamped with `usable` (already authenticated) and `hasAuth`
+/// (declares an auth method) so the model picker can mark — and refuse to offer
+/// — models from providers that cannot serve a request.
+#[tauri::command]
+pub async fn get_providers(bridge: State<'_, AppBridge>) -> Result<ProviderList, String> {
+    let client = bridge.client();
+    let mut list = client.providers().await.map_err(stringify)?;
+    // Best-effort: if `GET /provider/auth` fails, degrade to "no auth methods"
+    // so only the already-connected providers stay usable.
+    let auth = client.provider_auth().await.unwrap_or_default();
+    list.classify_usability(auth.keys().map(String::as_str));
+    list.classify_api_key_auth(&auth);
+    Ok(list)
+}
+
+/// Supported auth methods per provider (`GET /provider/auth`), keyed by
+/// provider id.
+#[tauri::command]
+pub async fn get_provider_auth(
+    bridge: State<'_, AppBridge>,
+) -> Result<HashMap<String, Vec<ProviderAuthMethod>>, String> {
+    bridge.client().provider_auth().await.map_err(stringify)
+}
+
+/// Store an API key for `provider_id` (`PUT /auth/:providerID`) so the provider
+/// can serve requests, returning the server's JSON boolean.
+///
+/// SECURITY: the key is **write-only**. This command never logs, echoes, or
+/// returns it — a rejected key surfaces only the server's reason. The key is
+/// held only for the duration of the call.
+#[tauri::command]
+pub async fn set_provider_api_key(
+    bridge: State<'_, AppBridge>,
+    provider_id: String,
+    key: String,
+) -> Result<bool, String> {
+    bridge
+        .client()
+        .set_provider_api_key(&provider_id, &key)
+        .await
+        .map_err(stringify)
+}
+
 /// Online members of the shared workspace. Backends without presence (a direct
 /// `opencode` connection) answer with an empty list, never an error.
 #[tauri::command]
@@ -275,6 +323,24 @@ pub async fn rename_session(
         .map_err(stringify)
 }
 
+/// Record `model` as the session's effective model
+/// (`POST /api/session/:id/model`). The session is the only authoritative
+/// source of the model a request runs, so this is what makes a choice sticky —
+/// and what lets the picker go back to the server default by re-applying a
+/// known baseline instead of sending nothing.
+#[tauri::command]
+pub async fn set_session_model(
+    bridge: State<'_, AppBridge>,
+    session_id: String,
+    model: orquestador_core::types::ModelRef,
+) -> Result<(), String> {
+    bridge
+        .client()
+        .set_session_model(&session_id, &model)
+        .await
+        .map_err(stringify)
+}
+
 #[tauri::command]
 pub async fn get_todos(
     bridge: State<'_, AppBridge>,
@@ -293,9 +359,11 @@ pub async fn send_message(
     text: String,
     agent: Option<String>,
     skills: Option<Vec<String>>,
+    model: Option<orquestador_core::types::ModelRef>,
 ) -> Result<MessageBundle, String> {
     let mut body = PromptBody::text(text);
     body.agent = agent;
+    body.model = model;
     apply_skills(&app, &mut body, skills);
     let result = bridge.client().prompt(&session_id, &body).await;
     if let Err(error) = &result {
@@ -312,9 +380,11 @@ pub async fn send_message_async(
     text: String,
     agent: Option<String>,
     skills: Option<Vec<String>>,
+    model: Option<orquestador_core::types::ModelRef>,
 ) -> Result<(), String> {
     let mut body = PromptBody::text(text);
     body.agent = agent;
+    body.model = model;
     apply_skills(&app, &mut body, skills);
     let result = bridge.client().prompt_async(&session_id, &body).await;
     if let Err(error) = &result {

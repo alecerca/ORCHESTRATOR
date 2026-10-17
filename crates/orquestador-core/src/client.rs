@@ -347,6 +347,24 @@ impl OpenCodeClient {
         self.send_json(reqwest::Method::PATCH, &path, &body).await
     }
 
+    /// `POST /api/session/:id/model` — record `model` as the session's effective
+    /// model, so a later prompt that carries **no** override keeps using it (and
+    /// a known baseline can be re-applied to return to the default).
+    ///
+    /// Two wire details differ from the rest of this client:
+    /// * the path carries the `/api` prefix (this v2 route is the only one);
+    /// * the body is `{"model": {"id", "providerID"}}` — the model id is spelled
+    ///   `id`, NOT [`ModelRef`]'s canonical `modelID`, and the schema is
+    ///   `additionalProperties: false`, so [`ModelRef`] is **not** serialized
+    ///   directly. Answers `204 No Content`.
+    pub async fn set_session_model(&self, id: &str, model: &ModelRef) -> Result<(), CoreError> {
+        let path = format!("/api/session/{}/model", Self::seg(id));
+        let body = serde_json::json!({
+            "model": { "id": model.model_id, "providerID": model.provider_id }
+        });
+        self.send_ignored(reqwest::Method::POST, &path, &body).await
+    }
+
     /// `GET /session/:id/children` — **the sub-agents of a session**.
     pub async fn session_children(&self, id: &str) -> Result<Vec<Session>, CoreError> {
         self.get_json(&format!("/session/{}/children", Self::seg(id)))
@@ -565,6 +583,49 @@ impl OpenCodeClient {
     }
 
     // -----------------------------------------------------------------------
+    // Providers
+    // -----------------------------------------------------------------------
+
+    /// `GET /provider` → available providers, their models, the configured
+    /// default model per provider, and the ids already authenticated.
+    ///
+    /// The typed [`ProviderList`] deliberately drops the credential-bearing
+    /// `key`/`options` fields (see its docs); nothing secret leaves this call.
+    pub async fn providers(&self) -> Result<ProviderList, CoreError> {
+        self.get_json("/provider").await
+    }
+
+    /// `GET /provider/auth` → the supported auth methods per provider, keyed by
+    /// provider id.
+    pub async fn provider_auth(
+        &self,
+    ) -> Result<HashMap<String, Vec<ProviderAuthMethod>>, CoreError> {
+        self.get_json("/provider/auth").await
+    }
+
+    /// `PUT /auth/:providerID` — store an API key for `provider_id` so it can
+    /// serve requests. Answers a JSON boolean on success.
+    ///
+    /// The body is the `ApiAuth` variant of the `Auth` `anyOf`:
+    /// `{"type":"api","key":<key>}`. Its schema is `additionalProperties:
+    /// false`, so no other field may be sent — the key is never wrapped in a
+    /// richer shape.
+    ///
+    /// SECURITY: the key is **write-only**. It is never logged, echoed,
+    /// `Debug`-printed, included in an error, or returned to the caller; a
+    /// rejected key surfaces only the server's reason (see
+    /// [`CoreError::from_response`]).
+    pub async fn set_provider_api_key(
+        &self,
+        provider_id: &str,
+        key: &str,
+    ) -> Result<bool, CoreError> {
+        let path = format!("/auth/{}", Self::seg(provider_id));
+        let body = serde_json::json!({ "type": "api", "key": key });
+        self.send_json(reqwest::Method::PUT, &path, &body).await
+    }
+
+    // -----------------------------------------------------------------------
     // SSE
     // -----------------------------------------------------------------------
 
@@ -682,6 +743,18 @@ impl AgentBackend for OpenCodeClient {
         OpenCodeClient::agents(self).await
     }
 
+    async fn providers(&self) -> Result<ProviderList, CoreError> {
+        OpenCodeClient::providers(self).await
+    }
+
+    async fn provider_auth(&self) -> Result<HashMap<String, Vec<ProviderAuthMethod>>, CoreError> {
+        OpenCodeClient::provider_auth(self).await
+    }
+
+    async fn set_provider_api_key(&self, provider_id: &str, key: &str) -> Result<bool, CoreError> {
+        OpenCodeClient::set_provider_api_key(self, provider_id, key).await
+    }
+
     async fn projects(&self) -> Result<Vec<Project>, CoreError> {
         OpenCodeClient::projects(self).await
     }
@@ -720,6 +793,10 @@ impl AgentBackend for OpenCodeClient {
 
     async fn rename_session(&self, id: &str, title: &str) -> Result<Session, CoreError> {
         OpenCodeClient::rename_session(self, id, title).await
+    }
+
+    async fn set_session_model(&self, id: &str, model: &ModelRef) -> Result<(), CoreError> {
+        OpenCodeClient::set_session_model(self, id, model).await
     }
 
     async fn todos(&self, id: &str) -> Result<Vec<Todo>, CoreError> {
@@ -1008,6 +1085,104 @@ mod tests {
         assert!(
             req.starts_with("GET /session/ses%20a%2Fb/children HTTP/1.1"),
             "got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_session_model_posts_the_v2_body_spelling() {
+        // `POST /api/session/:id/model` answers 204 and expects the model id
+        // spelled `id` (not the canonical `modelID`), under the `/api` prefix.
+        let server = MockServer::start("204 No Content", "").await;
+        let client = server.client(None).await;
+        let model = ModelRef {
+            provider_id: "anthropic".into(),
+            model_id: "claude-fable-5".into(),
+        };
+        client.set_session_model("ses_1", &model).await.unwrap();
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("POST /api/session/ses_1/model HTTP/1.1"),
+            "got: {req}"
+        );
+        assert!(
+            req.contains(r#""providerID":"anthropic""#),
+            "the wire body must carry providerID, got: {req}"
+        );
+        assert!(
+            req.contains(r#""id":"claude-fable-5""#),
+            "the v2 body must spell the model id `id`, got: {req}"
+        );
+        assert!(
+            !req.contains("modelID"),
+            "the v2 body must not send the canonical `modelID` spelling, got: {req}"
+        );
+    }
+
+    /// A stand-in key for the write-only `PUT /auth/:providerID` body. It is
+    /// fake and MUST never be printed by a test assertion.
+    const TEST_PROVIDER_KEY: &str = "sk-test-not-a-real-secret";
+
+    #[tokio::test]
+    async fn set_provider_api_key_puts_the_exact_api_auth_shape() {
+        // `PUT /auth/:providerID` takes the `ApiAuth` variant of the `Auth`
+        // anyOf: exactly `{ "type": "api", "key": <key> }`. The schema is
+        // `additionalProperties: false`, so nothing else may ride along. It
+        // answers a JSON boolean.
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        let ok = client
+            .set_provider_api_key("nearai", TEST_PROVIDER_KEY)
+            .await
+            .unwrap();
+        assert!(ok, "the server's JSON boolean must be returned");
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("PUT /auth/nearai HTTP/1.1"),
+            "the call must be a PUT to /auth/<providerID>"
+        );
+
+        // Parse just the request body and assert its exact field set.
+        let body = req.split("\r\n\r\n").nth(1).unwrap_or_default();
+        let parsed: serde_json::Value =
+            serde_json::from_str(body.trim()).expect("the body is JSON");
+        let object = parsed.as_object().expect("the body is a JSON object");
+        let mut fields: Vec<&str> = object.keys().map(String::as_str).collect();
+        fields.sort_unstable();
+        assert_eq!(
+            fields,
+            ["key", "type"],
+            "the schema is additionalProperties: false — only type/key may be sent"
+        );
+        assert_eq!(
+            object.get("type").and_then(serde_json::Value::as_str),
+            Some("api"),
+            "the auth method must be the ApiAuth `api` variant"
+        );
+        assert_eq!(
+            object.get("key").and_then(serde_json::Value::as_str),
+            Some(TEST_PROVIDER_KEY),
+            "the key must be sent verbatim"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_provider_api_key_sends_the_key_exactly_once() {
+        // Security: the key is write-only. It must appear in the request body
+        // exactly once — no other serialized field may carry a copy of it.
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        client
+            .set_provider_api_key("openai", TEST_PROVIDER_KEY)
+            .await
+            .unwrap();
+
+        let req = server.request_text().await;
+        assert_eq!(
+            req.matches(TEST_PROVIDER_KEY).count(),
+            1,
+            "the key must appear exactly once in the request"
         );
     }
 
@@ -1459,5 +1634,79 @@ mod tests {
         let client = server.client(None).await;
         let scope = client.workspace_scope().await.expect("never errors");
         assert!(scope.is_none());
+    }
+
+    #[tokio::test]
+    async fn provider_list_parses_and_ignores_credential_fields() {
+        // `key`/`options` are present on the wire and deliberately NOT populated
+        // here; the DTO must not model them, and serde must ignore the extras.
+        let body = r#"{
+            "all": [{
+                "id": "anthropic",
+                "name": "Anthropic",
+                "source": "env",
+                "env": ["ANTHROPIC_API_KEY"],
+                "key": "",
+                "options": {},
+                "models": {
+                    "claude-sonnet-4": {
+                        "id": "claude-sonnet-4",
+                        "providerID": "anthropic",
+                        "name": "Claude Sonnet 4",
+                        "family": "claude-sonnet"
+                    }
+                }
+            }],
+            "default": {"anthropic": "claude-sonnet-4"},
+            "connected": ["anthropic"]
+        }"#;
+        let server = MockServer::start("200 OK", body).await;
+        let client = server.client(None).await;
+        let providers = client.providers().await.unwrap();
+
+        assert_eq!(providers.all.len(), 1);
+        let p = &providers.all[0];
+        assert_eq!(p.id, "anthropic");
+        assert_eq!(p.name, "Anthropic");
+        assert_eq!(p.source, "env");
+        assert_eq!(p.env, vec!["ANTHROPIC_API_KEY".to_string()]);
+        let model = &p.models["claude-sonnet-4"];
+        assert_eq!(model.id, "claude-sonnet-4");
+        assert_eq!(model.name, "Claude Sonnet 4");
+        assert_eq!(model.provider_id, "anthropic");
+        assert_eq!(model.family.as_deref(), Some("claude-sonnet"));
+        assert_eq!(
+            providers
+                .default_models
+                .get("anthropic")
+                .map(String::as_str),
+            Some("claude-sonnet-4")
+        );
+        assert_eq!(providers.connected, vec!["anthropic".to_string()]);
+
+        let req = server.request_text().await;
+        assert!(req.starts_with("GET /provider HTTP/1.1"), "got: {req}");
+    }
+
+    #[tokio::test]
+    async fn provider_auth_parses_the_method_map() {
+        let body = r#"{
+            "anthropic": [{"type": "api", "label": "API Key"}],
+            "openai": [
+                {"type": "oauth", "label": "ChatGPT Pro/Plus"},
+                {"type": "api", "label": "API Key"}
+            ]
+        }"#;
+        let server = MockServer::start("200 OK", body).await;
+        let client = server.client(None).await;
+        let methods = client.provider_auth().await.unwrap();
+
+        assert_eq!(methods["anthropic"].len(), 1);
+        assert_eq!(methods["anthropic"][0].auth_type, "api");
+        assert_eq!(methods["anthropic"][0].label, "API Key");
+        assert_eq!(methods["openai"].len(), 2);
+
+        let req = server.request_text().await;
+        assert!(req.starts_with("GET /provider/auth HTTP/1.1"), "got: {req}");
     }
 }

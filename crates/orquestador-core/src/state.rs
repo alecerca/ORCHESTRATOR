@@ -659,6 +659,7 @@ mod tests {
                 compacting: None,
             },
             summary: None,
+            model: None,
         }
     }
 

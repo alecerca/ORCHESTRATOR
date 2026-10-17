@@ -18,9 +18,12 @@ import type {
   HeadFile,
   Health,
   MessageBundle,
+  ModelRef,
   PermissionResponse,
   PresenceEntry,
   Project,
+  ProviderAuthMethod,
+  ProviderList,
   ProxyMember,
   ServerConfig,
   Session,
@@ -34,6 +37,17 @@ export const getState = () => invoke<AppStateSnapshot>("get_state");
 // -- health / discovery ------------------------------------------------------
 export const getHealth = () => invoke<Health>("get_health");
 export const getAgents = () => invoke<Agent[]>("get_agents");
+export const getProviders = () => invoke<ProviderList>("get_providers");
+export const getProviderAuth = () =>
+  invoke<Record<string, ProviderAuthMethod[]>>("get_provider_auth");
+/**
+ * Store an API key for a provider (`PUT /auth/:providerID`) so it can serve
+ * requests. The key is write-only: it is sent straight to the shell, never
+ * persisted in the webview, and never returned. Rejects with the server's
+ * reason when the key is refused.
+ */
+export const setProviderApiKey = (providerId: string, key: string) =>
+  invoke<boolean>("set_provider_api_key", { providerId, key });
 export const sessionStatuses = () =>
   invoke<Record<string, SessionStatus>>("session_statuses");
 
@@ -47,6 +61,14 @@ export const deleteSession = (sessionId: string) =>
   invoke<boolean>("delete_session", { sessionId });
 export const renameSession = (sessionId: string, title: string) =>
   invoke<Session>("rename_session", { sessionId, title });
+/**
+ * Set the session's effective model (`POST /api/session/:id/model`). The session
+ * is the only authoritative source of the model a request runs, so a choice must
+ * be recorded here to stay sticky — and the server default is restored by
+ * re-applying a known baseline, not by sending nothing.
+ */
+export const setSessionModel = (sessionId: string, model: ModelRef) =>
+  invoke<void>("set_session_model", { sessionId, model });
 export const getTodos = (sessionId: string) =>
   invoke<Todo[]>("get_todos", { sessionId });
 
@@ -56,13 +78,29 @@ export const sendMessage = (
   text: string,
   agent?: string,
   skills?: string[],
-) => invoke<MessageBundle>("send_message", { sessionId, text, agent, skills });
+  model?: ModelRef | null,
+) =>
+  invoke<MessageBundle>("send_message", {
+    sessionId,
+    text,
+    agent,
+    skills,
+    model,
+  });
 export const sendMessageAsync = (
   sessionId: string,
   text: string,
   agent?: string,
   skills?: string[],
-) => invoke<void>("send_message_async", { sessionId, text, agent, skills });
+  model?: ModelRef | null,
+) =>
+  invoke<void>("send_message_async", {
+    sessionId,
+    text,
+    agent,
+    skills,
+    model,
+  });
 export const sendCommand = (
   sessionId: string,
   command: string,

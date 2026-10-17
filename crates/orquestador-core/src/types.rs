@@ -16,7 +16,7 @@
 //! * All timestamps are epoch **milliseconds** (`number` in the OpenAPI spec).
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
 // Global / project
@@ -83,6 +83,13 @@ pub struct Session {
     pub time: SessionTime,
     #[serde(default)]
     pub summary: Option<SessionSummary>,
+    /// The effective model this session runs, as the server reports it. This is
+    /// the only authoritative source of the model the session uses (the
+    /// app-level config carries none); a `None` here means the session has no
+    /// recorded model yet. The wire spells the model id `id` (NOT `modelID`),
+    /// which [`ModelRef`] maps in via a serde alias.
+    #[serde(default)]
+    pub model: Option<ModelRef>,
 }
 
 /// `GET /session/status` → `{ [sessionID]: SessionStatus }`
@@ -122,8 +129,207 @@ pub struct AssistantMessageTime {
 pub struct ModelRef {
     #[serde(rename = "providerID")]
     pub provider_id: String,
-    #[serde(rename = "modelID")]
+    /// The model id. Emitted as `modelID` (the agent/prompt spelling); *also*
+    /// accepted as `id`, which is how a `GET /session` row spells the effective
+    /// model it recorded.
+    #[serde(rename = "modelID", alias = "id")]
     pub model_id: String,
+}
+
+// ---------------------------------------------------------------------------
+// Providers (OpenCode `GET /provider`)
+// ---------------------------------------------------------------------------
+
+/// `GET /provider` → everything the UI needs to list providers and their models.
+///
+/// SECURITY: the live `/provider` response embeds credential material inside
+/// each provider's `key` and `options` (and, per model, `options` / `headers`).
+/// Those fields are deliberately **not** modelled here, so they can never be
+/// deserialized, logged, `Debug`-printed, or forwarded to the webview. serde
+/// ignores the unknown wire fields (crate convention) while the typed fields
+/// stay credential-free.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProviderList {
+    pub all: Vec<Provider>,
+    /// Configured default model per provider (`providerID` → `modelID`).
+    #[serde(default, rename = "default")]
+    pub default_models: HashMap<String, String>,
+    /// Provider ids that are already authenticated — the per-provider auth status.
+    #[serde(default)]
+    pub connected: Vec<String>,
+}
+
+impl ProviderList {
+    /// True when a provider can serve a model right now: it is already
+    /// authenticated (a member of `connected` from `GET /provider`).
+    ///
+    /// A provider that is not connected cannot serve a model this app sends, so
+    /// its models must be marked rather than offered as ordinary choices. The
+    /// separate `has_auth` signal only tells the UI whether a sign-in path
+    /// exists; it never makes an unauthenticated provider usable.
+    pub fn is_usable(&self, provider_id: &str) -> bool {
+        self.connected.iter().any(|id| id == provider_id)
+    }
+
+    /// Stamp every provider with `usable` (from `connected`) and `has_auth`
+    /// (whether `auth_provider_ids` — the keys of `GET /provider/auth` — lists
+    /// it), so the webview gets the classification without re-deriving the rule.
+    pub fn classify_usability<'a, I>(&mut self, auth_provider_ids: I)
+    where
+        I: IntoIterator<Item = &'a str>,
+    {
+        let auth: HashSet<&str> = auth_provider_ids.into_iter().collect();
+        let connected: HashSet<&str> = self.connected.iter().map(String::as_str).collect();
+        for provider in &mut self.all {
+            provider.usable = connected.contains(provider.id.as_str());
+            provider.has_auth = auth.contains(provider.id.as_str());
+        }
+    }
+
+    /// Stamp every provider with `offers_api_key`: whether `GET /provider/auth`
+    /// lists an `api`-type method for it, so the picker knows which unusable
+    /// providers can be connected by entering a key.
+    ///
+    /// This is deliberately narrower than `has_auth`: an OAuth-only provider has
+    /// auth but no key entry, so it must not advertise one.
+    pub fn classify_api_key_auth(&mut self, methods: &HashMap<String, Vec<ProviderAuthMethod>>) {
+        for provider in &mut self.all {
+            provider.offers_api_key = methods
+                .get(&provider.id)
+                .is_some_and(|entries| entries.iter().any(ProviderAuthMethod::is_api_key));
+        }
+    }
+}
+
+/// One provider. `key` and `options` are intentionally omitted — see
+/// [`ProviderList`].
+///
+/// `Eq` is intentionally not derived: models carry `f64` pricing.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Provider {
+    pub id: String,
+    pub name: String,
+    pub source: String,
+    /// Environment variable **names** this provider can read a credential from
+    /// (e.g. `ANTHROPIC_API_KEY`) — names only, never values.
+    #[serde(default)]
+    pub env: Vec<String>,
+    /// Models offered by this provider, keyed by model id.
+    #[serde(default)]
+    pub models: HashMap<String, ProviderModel>,
+    /// Whether this provider declares at least one auth method in
+    /// `GET /provider/auth`. Computed by the shell; **not** part of the
+    /// `/provider` wire payload (see [`ProviderList::classify_usability`]).
+    #[serde(default, skip_deserializing, rename = "hasAuth")]
+    pub has_auth: bool,
+    /// Whether this provider can serve a model right now (it is `connected`).
+    /// Computed by the shell; **not** part of the `/provider` wire payload.
+    #[serde(default, skip_deserializing)]
+    pub usable: bool,
+    /// Whether `GET /provider/auth` lists an `api`-type method for this
+    /// provider — i.e. the user can connect it by entering an API key. False
+    /// for a provider that offers only OAuth (or no auth method at all).
+    /// Computed by the shell; **not** part of the `/provider` wire payload.
+    #[serde(default, skip_deserializing, rename = "offersApiKey")]
+    pub offers_api_key: bool,
+}
+
+/// Per-million-token pricing for a [`ProviderModel`]. Every component zero (and
+/// no `:free`/`-free` id suffix) means the model is free.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct ModelCost {
+    pub input: f64,
+    pub output: f64,
+    pub cache: CacheCost,
+}
+
+/// The nested `cache` pricing of a [`ModelCost`]. Modelled as its own object to
+/// match the wire shape rather than being flattened.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct CacheCost {
+    pub read: f64,
+    pub write: f64,
+}
+
+/// One model offered by a provider. Only display/identity and safe pricing
+/// fields are modelled; the model-level `options` and `headers` (which may carry
+/// credentials) are deliberately omitted — see [`ProviderList`].
+///
+/// `Eq` is intentionally not derived: `cost` holds `f64` values.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ProviderModel {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "providerID")]
+    pub provider_id: String,
+    #[serde(default)]
+    pub family: Option<String>,
+    /// Token pricing, `None` when the catalogue omits it (a model with no cost
+    /// data is not free unless its id carries the explicit suffix).
+    #[serde(default)]
+    pub cost: Option<ModelCost>,
+    /// `"active"` | `"deprecated"` in the catalogue.
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+impl ProviderModel {
+    /// True when this model costs nothing: every `cost` component is zero, or
+    /// its id carries the explicit `:free` / `-free` suffix the catalogue uses.
+    ///
+    /// Single source of truth for the `free` tag; the computed flag is
+    /// serialized by the [`Serialize`] impl below.
+    pub fn is_free(&self) -> bool {
+        let zero_cost = self.cost.as_ref().is_some_and(|cost| {
+            cost.input == 0.0
+                && cost.output == 0.0
+                && cost.cache.read == 0.0
+                && cost.cache.write == 0.0
+        });
+        zero_cost || self.id.ends_with(":free") || self.id.ends_with("-free")
+    }
+}
+
+/// Serializes the wire-visible fields plus the computed `free` flag, so the
+/// webview never re-derives the rule.
+impl Serialize for ProviderModel {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ProviderModel", 7)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("name", &self.name)?;
+        state.serialize_field("providerID", &self.provider_id)?;
+        state.serialize_field("family", &self.family)?;
+        state.serialize_field("cost", &self.cost)?;
+        state.serialize_field("status", &self.status)?;
+        state.serialize_field("free", &self.is_free())?;
+        state.end()
+    }
+}
+
+/// `GET /provider/auth` → one supported auth method per provider.
+///
+/// `type` is `"oauth"` or `"api"`. `prompts` are the UI prompt definitions the
+/// server expects for an interactive login flow; they are kept as opaque JSON
+/// (they never carry credential *values*).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderAuthMethod {
+    #[serde(rename = "type")]
+    pub auth_type: String,
+    pub label: String,
+    #[serde(default)]
+    pub prompts: Vec<serde_json::Value>,
+}
+
+impl ProviderAuthMethod {
+    /// True when this method lets the user supply an API key directly
+    /// (`type: "api"`), as opposed to an OAuth sign-in (`type: "oauth"`).
+    pub fn is_api_key(&self) -> bool {
+        self.auth_type == "api"
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1161,6 +1367,25 @@ mod tests {
     }
 
     #[test]
+    fn prompt_body_serializes_model_when_present() {
+        let mut body = PromptBody::text("hello");
+        body.model = Some(ModelRef {
+            provider_id: "anthropic".to_string(),
+            model_id: "claude-3-5-sonnet".to_string(),
+        });
+        let v = serde_json::to_value(&body).unwrap();
+        assert_eq!(v["model"]["providerID"], "anthropic");
+        assert_eq!(v["model"]["modelID"], "claude-3-5-sonnet");
+    }
+
+    #[test]
+    fn prompt_body_omits_model_when_none() {
+        let body = PromptBody::text("hello");
+        let v = serde_json::to_value(&body).unwrap();
+        assert!(v.get("model").is_none(), "model must be absent when None");
+    }
+
+    #[test]
     fn permission_request_parses_the_list_payload_and_folds_into_a_permission() {
         // Shape captured live from `GET /permission` on 2026-10-10.
         let json = r#"{
@@ -1247,5 +1472,259 @@ mod tests {
         let out = serde_json::to_value(&b).unwrap();
         assert_eq!(out["info"]["role"], "user");
         assert_eq!(out["parts"][0]["type"], "text");
+    }
+
+    // -- provider cost / status / free (T11) --------------------------------
+
+    /// A model carrying the nested `cost` object and its `status`, as `GET
+    /// /provider` sends it (captured live: `cost.cache` is a nested object).
+    const MODEL_JSON: &str = r#"{
+        "id": "anthropic/claude-fable-5",
+        "name": "Claude Fable 5",
+        "providerID": "anthropic",
+        "family": "claude",
+        "status": "deprecated",
+        "cost": { "input": 3, "output": 15, "cache": { "read": 0.3, "write": 1.25 } }
+    }"#;
+
+    #[test]
+    fn provider_model_parses_nested_cost_and_status() {
+        let model: ProviderModel = serde_json::from_str(MODEL_JSON).expect("model parses");
+        let cost = model.cost.expect("cost is modelled");
+        assert_eq!(cost.input, 3.0);
+        assert_eq!(cost.output, 15.0);
+        assert_eq!(cost.cache.read, 0.3);
+        assert_eq!(cost.cache.write, 1.25);
+        assert_eq!(model.status.as_deref(), Some("deprecated"));
+    }
+
+    #[test]
+    fn provider_model_is_free_from_zero_cost_or_id_suffix() {
+        // Every cost component zero → free, regardless of the id.
+        let zero: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/zero","name":"Zero","providerID":"a","status":"active",
+                "cost":{"input":0,"output":0,"cache":{"read":0,"write":0}}}"#,
+        )
+        .unwrap();
+        assert!(zero.is_free(), "all-zero cost must be free");
+
+        // Any non-zero component (including the nested cache) → not free.
+        let paid_input: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/paid","name":"Paid","providerID":"a","status":"active",
+                "cost":{"input":1,"output":0,"cache":{"read":0,"write":0}}}"#,
+        )
+        .unwrap();
+        assert!(!paid_input.is_free(), "non-zero input must not be free");
+
+        let paid_cache: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/paid-cache","name":"Paid Cache","providerID":"a","status":"active",
+                "cost":{"input":0,"output":0,"cache":{"read":0,"write":2}}}"#,
+        )
+        .unwrap();
+        assert!(
+            !paid_cache.is_free(),
+            "non-zero nested cache cost must not be free"
+        );
+
+        // The explicit `:free` / `-free` id suffixes mark a model free even when
+        // the catalogue reports a non-zero cost.
+        let suffix_colon: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/x:free","name":"X","providerID":"a","status":"active",
+                "cost":{"input":9,"output":9,"cache":{"read":9,"write":9}}}"#,
+        )
+        .unwrap();
+        assert!(suffix_colon.is_free(), "`:free` id suffix must be free");
+
+        let suffix_dash: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/y-free","name":"Y","providerID":"a","status":"active",
+                "cost":{"input":9,"output":9,"cache":{"read":9,"write":9}}}"#,
+        )
+        .unwrap();
+        assert!(suffix_dash.is_free(), "`-free` id suffix must be free");
+    }
+
+    #[test]
+    fn provider_model_serializes_the_free_flag_for_the_webview() {
+        let zero: ProviderModel = serde_json::from_str(
+            r#"{"id":"a/zero","name":"Zero","providerID":"a","status":"active",
+                "cost":{"input":0,"output":0,"cache":{"read":0,"write":0}}}"#,
+        )
+        .unwrap();
+        let out = serde_json::to_value(&zero).unwrap();
+        assert_eq!(out["free"], serde_json::json!(true));
+        assert_eq!(out["cost"]["cache"]["read"], serde_json::json!(0.0));
+        assert_eq!(out["providerID"], "a");
+    }
+
+    // -- provider usability (T11) -------------------------------------------
+
+    const PROVIDER_LIST_JSON: &str = r#"{
+        "all": [
+            {"id":"opencode","name":"OpenCode","source":"custom","env":[],"models":{}},
+            {"id":"anthropic","name":"Anthropic","source":"env","env":[],"models":{}},
+            {"id":"openai","name":"OpenAI","source":"env","env":[],"models":{}},
+            {"id":"nearai","name":"NearAI","source":"env","env":[],"models":{}}
+        ],
+        "default": {},
+        "connected": ["opencode", "anthropic"]
+    }"#;
+
+    #[test]
+    fn provider_list_classifies_usable_providers_from_connected_and_auth() {
+        let mut list: ProviderList =
+            serde_json::from_str(PROVIDER_LIST_JSON).expect("provider list parses");
+
+        // Usability comes from `connected`: an unauthenticated provider cannot
+        // serve a model this app sends, even when a sign-in path exists.
+        assert!(list.is_usable("opencode"));
+        assert!(list.is_usable("anthropic"));
+        assert!(
+            !list.is_usable("openai"),
+            "has-auth is not enough on its own"
+        );
+        assert!(!list.is_usable("nearai"));
+
+        // `classify_usability` stamps both signals per provider so the webview
+        // gets them without re-deriving the rule.
+        list.classify_usability(["openai"].into_iter());
+        let by_id = |id: &str| list.all.iter().find(|p| p.id == id).unwrap();
+        assert!(by_id("opencode").usable);
+        assert!(!by_id("opencode").has_auth);
+        assert!(by_id("anthropic").usable);
+        assert!(!by_id("openai").usable);
+        assert!(by_id("openai").has_auth);
+        assert!(!by_id("nearai").usable);
+        assert!(!by_id("nearai").has_auth);
+    }
+
+    #[test]
+    fn provider_list_classifies_api_key_support_from_auth_methods() {
+        let mut list: ProviderList =
+            serde_json::from_str(PROVIDER_LIST_JSON).expect("provider list parses");
+
+        let method = |kind: &str| ProviderAuthMethod {
+            auth_type: kind.to_string(),
+            label: format!("{kind} method"),
+            prompts: Vec::new(),
+        };
+        let methods: HashMap<String, Vec<ProviderAuthMethod>> = HashMap::from([
+            // Offers an API key alongside OAuth.
+            ("openai".to_string(), vec![method("oauth"), method("api")]),
+            // API key only.
+            ("anthropic".to_string(), vec![method("api")]),
+            // OAuth only — has auth, but no key entry.
+            ("opencode".to_string(), vec![method("oauth")]),
+            // Declares auth but with no methods (defensive).
+            ("nearai".to_string(), Vec::new()),
+        ]);
+
+        list.classify_api_key_auth(&methods);
+        let by_id = |id: &str| list.all.iter().find(|p| p.id == id).unwrap();
+        assert!(by_id("openai").offers_api_key, "api among oauth counts");
+        assert!(by_id("anthropic").offers_api_key);
+        assert!(
+            !by_id("opencode").offers_api_key,
+            "an oauth-only provider must not advertise a key entry"
+        );
+        assert!(!by_id("nearai").offers_api_key);
+    }
+
+    #[test]
+    fn provider_auth_method_is_api_key_only_for_the_api_type() {
+        let api = ProviderAuthMethod {
+            auth_type: "api".to_string(),
+            label: "API Key".to_string(),
+            prompts: Vec::new(),
+        };
+        let oauth = ProviderAuthMethod {
+            auth_type: "oauth".to_string(),
+            label: "ChatGPT Pro/Plus".to_string(),
+            prompts: Vec::new(),
+        };
+        assert!(api.is_api_key());
+        assert!(!oauth.is_api_key());
+    }
+
+    #[test]
+    fn provider_serializes_offers_api_key_in_camel_case() {
+        // The picker reads `provider.offersApiKey`; lock the serialized name so
+        // a field rename cannot silently strand the connect affordance.
+        let provider: Provider = serde_json::from_value(serde_json::json!({
+            "id": "anthropic",
+            "name": "Anthropic",
+            "source": "env",
+            "models": {},
+        }))
+        .expect("a minimal provider parses");
+        let value = serde_json::to_value(&provider).expect("provider serializes");
+        let object = value.as_object().expect("provider serializes to an object");
+        assert!(
+            object.contains_key("offersApiKey"),
+            "the field must serialize as `offersApiKey` for the frontend"
+        );
+        assert!(
+            !object.contains_key("offers_api_key"),
+            "the snake_case name must never reach the wire"
+        );
+        assert_eq!(
+            object
+                .get("offersApiKey")
+                .and_then(serde_json::Value::as_bool),
+            Some(false),
+            "an unclassified provider defaults to offering no key entry"
+        );
+    }
+
+    // -- session effective model (carried from the wire) --------------------
+
+    /// A `GET /session` row as the server sends it. The effective model lives
+    /// under `model` with the field name `id`, NOT `modelID`.
+    const SESSION_WITH_MODEL_JSON: &str = r#"{
+        "id": "ses_1",
+        "projectID": "prj",
+        "directory": "/d",
+        "title": "t",
+        "version": "1",
+        "time": { "created": 1, "updated": 2 },
+        "model": { "id": "claude-fable-5", "providerID": "anthropic" }
+    }"#;
+
+    #[test]
+    fn session_maps_the_wire_model_into_the_model_ref() {
+        let session: Session =
+            serde_json::from_str(SESSION_WITH_MODEL_JSON).expect("session parses");
+        let model = session.model.expect("the effective model is carried");
+        assert_eq!(model.provider_id, "anthropic");
+        assert_eq!(model.model_id, "claude-fable-5");
+    }
+
+    #[test]
+    fn session_without_a_model_yields_none() {
+        let json = r#"{
+            "id": "ses_2", "projectID": "prj", "directory": "/d",
+            "title": "t", "version": "1",
+            "time": { "created": 1, "updated": 2 }
+        }"#;
+        let session: Session = serde_json::from_str(json).expect("session parses");
+        assert_eq!(session.model, None);
+    }
+
+    #[test]
+    fn session_model_round_trips_between_wire_and_canonical_spelling() {
+        let session: Session =
+            serde_json::from_str(SESSION_WITH_MODEL_JSON).expect("session parses");
+        let model = session.model.clone().expect("model present");
+        assert_eq!(
+            session,
+            serde_json::from_value::<Session>(serde_json::to_value(&session).unwrap()).unwrap()
+        );
+        // Canonical out: serialization emits `modelID`, and it parses back.
+        let out = serde_json::to_value(&model).unwrap();
+        assert_eq!(out["modelID"], "claude-fable-5");
+        assert_eq!(out["providerID"], "anthropic");
+        assert_eq!(serde_json::from_value::<ModelRef>(out).unwrap(), model);
+        // Wire in: the same value also parses from the server's `id` spelling.
+        let wire = serde_json::json!({ "id": "claude-fable-5", "providerID": "anthropic" });
+        assert_eq!(serde_json::from_value::<ModelRef>(wire).unwrap(), model);
     }
 }
