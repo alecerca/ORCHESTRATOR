@@ -2130,6 +2130,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reply_question_keeps_an_empty_entry_for_an_unanswered_question() {
+        // Partial answers: the array holds ONE entry per question, in question
+        // order; an unanswered question carries `[]` — never dropped, or the
+        // following answers would shift onto the wrong question.
+        let server = MockServer::start("200 OK", "true").await;
+        let client = server.client(None).await;
+        let answers = vec![Vec::new(), vec!["yes".to_string()]];
+        let ok = client.reply_question("que_1", &answers).await.unwrap();
+        assert!(ok);
+
+        let req = server.request_text().await;
+        assert!(
+            req.contains(r#"{"answers":[[],["yes"]]}"#),
+            "an unanswered question must keep its empty entry, got: {req}"
+        );
+    }
+
+    #[tokio::test]
     async fn reject_question_posts_to_the_reject_route() {
         let server = MockServer::start("200 OK", "true").await;
         let client = server.client(None).await;

@@ -1210,14 +1210,21 @@ mod tests {
         ))
     }
 
-    /// A `GET /question` list entry (same shape as the event properties).
-    fn question_request(id: &str) -> crate::types::QuestionRequest {
-        serde_json::from_value(serde_json::json!({
-            "id": id,
-            "sessionID": "a",
-            "questions": [{"question":"Which?","header":"Env","options":[
-                {"label":"staging","description":"Staging"}]}]
-        }))
+    /// A `GET /question` list entry whose batch holds `count` questions
+    /// (same shape as the event properties).
+    fn question_request_n(id: &str, count: usize) -> crate::types::QuestionRequest {
+        let questions: Vec<String> = (0..count)
+            .map(|i| {
+                format!(
+                    r#"{{"question":"Question {i}?","header":"Q{i}","options":[
+                        {{"label":"yes","description":"Yes"}}]}}"#
+                )
+            })
+            .collect();
+        serde_json::from_str(&format!(
+            r#"{{"id":"{id}","sessionID":"a","questions":[{}]}}"#,
+            questions.join(",")
+        ))
         .expect("question request fixture parses")
     }
 
@@ -1292,9 +1299,9 @@ mod tests {
         st.apply_sessions(vec![session("a", None, 1)]);
 
         // Listed → confirmed by a later fetch → dropped when absent.
-        st.apply_pending_questions_at(vec![question_request("que_1")], 1_000);
+        st.apply_pending_questions_at(vec![question_request_n("que_1", 1)], 1_000);
         assert_eq!(st.snapshot().questions.len(), 1);
-        st.apply_pending_questions_at(vec![question_request("que_1")], 2_000);
+        st.apply_pending_questions_at(vec![question_request_n("que_1", 1)], 2_000);
         assert_eq!(st.snapshot().questions.len(), 1, "still listed, kept");
         assert!(st.apply_pending_questions_at(Vec::new(), 3_000).is_empty());
         assert!(
@@ -1321,6 +1328,44 @@ mod tests {
         assert!(st.snapshot().questions.is_empty());
         assert!(st.apply_pending_questions_at(Vec::new(), 7_000).is_empty());
         assert!(st.snapshot().questions.is_empty());
+    }
+
+    #[test]
+    fn a_list_fetch_of_a_multi_question_batch_still_pauses_once() {
+        // The list source must obey the same one-pause-per-batch rule as the
+        // event source: N questions inside ONE request = ONE Effect::Question.
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+
+        let fx = st.apply_pending_questions(vec![question_request_n("que_1", 2)]);
+        assert_eq!(fx.len(), 1, "one batch must pause exactly once: {fx:?}");
+        assert!(
+            matches!(&fx[0], Effect::Question { request_id, session_id, .. }
+                if request_id == "que_1" && session_id == "a")
+        );
+
+        let snap = st.snapshot();
+        assert_eq!(snap.questions.len(), 1);
+        assert_eq!(
+            snap.questions[0].questions.len(),
+            2,
+            "both questions ride in the single paused batch"
+        );
+    }
+
+    #[test]
+    fn remove_question_clears_the_batch_from_the_snapshot() {
+        // This is what the shell does after a successful reply/reject command.
+        let mut st = AppState::default();
+        st.apply_sessions(vec![session("a", None, 1)]);
+        st.apply_event(&question_asked("que_1", 2));
+        assert_eq!(st.snapshot().questions.len(), 1);
+
+        assert!(st.remove_question_at("que_1", 2_000));
+        assert!(st.snapshot().questions.is_empty());
+
+        // Removing an already-settled id is a harmless no-op.
+        assert!(!st.remove_question_at("que_1", 3_000));
     }
 
     #[test]
