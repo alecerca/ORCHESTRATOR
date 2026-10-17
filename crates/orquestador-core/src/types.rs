@@ -83,6 +83,13 @@ pub struct Session {
     pub time: SessionTime,
     #[serde(default)]
     pub summary: Option<SessionSummary>,
+    /// The effective model this session runs, as the server reports it. This is
+    /// the only authoritative source of the model the session uses (the
+    /// app-level config carries none); a `None` here means the session has no
+    /// recorded model yet. The wire spells the model id `id` (NOT `modelID`),
+    /// which [`ModelRef`] maps in via a serde alias.
+    #[serde(default)]
+    pub model: Option<ModelRef>,
 }
 
 /// `GET /session/status` → `{ [sessionID]: SessionStatus }`
@@ -122,7 +129,10 @@ pub struct AssistantMessageTime {
 pub struct ModelRef {
     #[serde(rename = "providerID")]
     pub provider_id: String,
-    #[serde(rename = "modelID")]
+    /// The model id. Emitted as `modelID` (the agent/prompt spelling); *also*
+    /// accepted as `id`, which is how a `GET /session` row spells the effective
+    /// model it recorded.
+    #[serde(rename = "modelID", alias = "id")]
     pub model_id: String,
 }
 
@@ -1557,5 +1567,58 @@ mod tests {
         assert!(by_id("openai").has_auth);
         assert!(!by_id("nearai").usable);
         assert!(!by_id("nearai").has_auth);
+    }
+
+    // -- session effective model (carried from the wire) --------------------
+
+    /// A `GET /session` row as the server sends it. The effective model lives
+    /// under `model` with the field name `id`, NOT `modelID`.
+    const SESSION_WITH_MODEL_JSON: &str = r#"{
+        "id": "ses_1",
+        "projectID": "prj",
+        "directory": "/d",
+        "title": "t",
+        "version": "1",
+        "time": { "created": 1, "updated": 2 },
+        "model": { "id": "claude-fable-5", "providerID": "anthropic" }
+    }"#;
+
+    #[test]
+    fn session_maps_the_wire_model_into_the_model_ref() {
+        let session: Session =
+            serde_json::from_str(SESSION_WITH_MODEL_JSON).expect("session parses");
+        let model = session.model.expect("the effective model is carried");
+        assert_eq!(model.provider_id, "anthropic");
+        assert_eq!(model.model_id, "claude-fable-5");
+    }
+
+    #[test]
+    fn session_without_a_model_yields_none() {
+        let json = r#"{
+            "id": "ses_2", "projectID": "prj", "directory": "/d",
+            "title": "t", "version": "1",
+            "time": { "created": 1, "updated": 2 }
+        }"#;
+        let session: Session = serde_json::from_str(json).expect("session parses");
+        assert_eq!(session.model, None);
+    }
+
+    #[test]
+    fn session_model_round_trips_between_wire_and_canonical_spelling() {
+        let session: Session =
+            serde_json::from_str(SESSION_WITH_MODEL_JSON).expect("session parses");
+        let model = session.model.clone().expect("model present");
+        assert_eq!(
+            session,
+            serde_json::from_value::<Session>(serde_json::to_value(&session).unwrap()).unwrap()
+        );
+        // Canonical out: serialization emits `modelID`, and it parses back.
+        let out = serde_json::to_value(&model).unwrap();
+        assert_eq!(out["modelID"], "claude-fable-5");
+        assert_eq!(out["providerID"], "anthropic");
+        assert_eq!(serde_json::from_value::<ModelRef>(out).unwrap(), model);
+        // Wire in: the same value also parses from the server's `id` spelling.
+        let wire = serde_json::json!({ "id": "claude-fable-5", "providerID": "anthropic" });
+        assert_eq!(serde_json::from_value::<ModelRef>(wire).unwrap(), model);
     }
 }

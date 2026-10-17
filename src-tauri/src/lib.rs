@@ -108,6 +108,7 @@ pub fn run() {
             commands::list_children,
             commands::delete_session,
             commands::rename_session,
+            commands::set_session_model,
             commands::get_todos,
             commands::send_message,
             commands::send_message_async,

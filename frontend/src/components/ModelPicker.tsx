@@ -6,10 +6,17 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { getProviders } from "../commands";
-import { getModel, getSnapshot, setModel, subscribe } from "../model";
+import { getProviders, setSessionModel } from "../commands";
+import {
+  getBaseline,
+  getModel,
+  getSnapshot,
+  observeBaseline,
+  setModel,
+  subscribe,
+} from "../model";
 import { useAppState } from "../store";
-import type { Provider, ProviderList, ProviderModel } from "../types";
+import type { ModelRef, Provider, ProviderList, ProviderModel } from "../types";
 
 interface Props {
   className?: string;
@@ -54,6 +61,9 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
   const [providers, setProviders] = useState<ProviderList | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A failed model switch is shown without hiding the list, so the kept choice
+  // stays visible and the user can retry.
+  const [choiceError, setChoiceError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -67,9 +77,16 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
     : undefined;
   const sessionModel = rootSession?.session.model ?? null;
 
+  // Cache the session's first observed model: it is what "use the server
+  // default" re-applies, since the server keeps the last model recorded.
+  useEffect(() => {
+    observeBaseline(sessionModel);
+  }, [sessionModel?.providerID, sessionModel?.modelID]);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setChoiceError(null);
     try {
       const list = await getProviders();
       setProviders(list);
@@ -125,9 +142,33 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
     if (next) void refresh();
   }
 
-  function choose(choice: { providerID: string; modelID: string } | null): void {
-    setModel(choice);
-    setOpen(false);
+  function choose(choice: ModelRef | null): void {
+    // No session to pin the choice to: keep the local selection only.
+    if (rootSessionId === null) {
+      setModel(choice);
+      setOpen(false);
+      return;
+    }
+    // "Use the server default" re-applies the session's baseline model. The
+    // server keeps the last model recorded on the session, so sending nothing
+    // would silently keep the previous choice — the reported bug.
+    const target = choice ?? getBaseline();
+    if (target === null) {
+      setModel(choice);
+      setOpen(false);
+      return;
+    }
+    setChoiceError(null);
+    setSessionModel(rootSessionId, target).then(
+      () => {
+        setModel(choice);
+        setOpen(false);
+      },
+      (cause: unknown) => {
+        // Keep the previous choice and surface the failure in the popover.
+        setChoiceError(cause instanceof Error ? cause.message : String(cause));
+      },
+    );
   }
 
   const q = query.trim().toLowerCase();
@@ -167,7 +208,7 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
 
   const effectiveProvider =
     current?.providerID ?? sessionModel?.providerID ?? null;
-  const effectiveModelId = current?.modelID ?? sessionModel?.id ?? null;
+  const effectiveModelId = current?.modelID ?? sessionModel?.modelID ?? null;
   const resolvedName =
     effectiveProvider && effectiveModelId
       ? resolveModelName(providers, effectiveProvider, effectiveModelId)
@@ -330,6 +371,11 @@ export function ModelPicker({ className = "", rootSessionId }: Props) {
                 <p className="model-picker__more">
                   Showing {RENDER_CAP} of {groups.total}. Refine the search to reach
                   the rest.
+                </p>
+              )}
+              {choiceError && (
+                <p className="skills-popover__error" role="alert">
+                  {choiceError}
                 </p>
               )}
             </div>

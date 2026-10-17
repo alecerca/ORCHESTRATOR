@@ -347,6 +347,24 @@ impl OpenCodeClient {
         self.send_json(reqwest::Method::PATCH, &path, &body).await
     }
 
+    /// `POST /api/session/:id/model` — record `model` as the session's effective
+    /// model, so a later prompt that carries **no** override keeps using it (and
+    /// a known baseline can be re-applied to return to the default).
+    ///
+    /// Two wire details differ from the rest of this client:
+    /// * the path carries the `/api` prefix (this v2 route is the only one);
+    /// * the body is `{"model": {"id", "providerID"}}` — the model id is spelled
+    ///   `id`, NOT [`ModelRef`]'s canonical `modelID`, and the schema is
+    ///   `additionalProperties: false`, so [`ModelRef`] is **not** serialized
+    ///   directly. Answers `204 No Content`.
+    pub async fn set_session_model(&self, id: &str, model: &ModelRef) -> Result<(), CoreError> {
+        let path = format!("/api/session/{}/model", Self::seg(id));
+        let body = serde_json::json!({
+            "model": { "id": model.model_id, "providerID": model.provider_id }
+        });
+        self.send_ignored(reqwest::Method::POST, &path, &body).await
+    }
+
     /// `GET /session/:id/children` — **the sub-agents of a session**.
     pub async fn session_children(&self, id: &str) -> Result<Vec<Session>, CoreError> {
         self.get_json(&format!("/session/{}/children", Self::seg(id)))
@@ -751,6 +769,10 @@ impl AgentBackend for OpenCodeClient {
         OpenCodeClient::rename_session(self, id, title).await
     }
 
+    async fn set_session_model(&self, id: &str, model: &ModelRef) -> Result<(), CoreError> {
+        OpenCodeClient::set_session_model(self, id, model).await
+    }
+
     async fn todos(&self, id: &str) -> Result<Vec<Todo>, CoreError> {
         OpenCodeClient::todos(self, id).await
     }
@@ -1037,6 +1059,37 @@ mod tests {
         assert!(
             req.starts_with("GET /session/ses%20a%2Fb/children HTTP/1.1"),
             "got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_session_model_posts_the_v2_body_spelling() {
+        // `POST /api/session/:id/model` answers 204 and expects the model id
+        // spelled `id` (not the canonical `modelID`), under the `/api` prefix.
+        let server = MockServer::start("204 No Content", "").await;
+        let client = server.client(None).await;
+        let model = ModelRef {
+            provider_id: "anthropic".into(),
+            model_id: "claude-fable-5".into(),
+        };
+        client.set_session_model("ses_1", &model).await.unwrap();
+
+        let req = server.request_text().await;
+        assert!(
+            req.starts_with("POST /api/session/ses_1/model HTTP/1.1"),
+            "got: {req}"
+        );
+        assert!(
+            req.contains(r#""providerID":"anthropic""#),
+            "the wire body must carry providerID, got: {req}"
+        );
+        assert!(
+            req.contains(r#""id":"claude-fable-5""#),
+            "the v2 body must spell the model id `id`, got: {req}"
+        );
+        assert!(
+            !req.contains("modelID"),
+            "the v2 body must not send the canonical `modelID` spelling, got: {req}"
         );
     }
 

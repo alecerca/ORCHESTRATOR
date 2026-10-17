@@ -97,6 +97,10 @@ pub trait AgentBackend: Send + Sync {
     async fn session_children(&self, id: &str) -> Result<Vec<Session>, CoreError>;
     async fn delete_session(&self, id: &str) -> Result<bool, CoreError>;
     async fn rename_session(&self, id: &str, title: &str) -> Result<Session, CoreError>;
+    /// Record `model` as the session's effective model (`POST
+    /// /api/session/:id/model`), so a later prompt with no override keeps using
+    /// it and a known baseline can restore the default.
+    async fn set_session_model(&self, id: &str, model: &ModelRef) -> Result<(), CoreError>;
     async fn todos(&self, id: &str) -> Result<Vec<Todo>, CoreError>;
     async fn abort(&self, id: &str) -> Result<bool, CoreError>;
 

@@ -30,16 +30,11 @@ export interface Session {
   /**
    * Effective model for this session, as the server reports it. This is the
    * only authoritative source of the model the session uses (the app-level
-   * config carries none). Note the id field is `id`, NOT `modelID`.
+   * config carries none). The shell maps the server's `id` field into
+   * {@link ModelRef.modelID}, so this is the canonical `{ providerID, modelID }`
+   * shape — the same one the composer sends.
    */
-  model?: SessionModel | null;
-}
-
-/** The effective model of a {@link Session}: `{ id, providerID, variant? }`. */
-export interface SessionModel {
-  id: string;
-  providerID: string;
-  variant?: string | null;
+  model?: ModelRef | null;
 }
 
 export type SessionStatus =

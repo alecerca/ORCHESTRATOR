@@ -480,6 +480,7 @@ mod tests {
                 compacting: None,
             },
             summary: None,
+            model: None,
         };
         let sessions = vec![
             mk("old_root", None, 10),
@@ -1134,6 +1135,7 @@ mod tests {
                     compacting: None,
                 },
                 summary: None,
+                model: None,
             })
         }
 
@@ -1171,6 +1173,13 @@ mod tests {
         }
         async fn rename_session(&self, _id: &str, _title: &str) -> Result<Session, CoreError> {
             unimplemented!("FakeBackend::rename_session")
+        }
+        async fn set_session_model(
+            &self,
+            _id: &str,
+            _model: &crate::types::ModelRef,
+        ) -> Result<(), CoreError> {
+            unimplemented!("FakeBackend::set_session_model")
         }
         async fn todos(&self, _id: &str) -> Result<Vec<Todo>, CoreError> {
             unimplemented!("FakeBackend::todos")

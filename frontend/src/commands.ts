@@ -18,6 +18,7 @@ import type {
   HeadFile,
   Health,
   MessageBundle,
+  ModelRef,
   PermissionResponse,
   PresenceEntry,
   Project,
@@ -52,15 +53,18 @@ export const deleteSession = (sessionId: string) =>
   invoke<boolean>("delete_session", { sessionId });
 export const renameSession = (sessionId: string, title: string) =>
   invoke<Session>("rename_session", { sessionId, title });
+/**
+ * Set the session's effective model (`POST /api/session/:id/model`). The session
+ * is the only authoritative source of the model a request runs, so a choice must
+ * be recorded here to stay sticky — and the server default is restored by
+ * re-applying a known baseline, not by sending nothing.
+ */
+export const setSessionModel = (sessionId: string, model: ModelRef) =>
+  invoke<void>("set_session_model", { sessionId, model });
 export const getTodos = (sessionId: string) =>
   invoke<Todo[]>("get_todos", { sessionId });
 
 // -- instructions ------------------------------------------------------------
-export type ModelRef = {
-  providerID: string;
-  modelID: string;
-};
-
 export const sendMessage = (
   sessionId: string,
   text: string,

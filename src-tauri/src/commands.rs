@@ -303,6 +303,24 @@ pub async fn rename_session(
         .map_err(stringify)
 }
 
+/// Record `model` as the session's effective model
+/// (`POST /api/session/:id/model`). The session is the only authoritative
+/// source of the model a request runs, so this is what makes a choice sticky —
+/// and what lets the picker go back to the server default by re-applying a
+/// known baseline instead of sending nothing.
+#[tauri::command]
+pub async fn set_session_model(
+    bridge: State<'_, AppBridge>,
+    session_id: String,
+    model: orquestador_core::types::ModelRef,
+) -> Result<(), String> {
+    bridge
+        .client()
+        .set_session_model(&session_id, &model)
+        .await
+        .map_err(stringify)
+}
+
 #[tauri::command]
 pub async fn get_todos(
     bridge: State<'_, AppBridge>,
