@@ -115,3 +115,49 @@ First-run smoke test:
 
 After any code change, re-run step 1. Structural changes to `src-tauri` require
 step 3's toolchain and a `tauri dev` smoke test.
+
+## 8. Cutting a release
+
+The pipeline is automatic: pushing a `v*` tag makes
+`.github/workflows/release.yml` build the GUI bundles (deb/rpm/AppImage,
+msi/nsis, one universal dmg) and the `orquestador-proxy` CLI for four targets,
+all into one GitHub Release named after the tag.
+
+**The tag must match the declared version.** Tauri names every artifact after
+`src-tauri/tauri.conf.json` → `version`, while the Release itself is named after
+the tag; when the two disagree the bundles ship mislabelled. The workflow now
+fails fast on a mismatch.
+
+1. Bump the version in all four places. There is no single source of truth —
+   `src-tauri` is a standalone workspace and is bumped separately:
+
+   | File | Field |
+   |---|---|
+   | `Cargo.toml` | `[workspace.package] version` (covers `orquestador-core` and `orquestador-proxy`) |
+   | `src-tauri/Cargo.toml` | `version` |
+   | `src-tauri/tauri.conf.json` | `version` — this one names the artifacts |
+   | `frontend/package.json` | `version` |
+
+2. Refresh the lockfiles: `cargo check` at the root rewrites `Cargo.lock`,
+   `cargo check --manifest-path src-tauri/Cargo.toml` rewrites
+   `src-tauri/Cargo.lock`, and `npm install --package-lock-only` in `frontend/`
+   rewrites `frontend/package-lock.json`.
+
+3. Re-run step 1's verification, then commit the bump alone:
+
+   ```sh
+   git commit -m "chore(release): bump version to X.Y.Z"
+   ```
+
+4. Tag and push. The tag is what triggers the build; pushing only the commit
+   does nothing:
+
+   ```sh
+   git tag vX.Y.Z
+   git push origin main
+   git push origin vX.Y.Z
+   ```
+
+Bump the minor for new features and the patch for fixes. Installers publish
+**unsigned** (there is no `TAURI_SIGNING_PRIVATE_KEY`), so Windows SmartScreen
+and macOS Gatekeeper warn — expected today, see the workflow header.

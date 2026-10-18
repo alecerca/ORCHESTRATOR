@@ -41,8 +41,8 @@ That last point is why Tracks 2 and 3 are close.
 (`src-tauri/tauri.conf.json` → `bundle.targets: "all"`) and
 `.github/workflows/release.yml` builds one native bundle per OS on
 `ubuntu-22.04` / `windows-latest` / `macos-latest`. Code signing is **not**
-enabled (see the workflow header). `v0.1.0` and `v0.2.0` have been tagged and
-published, and the desktop shell builds and runs.
+enabled (see the workflow header). Releases are tagged and published from that
+workflow, and the desktop shell builds and runs.
 
 **Verdict:** feasible — it is what Tauri is for. One Rust core, a native webview
 per OS (WebView2 / WKWebView / WebKitGTK). It is a desktop app, **not** a browser

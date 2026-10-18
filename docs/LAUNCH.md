@@ -103,9 +103,8 @@ exist:
   installers (deb/rpm/AppImage, msi/nsis, one universal dmg) on
   ubuntu/windows/macos **and** the headless `orquestador-proxy` CLI for
   Linux/macOS/Windows, publishing everything to the GitHub Releases page
-  whenever a `v*` tag is pushed. `v0.1.0` and `v0.2.0` have been published;
-  the latest release ships all GUI installers plus the CLI binaries for the
-  three platforms.
+  whenever a `v*` tag is pushed. The latest release ships all GUI installers
+  plus the CLI binaries for the three platforms.
 - **One-line install** — `scripts/install.sh` (Linux/macOS) and
   `scripts/install.ps1` (Windows) download the right bundle from the latest
   release and install it; with `--cli` / `-Cli` they install the

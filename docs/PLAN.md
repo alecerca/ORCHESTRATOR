@@ -25,7 +25,7 @@ The core and proxy crates are implemented and headless-verified
 toolchain-drift diffs — see §9). The Tauri shell and the frontend are fully
 written and the shell compiles in this environment (see §5); `src-tauri` is
 cross-read against the frontend contract, not executed here. The project is
-published with `v0.1.0` and `v0.2.0`.
+published on GitHub Releases.
 
 ## 3. Repository layout
 
