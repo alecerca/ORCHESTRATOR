@@ -190,6 +190,32 @@ The app talks to an OpenCode server.
 The URL may point anywhere: localhost, another machine on the LAN, or a remote
 server. Start a local server with `opencode serve`.
 
+### Enable interactive questions
+
+An agent can pause mid-task and ask you a **batch of questions at once** — each
+with suggested answers plus a free-text box — then **resume** once you answer.
+Orquestador shows the batch in one dialog and sends your answers back without
+ending the turn.
+
+The OpenCode server does **not** expose the `question` tool by default, so no
+batch arrives until you allow it. Add this to your OpenCode config
+(`~/.config/opencode/opencode.jsonc`, or `opencode.json` in the same directory):
+
+```jsonc
+{
+  "permission": {
+    "question": "allow"
+  }
+}
+```
+
+Then **restart** `opencode serve` — the config is read at startup only. Without
+this permission the tool is unavailable to the agent, which falls back to asking
+in plain text and ends the turn; it may log *"Model tried to call unavailable
+tool 'question'"*. The `OPENCODE_ENABLE_QUESTION_TOOL` environment variable is
+not required for a normal `opencode serve`; the permission is what matters. If
+Orquestador is pointed at a remote server, add the permission on **that** host.
+
 ## Headless verification (no system deps needed)
 
 ```sh

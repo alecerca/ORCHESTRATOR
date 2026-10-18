@@ -63,6 +63,10 @@ Two things turned it from a personal tool into something shareable:
 - Rename an agent mid-flight; every agent shows the git branch it is working in.
 - Composer for the orchestrator session, with approval prompts and desktop
   notifications.
+- Clarification prompts: an agent can pause and ask a whole batch of questions in
+  one dialog — pick a suggested answer or write your own — and it resumes where
+  it left off. Requires a
+  [one-line permission on the server](docs/INSTALL.md#enable-interactive-questions).
 
 **Review and control agent work**
 
@@ -149,7 +153,9 @@ The short version for a user (full detail in [Installation](#installation) and
    run `opencode serve` (default `http://127.0.0.1:4096`), or point the app at a
    local, LAN or remote server from Settings, or with the
    `OPENCODE_SERVER_BASE_URL` and `OPENCODE_SERVER_PASSWORD` environment
-   variables.
+   variables. To let agents ask you questions mid-task, allow the `question`
+   tool in your OpenCode config — see
+   [Enable interactive questions](docs/INSTALL.md#enable-interactive-questions).
 3. **Open Orquestador** and pick your project. For shared or remote work,
    install the CLI companion `orquestador-proxy` (same script with `--cli` on
    Linux/macOS or `-Cli` on Windows) and follow
