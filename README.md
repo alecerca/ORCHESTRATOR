@@ -165,7 +165,7 @@ The short version for a user (full detail in [Installation](#installation) and
 
 - **`crates/orquestador-core`** — Rust core: typed HTTP client, SSE event hub,
   session/state model. No Tauri dependency, so it compiles and tests headless
-  (132 unit tests).
+  (171 unit tests).
 - **`src-tauri/`** — the Tauri 2 desktop shell (standalone workspace).
 - **`frontend/`** — Vite + React + TypeScript + Monaco (editor and diff),
   bundled locally.
